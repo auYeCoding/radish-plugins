@@ -6,6 +6,7 @@ By participating in this project you agree to follow the [Code of Conduct](CODE_
 
 ## Ways to contribute
 
+- **Ask a question or share an idea** in [GitHub Discussions](https://github.com/auYeCoding/radish-plugins/discussions).
 - **Report a bug or request a feature** with the [issue forms](https://github.com/auYeCoding/radish-plugins/issues/new/choose).
 - **Report a security vulnerability** privately, as described in [SECURITY.md](SECURITY.md).
 - **Open a pull request.** For anything beyond a small fix, open an issue first so the approach can be agreed on before you invest time in it.
@@ -17,10 +18,11 @@ By participating in this project you agree to follow the [Code of Conduct](CODE_
 plugins/<plugin>/                 One directory per plugin, installed and versioned independently
   .claude-plugin/plugin.json      Plugin manifest, the only place the plugin version is set
   skills/<skill>/SKILL.md         One directory per skill
-  README.md, README.zh-CN.md      Plugin documentation in English and Simplified Chinese
+  docs/<skill>.md, <skill>.en.md  Detailed guide for each skill, in Simplified Chinese and English
+  README.md, README.en.md         Plugin overview and skill index, in Simplified Chinese and English
   CHANGELOG.md                    Plugin changelog
 scripts/                          Repository tooling
-.github/                          Issue forms, pull request template, and CI workflows
+.github/                          Issue forms, pull request template, CI workflows, and README assets
 ```
 
 ## Development setup
@@ -87,16 +89,17 @@ To test the full marketplace install flow, add your working tree as a marketplac
 2. In the frontmatter, set `name` and a `description` that says what the skill does and when Claude should use it.
 3. Keep `SKILL.md` focused and under 500 lines. Move detailed material into supporting files inside the skill directory, link them from `SKILL.md`, and reference bundled scripts through `${CLAUDE_SKILL_DIR}`.
 4. Never reference files outside the plugin directory. Each plugin is copied on its own at install time, so such paths break for users.
-5. Add the skill to the skill table in the plugin's `README.md` and `README.zh-CN.md`, and add a `CHANGELOG.md` entry.
+5. Write the skill's guide in `plugins/<plugin>/docs/<skill-name>.md` and `plugins/<plugin>/docs/<skill-name>.en.md`, using the existing guides as the template.
+6. Add the skill to the skill table in the plugin's `README.md` and `README.en.md`, linking to its guide, and add a `CHANGELOG.md` entry.
 
 ## Adding a plugin
 
 Please open an issue to discuss a new plugin before starting.
 
 1. Create `plugins/<plugin-name>/` with a kebab-case name, and add `.claude-plugin/plugin.json`. Use [`plugins/waypoint`](plugins/waypoint/.claude-plugin/plugin.json) as the reference for the required fields, and start at version `0.1.0`.
-2. Add `README.md`, `README.zh-CN.md`, and `CHANGELOG.md` to the plugin directory.
+2. Add `README.md`, `README.en.md`, and `CHANGELOG.md` to the plugin directory, and a guide in `docs/` for each skill.
 3. Register the plugin in [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json) with its `name` and a `source` of `./plugins/<plugin-name>`.
-4. Add the plugin to the plugin table in the root `README.md` and `README.zh-CN.md`.
+4. Add the plugin to the plugin table in the root `README.md` and `README.en.md`.
 
 Plugins cannot share files with each other. If several plugins need the same functionality, put it in its own plugin and declare it under `dependencies` in the plugins that need it.
 
@@ -124,21 +127,16 @@ Pull requests are squash-merged. The pull request title becomes the subject of t
 
 ## Documentation
 
-- Every README exists in English (`README.md`) and Simplified Chinese (`README.zh-CN.md`). Update both in the same pull request.
+- Every README, skill guide, and the maintainer guide exist in Simplified Chinese and English: `README.md` (shown by default) and `README.en.md`, `docs/<skill>.md` and `docs/<skill>.en.md`, and `MAINTAINING.md` and `MAINTAINING.en.md`. Update both languages in the same pull request.
 - All other documentation is written in English.
+- Maintainers: see the [maintainer guide](MAINTAINING.en.md) for everything that must stay in sync when you change something.
 
 ## Versioning and releases
 
 Each plugin is versioned independently with [Semantic Versioning](https://semver.org). A plugin's version is set only in its `plugin.json`, and users receive an update only when that version changes.
 
 - **Contributors** do not bump versions. Add your changes under `## [Unreleased]` in the affected plugin's `CHANGELOG.md`.
-- **Maintainers** release a plugin by bumping `version` in its `plugin.json`, moving the `Unreleased` entries into a new version section, merging that change, and tagging the release from `main`:
-
-  ```bash
-  claude plugin tag ./plugins/<plugin> --push
-  ```
-
-  This creates and pushes a `<plugin>--v<version>` tag. Then publish a GitHub release from that tag.
+- **Maintainers** release a plugin by following [Releasing a plugin version](MAINTAINING.en.md#releasing-a-plugin-version) in the maintainer guide.
 
 ## License
 

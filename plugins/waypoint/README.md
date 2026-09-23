@@ -1,47 +1,46 @@
 # WayPoint
 
-English | [简体中文](README.zh-CN.md)
+[English](README.en.md) | 简体中文
 
-WayPoint is a Claude Code plugin that bundles workflow skills.
+[![WayPoint version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FauYeCoding%2Fradish-plugins%2Fmain%2Fplugins%2Fwaypoint%2F.claude-plugin%2Fplugin.json&query=%24.version&label=waypoint)](CHANGELOG.md)
 
-## Skills
+WayPoint 是一个提供实用工作流技能的 [Claude Code](https://code.claude.com) 插件. 目前涵盖仓库初始化与提交消息生成, 之后会陆续加入更多技能. 技能生成的提交消息与规则文件注释都使用简体中文.
 
-| Skill            | Command                                    | Description                                                                                                                                                     |
-| ---------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commit-message` | `/waypoint:commit-message [extra request]` | Drafts a Simplified Chinese [Conventional Commits](https://www.conventionalcommits.org) message from the actual Git changes, then commits or pushes on request. |
-| `repo-init`      | `/waypoint:repo-init`                      | Initializes a Git repository with best-practice `.gitignore`, `.editorconfig`, and `.gitattributes` files.                                                      |
+## 使用前提
 
-Both skills also trigger automatically when you ask for them in plain language.
+- [Git](https://git-scm.com)
+- 可选: [GitHub CLI](https://cli.github.com) (`gh`). `repo-init` 用它获取 `.gitignore` 模板, 没有安装时改为直接下载.
 
-### commit-message
+## 技能列表
 
-Ask for a commit message, for example "write a commit message" or "帮我写个提交消息".
+| 技能             | 命令                                  | 用途                                                                                     | 文档                               |
+| ---------------- | ------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------- |
+| `commit-message` | `/waypoint:commit-message [额外要求]` | 根据真实的 Git 改动生成符合 Conventional Commits 的简体中文提交消息, 并按需提交或推送.   | [使用说明](docs/commit-message.md) |
+| `repo-init`      | `/waypoint:repo-init`                 | 初始化 Git 仓库, 编写逐条附中文注释的 `.gitignore`, `.editorconfig` 与 `.gitattributes`. | [使用说明](docs/repo-init.md)      |
 
-- The message is built only from the actual changes: staged, unstaged, and untracked files.
-- Staged changes are used as-is when present.
-- If Claude edited files in the current session and other files have also changed, it first asks whether to include those other files.
-- After showing the message, it asks how to proceed: reply `A` to commit or `B` to commit and push. Any other reply leaves the changes uncommitted. Say "commit it" or "commit and push" up front to skip the question.
-- Extra requests override its own judgment, for example `/waypoint:commit-message fix` forces the `fix` type.
-- It never adds authorship or co-author information such as `Co-Authored-By` or `Generated with`. You are the only author of your commits.
-- In a directory that is not a Git repository yet, it stops and asks you to run `/waypoint:repo-init` first.
+两个技能都会在你用自然语言提出相应请求时自动触发, 也可以用上表中的斜杠命令直接调用.
 
-### repo-init
+## 快速上手
 
-Ask to initialize a repository or to write `.gitignore`, `.editorconfig`, or `.gitattributes`.
+以一个还没有纳入版本控制的新项目为例:
 
-- It detects the project's languages and tools, builds `.gitignore` from the official [github/gitignore](https://github.com/github/gitignore) templates, and writes `.editorconfig` and `.gitattributes` with UTF-8, LF line endings, and space indentation.
-- Every rule in the three files has its own Simplified Chinese comment on the line above it, and each comment-and-rule pair is separated by a blank line.
-- It never overwrites existing files without asking.
-- After `git init`, it lists the files that will be tracked and asks you to confirm. It never stages or commits.
+1. 在项目目录中对 Claude 说 "帮我初始化这个仓库". `repo-init` 会编写三个规则文件, 执行 `git init`, 然后列出将纳入版本控制的文件请你确认.
+2. 确认后说 "帮我写个提交消息". `commit-message` 会展示根据改动生成的提交消息, 你回复 `A` 提交, 或回复 `B` 提交并推送.
 
-## Installation
+之后每次改完代码, 重复第 2 步即可.
 
-See [Installation](../../README.md#installation) in the marketplace README.
+## 使用提示
 
-## Changelog
+- 请停用其它生成提交消息的技能, 例如 `~/.claude/skills` 中的个人技能. 否则请求提交消息时, Claude 可能在两者之间任选其一.
 
-See [CHANGELOG.md](CHANGELOG.md).
+## 安装
 
-## License
+见插件市场 README 中的 [安装](../../README.md#安装) 一节.
+
+## 变更记录
+
+见 [CHANGELOG.md](CHANGELOG.md).
+
+## 许可证
 
 [MIT](../../LICENSE)

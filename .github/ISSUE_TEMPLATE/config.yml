@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Ask a question
+    url: https://github.com/auYeCoding/radish-plugins/discussions/categories/q-a
+    about: Ask usage questions and share ideas in GitHub Discussions instead of opening an issue.
   - name: Report a security vulnerability
     url: https://github.com/auYeCoding/radish-plugins/security/advisories/new
     about: Please report security issues privately instead of opening a public issue.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "radish-plugins",
-  "description": "Claude Code plugins maintained by auYeCoding.",
+  "description": "Practical plugins for Claude Code, maintained by auYeCoding.",
   "owner": {
     "name": "auYeCoding",
     "url": "https://github.com/auYeCoding"
