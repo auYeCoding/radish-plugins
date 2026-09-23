@@ -36,3 +36,9 @@ jobs:
 
       - name: Validate marketplace and plugins
         run: npm run validate
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check generated documents
+        run: npm run gen:docs -- --check

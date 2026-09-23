@@ -14,7 +14,9 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "validate": "node scripts/validate.mjs"
+    "validate": "node scripts/validate.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\"",
+    "gen:docs": "node scripts/gen-navigator-docs.mjs"
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.280",

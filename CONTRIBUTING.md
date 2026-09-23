@@ -18,10 +18,12 @@ By participating in this project you agree to follow the [Code of Conduct](CODE_
 plugins/<plugin>/                 One directory per plugin, installed and versioned independently
   .claude-plugin/plugin.json      Plugin manifest, the only place the plugin version is set
   skills/<skill>/SKILL.md         One directory per skill
+  agents/<agent>.md               Subagents shipped with the plugin
   docs/<skill>.md, <skill>.en.md  Detailed guide for each skill, in Simplified Chinese and English
   README.md, README.en.md         Plugin overview and skill index, in Simplified Chinese and English
   CHANGELOG.md                    Plugin changelog
-scripts/                          Repository tooling
+scripts/                          Repository tooling, including the project-navigator document generator
+tests/                            Automated tests, run with npm test
 .github/                          Issue forms, pull request template, CI workflows, and README assets
 ```
 
@@ -53,18 +55,19 @@ Prerequisites: Git, Node.js 22 or later, and [Claude Code](https://code.claude.c
    ```
 
 2. Make your change and [test it locally](#testing-locally).
-3. Format and validate:
+3. Format, validate, and test. If you changed the `project-navigator` spec or the sources in `scripts/navigator-docs/`, run `npm run gen:docs` first:
 
    ```bash
    npm run format
    npm run validate
+   npm test
    ```
 
 4. Commit following the [commit message convention](#commit-messages).
 5. Push the branch to your fork and open a pull request against `main`. Fill in the pull request template.
 6. Keep the pull request focused on one change. If `main` moves ahead, rebase your branch onto `upstream/main` instead of merging it in.
 
-CI runs the same format and validation checks on every pull request. A pull request can be merged only after these checks pass, and only a maintainer can merge it.
+CI runs the same format, validation, and test checks on every pull request, and checks that the generated `project-navigator` documents are in sync. A pull request can be merged only after these checks pass, and only a maintainer can merge it.
 
 ## Testing locally
 
@@ -75,6 +78,8 @@ claude --plugin-dir ./plugins/waypoint
 ```
 
 Plugin skills are invoked as `/<plugin>:<skill>`, for example `/waypoint:commit-message`. Run `/reload-plugins` after editing files to pick up the changes.
+
+Run the automated tests with `npm test`. They cover the `project-navigator` runtime scripts and hooks in temporary Git repositories, so Git must be on your `PATH`.
 
 To test the full marketplace install flow, add your working tree as a marketplace. If you already added the published `radish-plugins` marketplace, remove it first, because marketplace names must be unique.
 
