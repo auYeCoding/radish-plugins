@@ -110,13 +110,13 @@ Commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.
 
 - **type**: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, or `chore`.
 - **scope**: the plugin name, such as `waypoint`. Omit it for repository-wide changes.
-- **summary**: imperative mood, lowercase, no trailing period.
+- **summary**: English in the imperative mood and lowercase, or Simplified Chinese. No trailing period.
 
 Examples:
 
 ```text
 feat(waypoint): add commit-message skill
-fix(waypoint): ignore untracked files in commit-message
+fix(waypoint): 修复未跟踪文件未纳入提交消息的问题
 docs: clarify local testing steps
 ```
 
