@@ -62,7 +62,7 @@ Prerequisites: Git, Node.js 22 or later, and [Claude Code](https://code.claude.c
 5. Push the branch to your fork and open a pull request against `main`. Fill in the pull request template.
 6. Keep the pull request focused on one change. If `main` moves ahead, rebase your branch onto `upstream/main` instead of merging it in.
 
-CI runs the same format and validation checks on every pull request, and every pull request needs an approving review from a code owner before it can be merged.
+CI runs the same format and validation checks on every pull request. A pull request can be merged only after these checks pass, and only a maintainer can merge it.
 
 ## Testing locally
 
@@ -120,7 +120,7 @@ fix(waypoint): 修复未跟踪文件未纳入提交消息的问题
 docs: clarify local testing steps
 ```
 
-Pull requests are squash-merged, so the pull request title becomes the commit message on `main` and must follow the same convention.
+Pull requests are squash-merged. The pull request title becomes the subject of the commit on `main`, so it must follow the same convention, and the messages of the commits in the pull request become its body.
 
 ## Documentation
 
