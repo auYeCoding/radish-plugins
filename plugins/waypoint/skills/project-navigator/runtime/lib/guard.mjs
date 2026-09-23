@@ -100,7 +100,7 @@ const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
 /**
  * @typedef {object} GuardContext 判定时需要的状态.
  * @property {string | undefined} orderStatus 当前工单状态.
- * @property {string[]} authorizedTests 当前工单中用户已授权的测试命令.
+ * @property {string[]} authorizedTests 当前工单可以运行的测试命令: 代码检查命令与用户授权的测试.
  * @property {string | undefined} executorFolder 执行会话绑定的工单文件夹名.
  * @property {boolean} isOrderActive 执行会话绑定的工单是否为当前工单且处于已发布状态.
  * @property {boolean} isAligned 执行会话是否已就本轮发布完成开工对齐.

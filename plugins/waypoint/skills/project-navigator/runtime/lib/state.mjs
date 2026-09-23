@@ -89,6 +89,7 @@ export class StateConflictError extends Error {
  * @property {object[]} risks 风险列表.
  * @property {object[]} decisions 决策列表.
  * @property {object[]} changes 变更列表.
+ * @property {import("./code-checks.mjs").CodeChecks | null} codeChecks 登记的代码检查命令; 尚未登记时为 null.
  * @property {string | null} lastCommit 记录中的最近提交.
  * @property {string} [pendingAnomaly] 尚未处理的对账异常类别; 存在时暂停快照与其它命令.
  * @property {string} lastAction 最后一个动作的中文描述.
@@ -125,6 +126,7 @@ export function createInitialState({ skillVersion, sessionId, now }) {
     risks: [],
     decisions: [],
     changes: [],
+    codeChecks: null,
     lastCommit: null,
     lastAction: "初始化",
     updatedAt: now,
@@ -200,6 +202,7 @@ function normalizeState(raw) {
     risks: raw.risks ?? [],
     decisions: raw.decisions ?? [],
     changes: raw.changes ?? [],
+    codeChecks: raw.codeChecks ?? null,
     skipped: raw.skipped ?? [],
   };
 }

@@ -1,7 +1,7 @@
 ---
 name: navigator-reviewer
 description: project-navigator 的验收子代理, 只由编排会话按 review-brief 生成的提示词派出, 逐条核对工单判据并交回证据. Acceptance reviewer for project-navigator; dispatched only by the orchestrator session with the generated review brief. Do not use for anything else.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, PowerShell
 ---
 
 你是 project-navigator 的验收子代理, 在全新的上下文中核对一张工单是否完成.

@@ -29,6 +29,37 @@ const OPTION_LINE_PATTERN = /^([A-H])\. (.+)$/u;
 const OPTION_TITLE_PATTERN = /^\[(.+)\]$/u;
 
 /**
+ * @typedef {object} LocatedReply 回复在全文中的位置.
+ * @property {import("./markdown.mjs").MarkdownItem[]} preface 第一个一级标题之前的非空条目.
+ * @property {import("./markdown.mjs").HeadingItem | undefined} heading 第一个一级标题; 没有时为 undefined.
+ * @property {import("./markdown.mjs").MarkdownItem[]} body 第一个一级标题之后的非空条目.
+ */
+
+/**
+ * 在全文中找出回复: 回复从第一个一级标题开始. 模型常在标题前加一句过程说明,
+ * 这部分不算回复内容; 打回它只会让用户看到两遍同样的回复.
+ *
+ * @param {string} text 回复全文.
+ * @returns {LocatedReply} 回复的位置.
+ */
+export function locateReply(text) {
+  const items = parseMarkdown(text).filter(
+    (item) => !(item.kind === "text" && item.text.trim() === ""),
+  );
+  const start = items.findIndex(
+    (item) => item.kind === "heading" && item.level === 1,
+  );
+  if (start === -1) {
+    return { preface: items, heading: undefined, body: [] };
+  }
+  return {
+    preface: items.slice(0, start),
+    heading: /** @type {import("./markdown.mjs").HeadingItem} */ (items[start]),
+    body: items.slice(start + 1),
+  };
+}
+
+/**
  * 校验一条回复, 返回发现的问题.
  *
  * @param {object} options 校验参数.
@@ -39,18 +70,15 @@ const OPTION_TITLE_PATTERN = /^\[(.+)\]$/u;
  * @returns {string[]} 问题列表; 为空表示合格.
  */
 export function checkReply({ text, spec, state, role }) {
-  const items = parseMarkdown(text).filter(
-    (item) => !(item.kind === "text" && item.text.trim() === ""),
-  );
-  const first = items[0];
-  if (first?.kind !== "heading" || first.level !== 1) {
-    return ['第一行必须是一级标题, 写明回复类型, 例如 "# 首次接入".'];
+  const { preface, heading, body } = locateReply(text);
+  if (heading === undefined) {
+    return ['回复必须以一级标题写明回复类型, 例如 "# 首次接入".'];
   }
-  const reply = findReply(spec, first.text);
+  const reply = findReply(spec, heading.text);
   if (reply === undefined || reply.role !== role) {
-    return [`一级标题 "${first.text}" 不是允许的回复类型.`];
+    return [`一级标题 "${heading.text}" 不是允许的回复类型.`];
   }
-  const split = splitSections(items.slice(1));
+  const split = splitSections(body);
   const { sections, trailing } = reattachSectionBlocks(
     split.sections,
     split.trailing,
@@ -58,6 +86,11 @@ export function checkReply({ text, spec, state, role }) {
   );
   const leading = split.leading;
   const problems = [];
+  if (preface.some((item) => item.kind !== "text")) {
+    problems.push(
+      `一级标题 "# ${heading.text}" 之前只能写一句过程说明, 不能有代码块或其它标题.`,
+    );
+  }
   if (leading.length > 0) {
     problems.push(
       `一级标题与 "## ${spec.format.progressTitle}" 之间不能有其它内容.`,

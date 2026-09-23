@@ -14,6 +14,7 @@ import {
   commitPaths,
   createTemporaryRepository,
   initializeProject,
+  replySkeleton,
   runCommand,
   runGit,
 } from "./helpers.mjs";
@@ -35,6 +36,12 @@ const EXECUTOR = "session-executor";
  * @type {string}
  */
 const FILLER = "已填写的内容";
+
+/**
+ * 测试用的代码检查命令.
+ * @type {string}
+ */
+const CODE_CHECK_COMMAND = "npm run lint";
 
 /**
  * 推进路线草稿.
@@ -96,6 +103,20 @@ function projectTest(name, body) {
 }
 
 /**
+ * 登记代码检查命令.
+ *
+ * @param {{root: string, project: (args: readonly string[]) => {status: number | null, stdout: string}}} context 测试上下文.
+ * @returns {void}
+ */
+function registerCodeCheck({ root, project }) {
+  const draft = writeDraft(root, "codecheck.json", {
+    commands: [CODE_CHECK_COMMAND],
+  });
+  const result = project(["codecheck", "set", "--from", draft]);
+  assert.equal(result.status, 0, result.stdout);
+}
+
+/**
  * 建立推进路线并发布第一张工单, 返回工单文件夹的绝对路径.
  *
  * @param {{root: string, project: (args: readonly string[]) => {status: number | null, stdout: string}, hook: (input: Record<string, unknown>) => {status: number | null, output: any}}} context 测试上下文.
@@ -106,6 +127,7 @@ function issueFirstOrder({ root, project, hook }) {
   const draft = writeDraft(root, "roadmap.json", ROADMAP_DRAFT);
   assert.equal(project(["roadmap", "--from", draft]).status, 0);
   assert.equal(project(["slice", "0001", "active"]).status, 0);
+  registerCodeCheck({ root, project });
   const created = project([
     "order",
     "new",
@@ -137,7 +159,7 @@ projectTest("流程: 路线与工单发布, 回复骨架带启动提示词", (co
   const { root, project, hook } = context;
   issueFirstOrder(context);
   assert.ok(existsSync(path.join(root, ".navigator", "plan", "roadmap.md")));
-  const reply = project(["reply", "order"]).stdout;
+  const reply = replySkeleton(project(["reply", "order"]).stdout);
   assert.match(reply, /^```markdown$/mu);
   assert.match(reply, /执行工单 0001\./u);
   const accepted = hook({
@@ -191,7 +213,7 @@ projectTest("流程: 执行会话登记, 对齐, 回执, 验收与提交", (cont
     "deny",
     "对齐之前不能写业务文件",
   );
-  const alignment = fill(project(["reply", "align"]).stdout);
+  const alignment = fill(replySkeleton(project(["reply", "align"]).stdout));
   assert.equal(
     hook({
       session_id: EXECUTOR,
@@ -276,6 +298,116 @@ projectTest("流程: 执行会话登记, 对齐, 回执, 验收与提交", (cont
   assert.match(after, /对账结果: 一致/u);
   assert.match(after, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));
 });
+
+projectTest(
+  "流程: 开工对齐前有一句过程说明时, 用户选 A 后可以写业务文件",
+  (context) => {
+    const { root, project, hook } = context;
+    issueFirstOrder(context);
+    const launchPrompt = /```markdown\n([\s\S]*?)\n```/u.exec(
+      project(["reply", "order"]).stdout,
+    )?.[1];
+    hook({
+      session_id: EXECUTOR,
+      hook_event_name: "UserPromptSubmit",
+      prompt: launchPrompt,
+    });
+    const alignment = `对账相符, 计划已做完, 下面是开工对齐.\n\n---\n\n${fill(replySkeleton(project(["reply", "align"]).stdout))}`;
+    assert.equal(
+      hook({
+        session_id: EXECUTOR,
+        hook_event_name: "Stop",
+        last_assistant_message: alignment,
+      }).output,
+      undefined,
+      "标题前的过程说明不打回",
+    );
+    hook({
+      session_id: EXECUTOR,
+      hook_event_name: "UserPromptSubmit",
+      prompt: "A",
+    });
+    assert.equal(
+      hook({
+        session_id: EXECUTOR,
+        hook_event_name: "PreToolUse",
+        tool_name: "Write",
+        tool_input: {
+          file_path: path.join(root, "src", "app.js"),
+          content: "",
+        },
+      }).output,
+      undefined,
+      "对齐已被识别, 可以写业务文件",
+    );
+  },
+);
+
+projectTest(
+  "流程: 实现工单必须带代码检查判据, 检查命令算作已授权测试",
+  ({ root, project, hook }) => {
+    assert.equal(project(["stage", "5"]).status, 0);
+    const draft = writeDraft(root, "roadmap.json", ROADMAP_DRAFT);
+    assert.equal(project(["roadmap", "--from", draft]).status, 0);
+    assert.equal(project(["slice", "0001", "active"]).status, 0);
+    assert.equal(
+      project([
+        "order",
+        "new",
+        "--kind",
+        "implementation",
+        "--slug",
+        "export-csv",
+        "--slice",
+        "0001",
+      ]).status,
+      0,
+    );
+    const orderFile = path.join(
+      root,
+      ".navigator",
+      "orders",
+      "0001-export-csv",
+      "order.md",
+    );
+    mkdirSync(path.dirname(orderFile), { recursive: true });
+    const writeOrder = () =>
+      writeFileSync(
+        orderFile,
+        fill(project(["template", "order"]).stdout),
+        "utf8",
+      );
+    writeOrder();
+    const unregistered = project(["order", "set", "issued"]);
+    assert.equal(unregistered.status, 1);
+    assert.match(unregistered.stdout, /codecheck set/u);
+    registerCodeCheck({ root, project });
+    const missing = project(["order", "set", "issued"]);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stdout, /缺少代码检查判据/u);
+    writeOrder();
+    assert.equal(project(["order", "set", "issued"]).status, 0);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    assert.match(
+      project(["review-brief"]).stdout,
+      new RegExp(`已授权测试: ${CODE_CHECK_COMMAND}`, "u"),
+    );
+    for (const toolName of ["Bash", "PowerShell"]) {
+      assert.equal(
+        hook({
+          session_id: ORCHESTRATOR,
+          agent_id: "agent-reviewer",
+          agent_type: "waypoint:navigator-reviewer",
+          hook_event_name: "PreToolUse",
+          tool_name: toolName,
+          tool_input: { command: CODE_CHECK_COMMAND },
+        }).output,
+        undefined,
+        `验收子代理可以用 ${toolName} 运行代码检查`,
+      );
+    }
+  },
+);
 
 projectTest(
   "流程: 读取工单文件的会话登记为执行会话, 编排会话不会被登记",

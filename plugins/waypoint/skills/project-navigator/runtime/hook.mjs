@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { RESEARCH_FRAME, buildReviewBrief } from "./lib/briefs.mjs";
+import { orderTestCommands } from "./lib/code-checks.mjs";
 import {
   ALIGNMENT_REPLY_TYPE,
   applyAlignmentAnswer,
@@ -27,7 +28,6 @@ import {
   registerExecutor,
 } from "./lib/executors.mjs";
 import { WRITE_TOOLS, decideToolUse } from "./lib/guard.mjs";
-import { parseMarkdown } from "./lib/markdown.mjs";
 import {
   NAVIGATOR_DIRECTORY,
   findWorktreeRoot,
@@ -45,7 +45,7 @@ import {
   orchestratorReminder,
   orchestratorResumeReminder,
 } from "./lib/reminders.mjs";
-import { checkReply } from "./lib/reply-checks.mjs";
+import { checkReply, locateReply } from "./lib/reply-checks.mjs";
 import { identifyRole } from "./lib/sessions.mjs";
 import { takeSnapshot } from "./lib/snapshots.mjs";
 import { findReply, loadSpec } from "./lib/spec.mjs";
@@ -53,11 +53,12 @@ import { INIT_UNINSTALLED, readState } from "./lib/state.mjs";
 import { checkWriting, formatFinding } from "./lib/writing-checks.mjs";
 
 /**
- * 回复版式不合格时, 打回原因的开头.
+ * 回复版式不合格时, 打回原因的开头. 只让模型改列出的问题: 重写整条回复
+ * 容易引入新的错误, 而重写后的回复不再校验.
  * @type {string}
  */
 const REPLY_REJECTION_HEADER =
-  "回复版式不合格. 请按以下问题修改, 然后重新输出完整回复 (先运行 reply 命令取得骨架):";
+  "回复版式不合格. 只修改下列问题, 其余内容原样保留, 然后重新输出完整回复:";
 
 /**
  * 打回原因中最多列出的写作问题条数, 避免原因过长.
@@ -182,6 +183,7 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
     role === "executor"
       ? readExecutorRecord(projectRoot, sessionId)
       : undefined;
+  const testCommands = orderTestCommands(state);
   const decision = decideToolUse({
     role,
     isSubagent: typeof input.agent_id === "string",
@@ -192,12 +194,12 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
     projectRoot,
     context: {
       orderStatus: state.order?.status,
-      authorizedTests: state.order?.authorizedTests ?? [],
+      authorizedTests: testCommands,
       ...executorGuardState(record, state),
       reviewBrief:
         state.order === null
           ? undefined
-          : buildReviewBrief({ projectRoot, order: state.order }),
+          : buildReviewBrief({ projectRoot, order: state.order, testCommands }),
       researchFrame: RESEARCH_FRAME,
     },
     readFile: (relativePath) => readProjectFile(projectRoot, relativePath),
@@ -411,7 +413,7 @@ function executorReplyProblems(
   shouldCheck,
 ) {
   const spec = loadSpec();
-  const title = replyTitle(text);
+  const title = locateReply(text).heading?.text;
   if (title === undefined || findReply(spec, title)?.role !== "executor") {
     return [];
   }
@@ -431,21 +433,6 @@ function executorReplyProblems(
     });
   }
   return problems;
-}
-
-/**
- * 取出回复的一级标题.
- *
- * @param {string} text 回复全文.
- * @returns {string | undefined} 一级标题; 第一个非空条目不是一级标题时为 undefined.
- */
-function replyTitle(text) {
-  const first = parseMarkdown(text).find(
-    (item) => !(item.kind === "text" && item.text.trim() === ""),
-  );
-  return first?.kind === "heading" && first.level === 1
-    ? first.text
-    : undefined;
 }
 
 /**

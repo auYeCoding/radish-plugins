@@ -11,7 +11,7 @@
  * - 工单: order new|set|tests, review-brief, research-brief
  * - 记录: risk, decision, change
  * - 对账: snapshots, restore <提交>, adopt
- * - 体检与规范: check [文件...], standards --from <草稿>
+ * - 体检与规范: check [文件...], standards --from <草稿>, codecheck set --from <草稿>
  *
  * enter 由技能加载时的 `!` 命令调用, 任何情况下都以退出码 0 结束, 错误写进输出,
  * 否则 Claude Code 会中止整个技能调用. 其余命令出错时以退出码 1 结束.
@@ -21,6 +21,7 @@ import { parseArgs } from "node:util";
 
 import { runBrief } from "./commands/brief.mjs";
 import { runCheck } from "./commands/check.mjs";
+import { runCodeCheck } from "./commands/codecheck.mjs";
 import { runEnter } from "./commands/enter.mjs";
 import { runInit } from "./commands/init.mjs";
 import { runOrder } from "./commands/order.mjs";
@@ -76,6 +77,7 @@ const WORKFLOW_COMMANDS = Object.freeze({
   adopt: runSnapshot,
   check: runCheck,
   standards: runStandards,
+  codecheck: runCodeCheck,
   template: runTemplate,
 });
 

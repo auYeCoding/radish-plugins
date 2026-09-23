@@ -5,6 +5,8 @@
  * 保证两边对 "节", "键值行" 与 "人类总结" 的理解完全一致.
  */
 
+import { countUnits, plainText } from "./text-units.mjs";
+
 /**
  * 键值行的格式: "- 键名: 值".
  * @type {RegExp}
@@ -107,11 +109,11 @@ export function checkSummary(block, format) {
       `最后一个代码块必须是人类总结: 语言标记为 ${format.summaryLanguage}, 首行为 "${format.summarySeparator}".`,
     ];
   }
-  const body = block.content.slice(1).join("").trim();
+  const body = block.content.slice(1).join("\n").trim();
   if (body === "") {
     return ["人类总结不能为空."];
   }
-  const length = [...body].length;
+  const length = countUnits(plainText(body));
   return length > format.summaryMaxLength
     ? [`人类总结共 ${length} 字, 超过 ${format.summaryMaxLength} 字上限.`]
     : [];

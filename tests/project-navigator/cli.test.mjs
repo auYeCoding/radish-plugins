@@ -200,6 +200,32 @@ test("命令行: reply 输出的骨架包含进展与固定选项", () => {
   }
 });
 
+test("命令行: reply 在骨架前给出填写要求, 只有编排会话的要求含写作规则", () => {
+  const repository = createTemporaryRepository();
+  try {
+    const orchestrator = runCommand(
+      PLUGIN_COMMAND,
+      ["reply", "entry"],
+      repository.root,
+    ).stdout;
+    assert.match(orchestrator, /^填写要求:/u);
+    assert.match(orchestrator, /人类总结.*不超过 \d+ 字/u);
+    assert.match(orchestrator, /以下情况会被打回/u);
+    assert.ok(
+      orchestrator.indexOf("填写要求:") < orchestrator.search(/^# 首次接入$/mu),
+    );
+    const executor = runCommand(
+      PLUGIN_COMMAND,
+      ["reply", "align"],
+      repository.root,
+    ).stdout;
+    assert.match(executor, /^填写要求:/u);
+    assert.doesNotMatch(executor, /以下情况会被打回/u);
+  } finally {
+    repository.cleanup();
+  }
+});
+
 test("命令行: reply 接受英文编号", () => {
   const repository = createTemporaryRepository();
   try {
