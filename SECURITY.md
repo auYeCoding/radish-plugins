@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest released version of each plugin in this repository receives security fixes. See the [README](README.md#updating) for how to update.
+Only the latest released version of each plugin in this repository receives security fixes. See the [README](README.en.md#updating) for how to update.
 
 ## Reporting a vulnerability
 

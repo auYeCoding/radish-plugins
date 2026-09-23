@@ -21,4 +21,4 @@
 - [ ] `npm run format:check` and `npm run validate` pass locally.
 - [ ] I tested the change in Claude Code with `claude --plugin-dir ./plugins/<plugin>`.
 - [ ] I added an entry under `Unreleased` in the affected plugin's `CHANGELOG.md`.
-- [ ] I updated both `README.md` and `README.zh-CN.md` where user-facing behavior changed.
+- [ ] I updated the Simplified Chinese and English READMEs and skill guides where user-facing behavior changed.
