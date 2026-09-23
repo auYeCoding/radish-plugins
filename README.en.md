@@ -10,16 +10,17 @@ English | [简体中文](README.md)
 
 ## Plugins
 
-| Plugin                                    | Skills                                                                                                                                                                                                                                                                                                                                                         | Docs                                          |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| [WayPoint](plugins/waypoint) (`waypoint`) | [`commit-message`](plugins/waypoint/docs/commit-message.en.md): drafts a Simplified Chinese Conventional Commits message from the actual Git changes, then commits or pushes on request.<br>[`repo-init`](plugins/waypoint/docs/repo-init.en.md): initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files. | [Plugin guide](plugins/waypoint/README.en.md) |
+| Plugin                                    | Skills                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Docs                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| [WayPoint](plugins/waypoint) (`waypoint`) | [`commit-message`](plugins/waypoint/docs/commit-message.en.md): drafts a Simplified Chinese Conventional Commits message from the actual Git changes, then commits or pushes on request.<br>[`repo-init`](plugins/waypoint/docs/repo-init.en.md): initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files.<br>[`project-navigator`](plugins/waypoint/docs/project-navigator.en.md): guides a large project from a single idea through framing, technology selection, a skeleton, and slice-by-slice delivery; it only plans and reviews, while separate sessions implement. | [Plugin guide](plugins/waypoint/README.en.md) |
 
-Select a skill name for its detailed guide. WayPoint writes commit messages and rule-file comments in Simplified Chinese.
+Select a skill name for its detailed guide. WayPoint writes commit messages, rule-file comments, and project records in Simplified Chinese.
 
 ## Requirements
 
 - [Claude Code](https://code.claude.com)
 - [Git](https://git-scm.com)
+- `project-navigator` needs [Node.js](https://nodejs.org) 22 or later.
 - Optional: [GitHub CLI](https://cli.github.com) (`gh`). `repo-init` uses it to fetch `.gitignore` templates and downloads them directly when it is not installed.
 
 ## Installation

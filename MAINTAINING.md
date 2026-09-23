@@ -6,18 +6,19 @@
 
 ## 改动同步速查表
 
-| 你改了什么                               | 还需要同步的地方                                                                                  |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| 任何中文文档                             | 对应的英文文档 (`*.en.md`), 反之亦然                                                              |
-| 技能的行为 (`SKILL.md` 或 `references/`) | 该技能的中英文文档, 插件 README 与根 README 中的简介 (若用途变化), `CHANGELOG.md` 的 `Unreleased` |
-| 技能的 `description`                     | 重新手动测试自动触发 (见 [发版前手动测试](#发版前手动测试))                                       |
-| `shared/punctuation.md`                  | 两个技能都会受影响, 两个都要测试                                                                  |
-| 新增技能                                 | 见 [新增技能](#新增技能)                                                                          |
-| 新增插件                                 | 见 [新增插件](#新增插件)                                                                          |
-| 插件的对外表现                           | 发版: 提升 `plugin.json` 中的 `version`, 否则用户收不到更新                                       |
-| CI 任务名 (`validate.yml`)               | GitHub 分支规则中的必需检查名, 否则所有 PR 都无法合并                                             |
-| 横幅图展示的内容 (如技能列表)            | 重新生成 PNG, 并在 GitHub 设置中重新上传社交预览图                                                |
-| 仓库名, 用户名, 市场名或插件名           | 见 [写死的名称与链接](#写死的名称与链接)                                                          |
+| 你改了什么                                       | 还需要同步的地方                                                                                             |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| 任何中文文档                                     | 对应的英文文档 (`*.en.md`), 反之亦然                                                                         |
+| 技能的行为 (`SKILL.md` 或 `references/`)         | 该技能的中英文文档, 插件 README 与根 README 中的简介 (若用途变化), `CHANGELOG.md` 的 `Unreleased`            |
+| 技能的 `description`                             | 重新手动测试自动触发 (见 [发版前手动测试](#发版前手动测试))                                                  |
+| `shared/punctuation.md`                          | 所有技能都会受影响, 都要测试; 还要运行 `npm run gen:docs`, 因为 `project-navigator` 的生成文档内嵌了标点规则 |
+| `project-navigator` 的规格, 运行脚本或文档源文件 | 见 [project-navigator 维护文档](plugins/waypoint/docs/project-navigator-maintaining.md#修改流程)             |
+| 新增技能                                         | 见 [新增技能](#新增技能)                                                                                     |
+| 新增插件                                         | 见 [新增插件](#新增插件)                                                                                     |
+| 插件的对外表现                                   | 发版: 提升 `plugin.json` 中的 `version`, 否则用户收不到更新                                                  |
+| CI 任务名 (`validate.yml`)                       | GitHub 分支规则中的必需检查名, 否则所有 PR 都无法合并                                                        |
+| 横幅图展示的内容 (如技能列表)                    | 重新生成 PNG, 并在 GitHub 设置中重新上传社交预览图                                                           |
+| 仓库名, 用户名, 市场名或插件名                   | 见 [写死的名称与链接](#写死的名称与链接)                                                                     |
 
 ## 文档
 
@@ -26,7 +27,7 @@
 以下文档都有中文 (默认) 与英文两份, 同一个 PR 中必须同时更新:
 
 - 根目录与每个插件目录的 `README.md` 与 `README.en.md`.
-- 每个技能的 `docs/<技能>.md` 与 `docs/<技能>.en.md`.
+- 每个技能的 `docs/<技能>.md` 与 `docs/<技能>.en.md`; 有维护文档的技能还有 `docs/<技能>-maintaining.md` 与 `docs/<技能>-maintaining.en.md`.
 - 本文 `MAINTAINING.md` 与 `MAINTAINING.en.md`.
 
 其余文档 (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`) 只写英文. 技能的 `SKILL.md` 与 `references/` 是写给 Claude 的, 用中文.
@@ -68,7 +69,8 @@
 - **共享规则放在插件级的 `shared/` 目录**, 技能用相对路径 `../../shared/<文件>` 引用. 不用 `${CLAUDE_PLUGIN_ROOT}`, 因为编辑器和 GitHub 无法解析它.
 - **技能不能引用插件目录以外的文件.** 安装时每个插件单独复制, 这类路径在用户那里会失效.
 - **`commit-message` 不调用 `repo-init`, 也不执行 `git init`**, 只提示用户先初始化.
-- **`SKILL.md` 不设置 `allowed-tools`.** 只读的 git 命令本来就免确认; `git add`, `git commit`, `git push` 保留权限确认, 作为误触发时的安全网.
+- **`SKILL.md` 不设置 `allowed-tools`.** 只读的 git 命令本来就免确认; `git add`, `git commit`, `git push` 保留权限确认, 作为误触发时的安全网. 唯一的例外是 `project-navigator`, 原因见它的 [维护文档](plugins/waypoint/docs/project-navigator-maintaining.md#设计决策).
+- **`project-navigator` 的设计决策与排查手册写在它自己的维护文档中**, 修改它之前先读 [project-navigator 维护文档](plugins/waypoint/docs/project-navigator-maintaining.md).
 - **提交消息经标准输入以 UTF-8 传给 `git commit -F -`.** Windows PowerShell 5.1 的管道默认不是 UTF-8, 需先设置 `$OutputEncoding`, 否则中文会乱码.
 - **提交消息严禁任何署名 trailer**, 这条规则不接受用户豁免.
 
@@ -144,19 +146,20 @@
 - **升级 `@anthropic-ai/claude-code` 后**, 新版校验器可能新增警告, 而 CI 以 `--strict` 运行, 警告也会导致失败. 这时要按提示修改插件文件, 而不是去掉 `--strict`.
 - **GitHub Actions** 固定到完整的提交 SHA, 并在注释中写明版本, 由 dependabot 统一升级.
 - **Node.js:** CI 使用 24; `package.json` 的 `engines` 要求 22 及以上, 因为 Claude Code 的 npm 包要求 22 及以上.
-- **提交前**运行 `npm run format` 与 `npm run validate`. CI 执行的是同样的检查.
+- **提交前**运行 `npm run format`, `npm run validate` 与 `npm test`; 改了 `project-navigator` 的规格或文档源文件时, 先运行 `npm run gen:docs`. CI 执行同样的检查, 并以 `npm run gen:docs -- --check` 确认生成文档已同步.
 
 ## 写死的名称与链接
 
 仓库迁移或改名时, 以下位置需要逐一替换. 可以用编辑器全局搜索确认没有遗漏.
 
-| 名称                                 | 出现位置                                                                                                                                                               |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 仓库地址 `auYeCoding/radish-plugins` | 两份根 README (徽章与链接), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `plugin.json` 的 `homepage` 与 `repository`, `.github/ISSUE_TEMPLATE/` 下的文件, PR 模板 |
-| 用户名 `auYeCoding`                  | `marketplace.json` 的 `owner`, `plugin.json` 的 `author`, `.github/CODEOWNERS`, `LICENSE`                                                                              |
-| 市场名 `radish-plugins`              | `marketplace.json` 的 `name`, README 中的安装, 更新与卸载命令, `CONTRIBUTING.md` 的本地测试, 横幅源文件                                                                |
-| 插件名 `waypoint`                    | `marketplace.json`, `plugin.json`, README 的插件表, 命令与版本徽章地址, `CONTRIBUTING.md` 的示例, issue 模板的示例, 横幅源文件                                         |
-| 行为准则联系邮箱                     | `CODE_OF_CONDUCT.md`                                                                                                                                                   |
+| 名称                                 | 出现位置                                                                                                                                                                                             |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 仓库地址 `auYeCoding/radish-plugins` | 两份根 README (徽章与链接), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `plugin.json` 的 `homepage` 与 `repository`, `.github/ISSUE_TEMPLATE/` 下的文件, PR 模板                               |
+| 用户名 `auYeCoding`                  | `marketplace.json` 的 `owner`, `plugin.json` 的 `author`, `.github/CODEOWNERS`, `LICENSE`                                                                                                            |
+| 市场名 `radish-plugins`              | `marketplace.json` 的 `name`, README 中的安装, 更新与卸载命令, `CONTRIBUTING.md` 的本地测试, 横幅源文件                                                                                              |
+| 插件名 `waypoint`                    | `marketplace.json`, `plugin.json`, README 的插件表, 命令与版本徽章地址, `CONTRIBUTING.md` 的示例, issue 模板的示例, 横幅源文件, `project-navigator` 守卫中的子代理与技能名 (`runtime/lib/guard.mjs`) |
+| 状态目录名 `.navigator`              | `project-navigator` 的 `runtime/lib/paths.mjs`, 放行规则 (`runtime/lib/settings.mjs`), 参考文件与文档                                                                                                |
+| 行为准则联系邮箱                     | `CODE_OF_CONDUCT.md`                                                                                                                                                                                 |
 
 ## 本地开发与测试
 
@@ -183,9 +186,11 @@
 12. 非 Git 目录中, `commit-message` 只提示先运行 `repo-init`.
 13. `repo-init` 生成的三个文件每条规则都有一行注释, 组间空一行; `git init` 后会列出待纳入的文件请你确认.
 14. 已有 `.editorconfig` 时, `repo-init` 会先询问合并还是跳过.
+15. `project-navigator`: 按其维护文档中的 [发版前手动测试](plugins/waypoint/docs/project-navigator-maintaining.md#发版前手动测试) 逐项确认.
 
 ## 已知的脆弱点
 
 - **技能争抢触发:** 用户装有其它生成提交消息的技能时, Claude 可能选错. 文档中已提示用户停用.
 - **不可见的回车符:** `.gitignore` 的 `Global/macOS` 模板有两条规则含回车符 (`Icon\r`), 部分编辑器保存时会破坏它们.
 - **Claude Code 的变化:** 新版本可能调整技能 frontmatter 的支持范围或校验规则. 升级后留意 CI 结果与技能行为.
+- **hook 的输入与输出格式:** `project-navigator` 依赖 hook 事件的字段与返回格式, 实测版本记录在其维护文档中. Claude Code 升级后运行 `npm test`, 并按维护文档重做实测.

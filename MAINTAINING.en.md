@@ -6,18 +6,19 @@ This guide is for maintainers. It lists what else needs updating when you change
 
 ## Change checklist
 
-| What you changed                                  | What else to update                                                                                                                                   |
-| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any Chinese document                              | Its English counterpart (`*.en.md`), and the other way around                                                                                         |
-| A skill's behavior (`SKILL.md` or `references/`)  | The skill's Chinese and English guides, the skill summary in the plugin and root READMEs (if its purpose changed), and `Unreleased` in `CHANGELOG.md` |
-| A skill's `description`                           | Test automatic triggering again by hand (see [Pre-release manual tests](#pre-release-manual-tests))                                                   |
-| `shared/punctuation.md`                           | Both skills are affected, so test both                                                                                                                |
-| A new skill                                       | See [Adding a skill](#adding-a-skill)                                                                                                                 |
-| A new plugin                                      | See [Adding a plugin](#adding-a-plugin)                                                                                                               |
-| Anything users will notice in a plugin            | Release it: bump `version` in `plugin.json`, or users never receive the change                                                                        |
-| The CI job name (`validate.yml`)                  | The required check name in the GitHub branch rules, or no pull request can be merged                                                                  |
-| What the banner shows, such as the skill list     | Regenerate the PNG and upload the social preview again in the GitHub settings                                                                         |
-| The repository, user, marketplace, or plugin name | See [Hard-coded names and links](#hard-coded-names-and-links)                                                                                         |
+| What you changed                                              | What else to update                                                                                                                                        |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any Chinese document                                          | Its English counterpart (`*.en.md`), and the other way around                                                                                              |
+| A skill's behavior (`SKILL.md` or `references/`)              | The skill's Chinese and English guides, the skill summary in the plugin and root READMEs (if its purpose changed), and `Unreleased` in `CHANGELOG.md`      |
+| A skill's `description`                                       | Test automatic triggering again by hand (see [Pre-release manual tests](#pre-release-manual-tests))                                                        |
+| `shared/punctuation.md`                                       | Every skill is affected, so test them all; also run `npm run gen:docs`, because the generated documents of `project-navigator` embed the punctuation rules |
+| The spec, runtime, or document sources of `project-navigator` | See the [project-navigator maintainer guide](plugins/waypoint/docs/project-navigator-maintaining.en.md#change-process)                                     |
+| A new skill                                                   | See [Adding a skill](#adding-a-skill)                                                                                                                      |
+| A new plugin                                                  | See [Adding a plugin](#adding-a-plugin)                                                                                                                    |
+| Anything users will notice in a plugin                        | Release it: bump `version` in `plugin.json`, or users never receive the change                                                                             |
+| The CI job name (`validate.yml`)                              | The required check name in the GitHub branch rules, or no pull request can be merged                                                                       |
+| What the banner shows, such as the skill list                 | Regenerate the PNG and upload the social preview again in the GitHub settings                                                                              |
+| The repository, user, marketplace, or plugin name             | See [Hard-coded names and links](#hard-coded-names-and-links)                                                                                              |
 
 ## Documentation
 
@@ -26,7 +27,7 @@ This guide is for maintainers. It lists what else needs updating when you change
 These documents exist in Chinese (the default) and English, and both must be updated in the same pull request:
 
 - `README.md` and `README.en.md` in the repository root and in every plugin directory.
-- `docs/<skill>.md` and `docs/<skill>.en.md` for every skill.
+- `docs/<skill>.md` and `docs/<skill>.en.md` for every skill, plus `docs/<skill>-maintaining.md` and `docs/<skill>-maintaining.en.md` for skills with a maintainer guide.
 - This guide, `MAINTAINING.md` and `MAINTAINING.en.md`.
 
 The other documents (`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`) are English only. A skill's `SKILL.md` and `references/` are written for Claude, in Chinese.
@@ -68,7 +69,8 @@ Each of these decisions has a concrete reason. Understand it before changing it:
 - **Shared rules live in the plugin-level `shared/` directory**, and skills reference them with relative paths such as `../../shared/<file>`. `${CLAUDE_PLUGIN_ROOT}` is not used because editors and GitHub cannot resolve it.
 - **Skills never reference files outside their plugin directory.** Each plugin is copied on its own at install time, so such paths break for users.
 - **`commit-message` never calls `repo-init` or runs `git init`.** It only tells the user to initialize the repository first.
-- **`SKILL.md` does not set `allowed-tools`.** Read-only git commands need no approval anyway, and keeping the permission prompt for `git add`, `git commit`, and `git push` is a safety net against accidental triggering.
+- **`SKILL.md` does not set `allowed-tools`.** Read-only git commands need no approval anyway, and keeping the permission prompt for `git add`, `git commit`, and `git push` is a safety net against accidental triggering. The only exception is `project-navigator`; see its [maintainer guide](plugins/waypoint/docs/project-navigator-maintaining.en.md#design-decisions) for why.
+- **The design decisions and troubleshooting for `project-navigator` live in its own maintainer guide.** Read the [project-navigator maintainer guide](plugins/waypoint/docs/project-navigator-maintaining.en.md) before changing it.
 - **Commit messages reach `git commit -F -` through standard input as UTF-8.** Pipes in Windows PowerShell 5.1 are not UTF-8 by default, so `$OutputEncoding` must be set first or Chinese text is garbled.
 - **Commit messages never carry authorship trailers**, and users cannot opt out of this rule.
 
@@ -144,19 +146,20 @@ These settings live on GitHub, not in the repository files. Check them whenever 
 - **After upgrading `@anthropic-ai/claude-code`**, the new validator may report new warnings. CI runs with `--strict`, so warnings fail the build. Fix the plugin files as reported instead of dropping `--strict`.
 - **GitHub Actions** are pinned to full commit SHAs with the version in a comment, and dependabot upgrades them.
 - **Node.js:** CI uses version 24. `engines` in `package.json` requires 22 or later, because the Claude Code npm package does.
-- **Before committing**, run `npm run format` and `npm run validate`. CI runs the same checks.
+- **Before committing**, run `npm run format`, `npm run validate`, and `npm test`. After changing the spec or document sources of `project-navigator`, run `npm run gen:docs` first. CI runs the same checks, and confirms with `npm run gen:docs -- --check` that the generated documents are in sync.
 
 ## Hard-coded names and links
 
 When the repository moves or something is renamed, replace every occurrence below. A project-wide search in your editor confirms nothing is missed.
 
-| Name                                   | Where it appears                                                                                                                                                                                        |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository `auYeCoding/radish-plugins` | Both root READMEs (badges and links), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `homepage` and `repository` in `plugin.json`, the files in `.github/ISSUE_TEMPLATE/`, the pull request template |
-| User `auYeCoding`                      | `owner` in `marketplace.json`, `author` in `plugin.json`, `.github/CODEOWNERS`, `LICENSE`                                                                                                               |
-| Marketplace `radish-plugins`           | `name` in `marketplace.json`, the install, update, and uninstall commands in the READMEs, local testing in `CONTRIBUTING.md`, the banner source                                                         |
-| Plugin `waypoint`                      | `marketplace.json`, `plugin.json`, the plugin table, commands, and version badge URL in the READMEs, examples in `CONTRIBUTING.md`, examples in the issue forms, the banner source                      |
-| Code of Conduct contact email          | `CODE_OF_CONDUCT.md`                                                                                                                                                                                    |
+| Name                                   | Where it appears                                                                                                                                                                                                                                                            |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository `auYeCoding/radish-plugins` | Both root READMEs (badges and links), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `homepage` and `repository` in `plugin.json`, the files in `.github/ISSUE_TEMPLATE/`, the pull request template                                                                     |
+| User `auYeCoding`                      | `owner` in `marketplace.json`, `author` in `plugin.json`, `.github/CODEOWNERS`, `LICENSE`                                                                                                                                                                                   |
+| Marketplace `radish-plugins`           | `name` in `marketplace.json`, the install, update, and uninstall commands in the READMEs, local testing in `CONTRIBUTING.md`, the banner source                                                                                                                             |
+| Plugin `waypoint`                      | `marketplace.json`, `plugin.json`, the plugin table, commands, and version badge URL in the READMEs, examples in `CONTRIBUTING.md`, examples in the issue forms, the banner source, the subagent and skill names in the `project-navigator` guard (`runtime/lib/guard.mjs`) |
+| State directory `.navigator`           | `runtime/lib/paths.mjs` of `project-navigator`, the allow rules (`runtime/lib/settings.mjs`), its references and guides                                                                                                                                                     |
+| Code of Conduct contact email          | `CODE_OF_CONDUCT.md`                                                                                                                                                                                                                                                        |
 
 ## Local development and testing
 
@@ -183,9 +186,11 @@ Before a release, confirm each item in a temporary directory:
 12. In a directory that is not a Git repository, `commit-message` only suggests running `repo-init`.
 13. Every rule in the three files from `repo-init` has a one-line comment and groups are separated by a blank line; after `git init`, it lists the files to track and asks you to confirm.
 14. With an existing `.editorconfig`, `repo-init` asks whether to merge or skip.
+15. `project-navigator`: confirm each item of the [pre-release manual tests](plugins/waypoint/docs/project-navigator-maintaining.en.md#pre-release-manual-tests) in its maintainer guide.
 
 ## Known fragile points
 
 - **Competing skills:** if users have another skill that writes commit messages, Claude may pick the wrong one. The guides tell users to disable such skills.
 - **Invisible carriage returns:** two rules in the `Global/macOS` `.gitignore` template contain a carriage return (`Icon\r`), and some editors break them when saving.
 - **Changes in Claude Code:** new versions may change which skill frontmatter fields are supported or how validation works. Watch CI results and skill behavior after upgrading.
+- **Hook input and output formats:** `project-navigator` relies on the fields and return formats of hook events, and its maintainer guide records the version they were measured on. After upgrading Claude Code, run `npm test` and repeat the measurements described in that guide.

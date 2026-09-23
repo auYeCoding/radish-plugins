@@ -1,0 +1,752 @@
+{
+  "version": 1,
+  "format": {
+    "titleLength": 4,
+    "keyLength": 4,
+    "numberWidth": 4,
+    "summaryMaxLength": 80,
+    "summarySeparator": "<- ++++++++++ ->",
+    "summaryLanguage": "text",
+    "launchPromptLanguage": "markdown",
+    "emptyValue": "无",
+    "progressTitle": "当前进展",
+    "progressKeys": ["当前阶段", "当前里程", "当前切片", "当前工单"]
+  },
+  "writing": {
+    "structure": { "label": "结构不符", "severity": "problem" },
+    "sentence": {
+      "label": "句子过长",
+      "severity": "problem",
+      "maxLength": 40,
+      "hintLength": 20
+    },
+    "paragraph": { "label": "段落过长", "severity": "problem", "maxLines": 4 },
+    "listLength": { "label": "列表过长", "severity": "problem", "maxItems": 7 },
+    "listDepth": { "label": "列表过深", "severity": "problem", "maxDepth": 2 },
+    "bold": { "label": "加粗过多", "severity": "hint", "maxPerSection": 3 },
+    "particle": {
+      "label": "的字过多",
+      "severity": "hint",
+      "character": "的",
+      "maxPerPhrase": 2
+    },
+    "jargon": {
+      "label": "黑话用词",
+      "severity": "problem",
+      "words": [
+        "赋能",
+        "抓手",
+        "闭环",
+        "打通",
+        "沉淀",
+        "颗粒度",
+        "心智",
+        "底层逻辑",
+        "顶层设计",
+        "组合拳",
+        "拉通",
+        "倒逼",
+        "反哺",
+        "护城河",
+        "飞轮",
+        "势能",
+        "赛道",
+        "深耕",
+        "丝滑",
+        "无缝"
+      ]
+    },
+    "metaphor": {
+      "label": "比喻用词",
+      "severity": "problem",
+      "words": [
+        "就像",
+        "好比",
+        "犹如",
+        "仿佛",
+        "如同",
+        "宛如",
+        "比作",
+        "打个比方"
+      ]
+    },
+    "translationese": {
+      "label": "翻译腔调",
+      "severity": "hint",
+      "patterns": [
+        {
+          "pattern": "进行了?\\p{Script=Han}{2}",
+          "advice": "去掉 \"进行\", 直接用后面的动词."
+        },
+        {
+          "pattern": "[作做]出了?(决定|改进|调整|修改|选择|判断|回应)",
+          "advice": "去掉 \"作出\", 直接用后面的动词."
+        },
+        {
+          "pattern": "对于[^,.;:!?]{1,20}来说",
+          "advice": "去掉 \"对于...来说\", 直接说对象."
+        },
+        {
+          "pattern": "在[^,.;:!?]{1,20}的情况下",
+          "advice": "把 \"在...的情况下\" 改为 \"如果...\"."
+        },
+        {
+          "pattern": "通过[^,.;:!?]{1,20}的方式",
+          "advice": "把 \"通过...的方式\" 改为 \"用...\"."
+        }
+      ]
+    },
+    "pronoun": {
+      "label": "指代不明",
+      "severity": "problem",
+      "patterns": [
+        "^它们?",
+        "^其(?![中它他余实次])",
+        "^此(?![外前后时])",
+        "^[这那](是|样|就|会|也|里)"
+      ]
+    },
+    "table": { "label": "表格未齐", "severity": "hint" },
+    "length": {
+      "label": "篇幅过长",
+      "severity": "hint",
+      "maxReplyLines": 60,
+      "maxFileLines": 200
+    }
+  },
+  "stages": ["盘点", "立项", "主线", "选型", "骨架", "切片", "收尾"],
+  "processTerms": [
+    [
+      "编排会话",
+      "调用本技能的会话: 规划, 记录, 发布工单, 组织验收, 不写业务代码"
+    ],
+    [
+      "执行会话",
+      "用户新开并粘贴启动提示词的会话: 按一张工单写代码, 测试, 写回执"
+    ],
+    ["阶段", "项目推进的七个大步: 盘点, 立项, 主线, 选型, 骨架, 切片, 收尾"],
+    ["主线", "使用者完成核心任务的最短操作路径"],
+    ["骨架", "能把主线从头跑到尾的最小可运行版本, 是第一个切片"],
+    ["里程", "一组切片完成后可以演示的成果, 结束时做一次复查"],
+    ["切片", "从界面到数据贯通的一段使用者可见的功能, 做完即可运行"],
+    [
+      "工单",
+      "交给执行会话的一项任务: 一个使用者可见的行为变化, 或一个选型问题"
+    ],
+    ["判据", "工单完成的检验条件, 每条都能单独验证"],
+    ["回执", "执行会话完成或受阻后的汇报, 存在工单文件夹的 receipt.md"],
+    ["开工对齐", "执行会话动手之前复述目标与计划, 由用户确认"],
+    ["验收", "验收子代理逐条核对判据, 再由用户亲手验证"],
+    ["对账", "比较记录中的提交, 当前提交与记录文件的快照, 发现回退或手工改动"],
+    ["快照", "记录文件的备份, 存在 Git 的隐藏引用中, 不进入分支历史"],
+    ["体检", "检查记录文件是否冗长, 是否好懂"]
+  ],
+  "replies": {
+    "初始设置": {
+      "id": "setup",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "检查结果",
+          "keys": ["版本控制", "运行环境", "初始标记", "防护配置"]
+        },
+        { "title": "设置内容", "keys": ["状态目录", "防护配置", "初始标记"] }
+      ],
+      "optionSets": [
+        {
+          "title": "是否设置",
+          "choices": ["开始设置, 安装防护.", "暂不设置, 稍后再来."]
+        },
+        { "title": "如何继续", "choices": ["已经完成, 重新检查."] }
+      ]
+    },
+    "首次接入": {
+      "id": "entry",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "仓库情况", "keys": ["版本控制", "已有代码", "初始需求"] }
+      ],
+      "optionSets": [
+        {
+          "title": "如何开始",
+          "choices": ["新建项目, 从立项开始.", "已有项目, 从盘点开始."]
+        }
+      ]
+    },
+    "恢复进度": {
+      "id": "resume",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "上次位置", "keys": ["最后动作", "记录时间"] },
+        { "title": "期间变化", "keys": ["对账结果", "新增提交", "新增回执"] },
+        { "title": "后续操作", "keys": ["下一动作"] }
+      ],
+      "optionSets": [
+        {
+          "title": "如何继续",
+          "choices": ["按照计划, 继续推进.", "暂不继续, 稍后再来."]
+        }
+      ]
+    },
+    "需求理解": {
+      "id": "understanding",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "原话摘录" },
+        { "title": "我的假设" },
+        { "title": "调研方向" }
+      ],
+      "optionSets": [
+        {
+          "title": "是否准确",
+          "choices": ["理解准确, 开始调研.", "有所偏差, 请指出来."]
+        }
+      ]
+    },
+    "调研报告": {
+      "id": "research",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "报告文件", "keys": ["文件路径", "来源数量", "选型问题"] },
+        { "title": "已知事实" },
+        { "title": "关键假设" },
+        { "title": "未知事项" }
+      ],
+      "optionSets": [
+        {
+          "title": "是否相符",
+          "choices": ["认知相符, 开始讨论.", "有所出入, 指出哪条."]
+        }
+      ]
+    },
+    "头脑风暴": {
+      "id": "brainstorm",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "本轮角度", "keys": ["角度序号", "角度名称", "所处阶段"] },
+        { "title": "本轮问题" },
+        { "title": "我的点子", "keys": ["点子内容", "请你评价"] }
+      ],
+      "optionSets": [
+        {
+          "title": "如何回答",
+          "choices": ["按照编号, 逐条回答.", "本题跳过, 说明原因."]
+        },
+        {
+          "title": "是否收敛",
+          "choices": ["开始收敛, 整理结论.", "继续发散, 换个角度."]
+        }
+      ]
+    },
+    "产出确认": {
+      "id": "confirm",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "产出文件", "keys": ["文件路径", "文件内容", "条目数量"] },
+        { "title": "内容要点" }
+      ],
+      "optionSets": [
+        {
+          "title": "是否确认",
+          "choices": ["确认无误, 继续推进.", "需要修改, 请提需求."]
+        }
+      ]
+    },
+    "规范对照": {
+      "id": "standards",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "对照结果", "keys": ["一致条目", "单方独有", "互相矛盾"] },
+        { "title": "本轮条目" }
+      ],
+      "optionSets": [
+        {
+          "title": "如何回答",
+          "choices": ["按照编号, 逐条回答.", "全部采用, 插件默认."]
+        },
+        {
+          "title": "是否纳入",
+          "choices": ["全部纳入, 写入规范.", "按照编号, 逐条决定."]
+        },
+        {
+          "title": "注释语言",
+          "choices": [
+            "中文注释, 默认选项.",
+            "英文注释, 改用英文.",
+            "其它语言, 直接写明."
+          ]
+        }
+      ]
+    },
+    "工单发布": {
+      "id": "order",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "工单概况",
+          "keys": ["文件路径", "任务目标", "判据数量", "计划要求"]
+        },
+        { "title": "后续操作", "allowLaunchPrompt": true }
+      ],
+      "optionSets": [
+        {
+          "title": "如何继续",
+          "choices": ["已发工单, 等待回执.", "修改工单, 请提需求."]
+        }
+      ]
+    },
+    "测试授权": {
+      "id": "test-auth",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "测试内容", "keys": ["测试命令", "外部影响", "所需条件"] }
+      ],
+      "optionSets": [
+        {
+          "title": "测试边界",
+          "choices": ["授权执行, 由我运行.", "提供命令, 你来运行."]
+        }
+      ]
+    },
+    "验收报告": {
+      "id": "review",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "验收结论", "keys": ["总体结论", "判据通过", "回执来源"] },
+        { "title": "判据核对" },
+        {
+          "title": "专项检查",
+          "keys": [
+            "回执一致",
+            "接线核查",
+            "范围核查",
+            "测试改动",
+            "测试运行",
+            "规范核查"
+          ]
+        },
+        { "title": "人工验收" }
+      ],
+      "optionSets": [
+        {
+          "title": "人工验收",
+          "choices": ["全部符合, 验收通过.", "发现问题, 描述现象."]
+        },
+        {
+          "title": "如何处理",
+          "choices": ["修复工单, 立即发布.", "暂不修复, 说明原因."]
+        },
+        {
+          "title": "如何处理",
+          "choices": ["重新拆分, 调整切片.", "暂不修复, 说明原因."]
+        }
+      ]
+    },
+    "确认提交": {
+      "id": "commit",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "提交内容", "keys": ["业务改动", "记录改动", "当前分支"] }
+      ],
+      "optionSets": [
+        {
+          "title": "提交方式",
+          "choices": [
+            "只做提交, 暂不推送.",
+            "提交之后, 立即推送.",
+            "转交 commit-message."
+          ]
+        }
+      ]
+    },
+    "受阻处理": {
+      "id": "blocked",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "受阻原因",
+          "keys": ["受阻类型", "规格原文", "实际情况", "证据位置", "影响判据"]
+        }
+      ],
+      "optionSets": [
+        {
+          "title": "如何处理",
+          "choices": [
+            "修改工单, 重新发布.",
+            "先做调研, 再定方案.",
+            "调整范围, 进入变更."
+          ]
+        },
+        {
+          "title": "如何处理",
+          "choices": ["拆分工单, 重新发布.", "保持原样, 说明原因."]
+        },
+        {
+          "title": "如何处理",
+          "choices": ["操作完成, 继续执行.", "暂不操作, 说明原因."]
+        },
+        {
+          "title": "如何处理",
+          "choices": ["按照编号, 逐条回答.", "转为变更, 重新评估."]
+        }
+      ]
+    },
+    "验收异常": {
+      "id": "anomaly",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "对账结果",
+          "keys": ["异常类型", "记录提交", "当前提交", "差异提交"]
+        },
+        { "title": "影响范围", "keys": ["涉及工单", "涉及切片", "可用快照"] }
+      ],
+      "optionSets": [
+        {
+          "title": "如何对齐",
+          "choices": [
+            "回退记录, 对齐仓库.",
+            "自行恢复, 对齐记录.",
+            "重新盘点, 重建记录."
+          ]
+        },
+        {
+          "title": "如何对齐",
+          "choices": ["纳入记录, 继续推进.", "忽略提交, 继续推进."]
+        },
+        {
+          "title": "如何对齐",
+          "choices": ["保留现状, 纳入记录.", "恢复快照, 撤销改动."]
+        }
+      ]
+    },
+    "需求变更": {
+      "id": "change",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "变更内容",
+          "keys": ["变更编号", "变更描述", "变更原因", "提出来源"]
+        },
+        {
+          "title": "影响分析",
+          "keys": ["简报影响", "路径影响", "决策影响", "切片影响", "工单影响"]
+        }
+      ],
+      "optionSets": [
+        {
+          "title": "如何处理",
+          "choices": [
+            "接受变更, 更新记录.",
+            "延后处理, 列入后续.",
+            "放弃变更, 记录原因."
+          ]
+        }
+      ]
+    },
+    "里程复查": {
+      "id": "milestone",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "里程成果", "keys": ["完成切片", "运行方式", "版本提交"] },
+        { "title": "简报对照" },
+        {
+          "title": "偏离检查",
+          "keys": ["范围偏离", "约束偏离", "新增风险", "文档体检"]
+        },
+        { "title": "复盘要点", "keys": ["有效做法", "改进事项"] }
+      ],
+      "optionSets": [
+        {
+          "title": "如何推进",
+          "choices": ["继续推进, 开始下一里程.", "调整计划, 先走变更流程."]
+        }
+      ]
+    },
+    "项目收尾": {
+      "id": "closing",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "总体验收" },
+        {
+          "title": "项目统计",
+          "keys": ["里程数量", "切片数量", "工单数量", "变更数量"]
+        },
+        { "title": "复盘要点", "keys": ["有效做法", "改进事项", "遗留事项"] }
+      ],
+      "optionSets": [
+        {
+          "title": "是否收尾",
+          "choices": ["确认收尾, 项目完成.", "继续迭代, 新开里程."]
+        }
+      ]
+    },
+    "体检报告": {
+      "id": "checkup",
+      "role": "orchestrator",
+      "sections": [
+        { "title": "体检范围", "keys": ["文件数量", "脚本检查", "语义检查"] },
+        { "title": "问题清单" },
+        { "title": "分类统计" }
+      ],
+      "optionSets": [
+        {
+          "title": "如何处理",
+          "choices": ["逐条修正, 更新文档.", "暂不修正, 记录在案."]
+        }
+      ]
+    },
+    "运行受阻": {
+      "id": "halted",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "受阻情况",
+          "keys": ["受阻操作", "受阻原因", "原始提示", "影响范围"]
+        },
+        { "title": "处理办法" }
+      ],
+      "optionSets": [
+        {
+          "title": "如何继续",
+          "choices": ["已经处理, 重新尝试.", "暂停编排, 稍后再来."]
+        }
+      ]
+    },
+    "开工对齐": {
+      "id": "align",
+      "role": "executor",
+      "sections": [
+        { "title": "目标复述", "keys": ["目标理解", "注释语言"] },
+        { "title": "对账结果", "keys": ["基准提交", "改动状态", "工单状态"] },
+        { "title": "前提核对" },
+        { "title": "执行计划" }
+      ],
+      "optionSets": [
+        { "title": "对齐完成", "choices": ["继续执行.", "描述问题."] }
+      ]
+    },
+    "执行完成": {
+      "id": "done",
+      "role": "executor",
+      "sections": [
+        { "title": "完成情况", "keys": ["判据自检", "改动文件", "测试结果"] },
+        { "title": "偏差记录", "keys": ["实现决定", "需要操作", "发现风险"] }
+      ],
+      "optionSets": [
+        {
+          "title": "执行完成",
+          "choices": ["文档汇报, 写入回执文件.", "消息汇报, 发给编排会话."]
+        }
+      ]
+    },
+    "执行受阻": {
+      "id": "stuck",
+      "role": "executor",
+      "sections": [
+        {
+          "title": "受阻原因",
+          "keys": ["受阻类型", "规格原文", "实际情况", "证据位置", "影响判据"]
+        },
+        { "title": "已做工作", "keys": ["完成部分", "改动文件"] }
+      ],
+      "optionSets": [
+        {
+          "title": "执行受阻",
+          "choices": ["文档汇报, 写入回执文件.", "消息汇报, 发给编排会话."]
+        }
+      ]
+    }
+  },
+  "files": {
+    "order": {
+      "pattern": ".navigator/orders/*/order.md",
+      "title": "执行工单",
+      "hasProgress": true,
+      "sections": [
+        {
+          "title": "工单概况",
+          "keys": [
+            "任务目标",
+            "背景原因",
+            "完成标志",
+            "计划要求",
+            "基准提交",
+            "编排会话",
+            "回执路径"
+          ]
+        },
+        { "title": "执行守则" },
+        { "title": "前提假设" },
+        { "title": "工作范围", "keys": ["要做的事", "不做的事"] },
+        { "title": "验收判据" },
+        { "title": "相关材料" },
+        { "title": "执行流程" }
+      ]
+    },
+    "receipt": {
+      "pattern": ".navigator/orders/*/receipt.md",
+      "title": "工单回执",
+      "hasProgress": true,
+      "variants": [
+        [
+          {
+            "title": "回执概况",
+            "keys": ["执行状态", "汇报方式", "基准提交", "完成时间"]
+          },
+          { "title": "开工核对" },
+          { "title": "判据自检" },
+          { "title": "改动清单" },
+          { "title": "测试记录", "keys": ["测试命令", "测试结果", "测试改动"] },
+          { "title": "运行方式", "keys": ["启动命令", "验证步骤"] },
+          {
+            "title": "偏差记录",
+            "keys": ["实现决定", "需要操作", "发现风险", "受阻详情"]
+          }
+        ],
+        [
+          {
+            "title": "回执概况",
+            "keys": ["执行状态", "汇报方式", "基准提交", "完成时间"]
+          },
+          { "title": "开工核对" },
+          { "title": "现有能力" },
+          { "title": "候选方案" },
+          { "title": "能力核实" },
+          { "title": "选型结论" },
+          { "title": "一致检查" },
+          {
+            "title": "偏差记录",
+            "keys": ["实现决定", "需要操作", "发现风险", "受阻详情"]
+          }
+        ]
+      ]
+    },
+    "review": {
+      "pattern": ".navigator/orders/*/review*.md",
+      "title": "验收记录",
+      "hasProgress": true,
+      "sections": [
+        {
+          "title": "验收结论",
+          "keys": ["总体结论", "判据通过", "回执来源", "验收轮次", "验收时间"]
+        },
+        { "title": "判据核对" },
+        {
+          "title": "专项检查",
+          "keys": [
+            "回执一致",
+            "接线核查",
+            "范围核查",
+            "测试改动",
+            "测试运行",
+            "规范核查"
+          ]
+        },
+        { "title": "人工验收", "keys": ["验收步骤", "用户结论"] },
+        { "title": "提交方式", "keys": ["用户选择"] }
+      ]
+    },
+    "brief": {
+      "pattern": ".navigator/plan/brief.md",
+      "title": "项目简报",
+      "sections": [
+        { "title": "基本信息", "keys": ["项目名称", "简报版本", "最近变更"] },
+        { "title": "问题背景", "keys": ["背景说明", "核心问题"] },
+        { "title": "使用人群", "keys": ["使用人群", "使用场景"] },
+        { "title": "成品样子" },
+        { "title": "成功指标" },
+        { "title": "范围边界", "keys": ["必须包含", "明确不做"] },
+        { "title": "硬性约束" },
+        { "title": "已知未知" }
+      ]
+    },
+    "glossary": {
+      "pattern": ".navigator/plan/glossary.md",
+      "title": "术语定义",
+      "sections": [{ "title": "流程术语" }, { "title": "项目术语" }]
+    },
+    "survey": {
+      "pattern": ".navigator/plan/survey.md",
+      "title": "现状报告",
+      "sections": [
+        {
+          "title": "盘点概况",
+          "keys": ["盘点时间", "基准提交", "源码规模", "运行检查"]
+        },
+        { "title": "已有能力" },
+        { "title": "运行情况", "keys": ["构建结果", "启动结果", "测试结果"] },
+        { "title": "目标差距" }
+      ]
+    },
+    "research": {
+      "pattern": ".navigator/plan/research.md",
+      "title": "调研报告",
+      "hasProgress": true,
+      "sections": [
+        { "title": "需求理解", "keys": ["原话摘录", "调研方向"] },
+        { "title": "同类方案" },
+        { "title": "使用人群" },
+        { "title": "行业做法" },
+        { "title": "约束风险" },
+        { "title": "关键术语" },
+        { "title": "选型问题" },
+        { "title": "结论汇总" },
+        { "title": "来源列表" }
+      ]
+    },
+    "brainstorm": {
+      "pattern": ".navigator/plan/brainstorm.md",
+      "title": "头脑风暴",
+      "sections": [
+        { "title": "记录概况", "keys": ["角度总数", "完成轮次", "所处阶段"] }
+      ],
+      "entryPattern": "^轮次 \\d{4}: .+$",
+      "closingSections": [
+        { "title": "收敛结果", "keys": ["必须要做", "明确不做", "优先验证"] }
+      ]
+    },
+    "main-flow": {
+      "pattern": ".navigator/plan/main-flow.md",
+      "title": "主线流程",
+      "sections": [
+        { "title": "场景清单" },
+        { "title": "主线步骤" },
+        { "title": "外部依赖" }
+      ]
+    },
+    "decisions": {
+      "pattern": ".navigator/plan/decisions.md",
+      "title": "决策记录",
+      "sections": [],
+      "entryPattern": "^决策 \\d{4}: .+$",
+      "entryKeys": [
+        "决策状态",
+        "批准时间",
+        "来源工单",
+        "决策内容",
+        "决策理由",
+        "可否回退",
+        "影响范围"
+      ]
+    },
+    "changes": {
+      "pattern": ".navigator/plan/changes.md",
+      "title": "变更记录",
+      "sections": [],
+      "entryPattern": "^变更 \\d{4}: .+$"
+    },
+    "milestone-reviews": {
+      "pattern": ".navigator/plan/milestone-reviews.md",
+      "title": "里程复查",
+      "sections": [],
+      "entryPattern": "^(里程 \\d{4}: .+|项目收尾)$"
+    },
+    "checkups": {
+      "pattern": ".navigator/plan/checkups.md",
+      "title": "体检记录",
+      "sections": [],
+      "entryPattern": "^体检 \\d{4}: .+$"
+    }
+  }
+}
