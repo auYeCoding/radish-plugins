@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "radish-plugins",
+  "description": "Claude Code plugins maintained by auYeCoding.",
+  "owner": {
+    "name": "auYeCoding",
+    "url": "https://github.com/auYeCoding"
+  },
+  "plugins": [
+    {
+      "name": "waypoint",
+      "source": "./plugins/waypoint"
+    }
+  ]
+}

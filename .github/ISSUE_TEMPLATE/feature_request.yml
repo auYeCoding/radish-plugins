@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest a new skill, plugin, or improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: component
+    attributes:
+      label: Plugin and component
+      description: Which plugin or skill does this relate to? Leave empty for a new plugin.
+      placeholder: waypoint / commit-message
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work from the user's point of view?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches or workarounds you have tried.

@@ -1,0 +1,2 @@
+# Normalize line endings to LF so scripts run on every platform.
+* text=auto eol=lf

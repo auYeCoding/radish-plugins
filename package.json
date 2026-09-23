@@ -1,0 +1,23 @@
+{
+  "name": "radish-plugins",
+  "private": true,
+  "description": "Development tooling for the radish-plugins Claude Code plugin marketplace.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/auYeCoding/radish-plugins.git"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "validate": "node scripts/validate.mjs"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "^2.1.280",
+    "prettier": "^3.9.9"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "waypoint",
+  "displayName": "WayPoint",
+  "version": "0.1.0",
+  "description": "Workflow skills for Claude Code.",
+  "author": {
+    "name": "auYeCoding",
+    "url": "https://github.com/auYeCoding"
+  },
+  "homepage": "https://github.com/auYeCoding/radish-plugins/tree/main/plugins/waypoint",
+  "repository": "https://github.com/auYeCoding/radish-plugins",
+  "license": "MIT",
+  "keywords": ["workflow", "git", "commit-message"]
+}

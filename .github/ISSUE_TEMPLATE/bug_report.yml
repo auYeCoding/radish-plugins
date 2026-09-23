@@ -1,0 +1,81 @@
+name: Bug report
+description: Report a plugin or skill that does not work as documented.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please search existing issues before opening a new one.
+        Do not report security vulnerabilities here; follow [SECURITY.md](https://github.com/auYeCoding/radish-plugins/blob/main/SECURITY.md) instead.
+
+  - type: input
+    id: component
+    attributes:
+      label: Plugin and component
+      description: Which plugin and which skill or other component is affected?
+      placeholder: waypoint / commit-message
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Shown in the plugin details of the `/plugin` menu.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: claude-code-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`.
+      placeholder: 2.1.280
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `/waypoint:commit-message`
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Error messages or transcript excerpts. Remove any secrets first.
+      render: text
