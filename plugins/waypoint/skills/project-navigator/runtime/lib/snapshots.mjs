@@ -37,6 +37,18 @@ export const SNAPSHOT_REF = "refs/navigator/snapshots";
 const EXCLUDED_DIRECTORIES = Object.freeze([BIN_DIRECTORY, DRAFTS_DIRECTORY]);
 
 /**
+ * 快照提交使用的固定身份. 快照只存在隐藏引用中, 不推送也不进入分支历史;
+ * 使用固定身份, 用户机器没有配置 Git 用户名与邮箱时也能拍快照.
+ * @type {Readonly<Record<string, string>>}
+ */
+const SNAPSHOT_IDENTITY_ENV = Object.freeze({
+  GIT_AUTHOR_NAME: "project-navigator",
+  GIT_AUTHOR_EMAIL: "project-navigator@localhost",
+  GIT_COMMITTER_NAME: "project-navigator",
+  GIT_COMMITTER_EMAIL: "project-navigator@localhost",
+});
+
+/**
  * 快照提交说明的格式: "snapshot <时间> head <提交>".
  * @type {RegExp}
  */
@@ -127,13 +139,17 @@ export function takeSnapshot(worktreeRoot, { now, head }) {
   ) {
     return undefined;
   }
-  const commit = runGit(worktreeRoot, [
-    "commit-tree",
-    tree,
-    ...(previous === undefined ? [] : ["-p", previous]),
-    "-m",
-    `snapshot ${now} head ${head ?? "none"}`,
-  ]);
+  const commit = runGit(
+    worktreeRoot,
+    [
+      "commit-tree",
+      tree,
+      ...(previous === undefined ? [] : ["-p", previous]),
+      "-m",
+      `snapshot ${now} head ${head ?? "none"}`,
+    ],
+    { env: SNAPSHOT_IDENTITY_ENV },
+  );
   if (commit === undefined) {
     return undefined;
   }

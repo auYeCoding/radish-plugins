@@ -61,6 +61,7 @@ Each entry states the decision, the reason, and what breaks if it changes.
 ### Reconciliation and snapshots
 
 - **Snapshots live in a hidden ref and store raw bytes (`hash-object --no-filters`).** They stay out of branch history, ignore `core.autocrlf` and `.gitattributes`, and restore byte for byte. If changed: restored files get different line endings on Windows.
+- **Snapshot commits use a fixed identity, `project-navigator`.** On a machine without a configured Git user name and email, `git commit-tree` fails and snapshots are silently skipped. If changed: reconciliation loses its basis on such machines, including CI.
 - **The `lastCommit` committed in a navigator commit equals that commit's parent.** Reconciliation recognizes its own commits this way without extra markers, which is also why `init` records the HEAD at that time. If changed: every navigator commit looks foreign.
 - **While a reconciliation anomaly is unresolved, snapshots and most commands pause.** Otherwise the next snapshot would store the anomalous content as normal. If changed: the anomaly is reported once and then silently disappears.
 
