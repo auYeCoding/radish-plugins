@@ -76,14 +76,12 @@ export function buildLaunchPrompt(order) {
  *
  * @param {object} options 生成参数.
  * @param {string} options.projectRoot 项目根目录.
- * @param {{id: string, folder: string, baseCommit: string, kind: string, authorizedTests: string[]}} options.order 当前工单.
+ * @param {{id: string, folder: string, baseCommit: string, kind: string}} options.order 当前工单.
+ * @param {readonly string[]} options.testCommands 可运行的测试命令: 代码检查命令与用户授权的测试.
  * @returns {string} 提示词全文.
  */
-export function buildReviewBrief({ projectRoot, order }) {
-  const tests =
-    order.authorizedTests.length === 0
-      ? "无"
-      : order.authorizedTests.join("; ");
+export function buildReviewBrief({ projectRoot, order, testCommands }) {
+  const tests = testCommands.length === 0 ? "无" : testCommands.join("; ");
   return [
     `# 验收委派 ${order.id}`,
     "",
@@ -103,7 +101,7 @@ export function buildReviewBrief({ projectRoot, order }) {
     `2. 回执一致: 用 git diff ${order.baseCommit} --stat 与回执的 "改动清单" 比对, 列出不一致之处.`,
     "3. 接线核查: 从程序入口追到本工单的新代码, 写出调用链经过的文件路径; 追不到即为未接线.",
     '4. 范围核查: 列出工单 "工作范围" 之外的改动.',
-    "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试.",
+    "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试, 是否放宽了代码检查的规则或加了忽略标记.",
     '6. 测试运行: 只运行 "已授权测试" 中的命令, 原样记录结果; 没有授权的测试不运行.',
     `7. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
     '8. 选型工单另查: 回执 "能力核实" 中每项关键能力是否附源码证据 (仓库地址, 版本或提交, 文件路径与行号); 缺证据的判为未验证.',

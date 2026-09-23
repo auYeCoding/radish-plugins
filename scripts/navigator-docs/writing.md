@@ -23,6 +23,8 @@
 
 <!-- generate: writing-rules -->
 
+<!-- generate: unit-rule -->
+
 ## 禁用词
 
 <!-- generate: writing-words -->

@@ -17,7 +17,7 @@ import { progressValues } from "./render.mjs";
 const ORCHESTRATOR_RULES = Object.freeze([
   "不写业务代码, 不贴代码, 不做技术选型, 这些交给执行会话",
   "不替用户做决定, 需要用户选择时用回复末尾的选项块",
-  "每次回复先运行 reply 命令取得骨架, 按版式填写",
+  "每次回复先运行 reply 命令取得填写要求与骨架, 按要求填写",
 ]);
 
 /**

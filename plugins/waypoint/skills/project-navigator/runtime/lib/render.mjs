@@ -124,6 +124,7 @@ export function renderReplySkeleton({
  * @param {number} [options.variantIndex] 使用第几种固定节序列, 从 0 开始.
  * @param {import("./state.mjs").NavigatorState | undefined} options.state 状态.
  * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
+ * @param {Readonly<Record<string, string[]>>} [options.prefills] 节标题到预填行的映射, 预填行放在占位标记之前.
  * @returns {string} 骨架文本, 以换行结尾.
  * @throws {Error} 固定节序列不存在时.
  */
@@ -132,6 +133,7 @@ export function renderFileSkeleton({
   variantIndex = 0,
   state,
   spec,
+  prefills = {},
 }) {
   const sections = (fileSpec.variants ?? [fileSpec.sections ?? []])[
     variantIndex
@@ -148,7 +150,7 @@ export function renderFileSkeleton({
       : []),
     ...sections.flatMap((section) => [
       "",
-      ...renderSection(section, spec, undefined),
+      ...renderSection(section, spec, undefined, prefills[section.title]),
     ]),
     "",
     `${CODE_FENCE}${spec.format.summaryLanguage}`,
@@ -178,14 +180,16 @@ export function renderOptionBlock(optionSet) {
 }
 
 /**
- * 生成一个节的骨架; 允许放启动提示词的节在提供了提示词时直接填好.
+ * 生成一个节的骨架; 允许放启动提示词的节在提供了提示词时直接填好;
+ * 没有键名的节可以在占位标记之前预填若干行.
  *
  * @param {import("./spec.mjs").SectionSpec} section 节规格.
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @param {string | undefined} launchPrompt 启动提示词.
+ * @param {readonly string[]} [prefill] 预填行.
  * @returns {string[]} 各行文本, 含二级标题.
  */
-function renderSection(section, spec, launchPrompt) {
+function renderSection(section, spec, launchPrompt, prefill = []) {
   if (section.allowLaunchPrompt === true && launchPrompt !== undefined) {
     return [
       `## ${section.title}`,
@@ -199,7 +203,7 @@ function renderSection(section, spec, launchPrompt) {
   }
   const body =
     section.keys === undefined
-      ? [PLACEHOLDER]
+      ? [...prefill, PLACEHOLDER]
       : section.keys.map((key) => `- ${key}: ${PLACEHOLDER}`);
   return [`## ${section.title}`, "", ...body];
 }

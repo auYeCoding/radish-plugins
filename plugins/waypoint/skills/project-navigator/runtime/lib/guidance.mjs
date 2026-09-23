@@ -53,7 +53,23 @@ export const ANOMALY_GUIDES = Object.freeze({
  * @property {boolean} hasReceipt 当前工单的回执文件是否存在.
  * @property {boolean} isNewSession 本会话是否刚刚接管编排.
  * @property {string | undefined} restoreTarget 恢复记录时建议使用的提交.
+ * @property {import("./spec.mjs").TemplateSpec} spec 模板规格, 用于写出回复类型的编号.
  */
+
+/**
+ * 写出 "回复某种类型" 这一步, 附上取骨架的命令, 编排会话不用再查编号.
+ *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {string} type 回复类型.
+ * @param {number} [optionSet] 使用第几组选项; 省略时不写.
+ * @returns {string} 例如 `回复 "验收异常", 使用第 1 组选项 (reply anomaly --option 1)`.
+ */
+export function replyStep(spec, type, optionSet) {
+  const id = spec.replies[type].id;
+  return optionSet === undefined
+    ? `回复 "${type}" (reply ${id})`
+    : `回复 "${type}", 使用第 ${optionSet} 组选项 (reply ${id} --option ${optionSet})`;
+}
 
 /**
  * 给出下一动作.
@@ -62,60 +78,63 @@ export const ANOMALY_GUIDES = Object.freeze({
  * @returns {string} 下一动作.
  */
 export function nextAction(input) {
-  const { state, reconciliation, isNewSession } = input;
+  const { state, reconciliation, isNewSession, spec } = input;
   if (Object.hasOwn(ANOMALY_GUIDES, reconciliation.kind)) {
     return anomalyAction(
+      spec,
       ANOMALY_GUIDES[reconciliation.kind],
       input.restoreTarget,
     );
   }
   if (state.stage === null) {
-    return '回复 "首次接入"';
+    return replyStep(spec, "首次接入");
   }
   if (isNewSession) {
-    return '回复 "恢复进度"';
+    return replyStep(spec, "恢复进度");
   }
   return state.order === null
     ? `继续阶段 ${state.stage} 的步骤 ${state.step}`
-    : orderAction(state.order, input.hasReceipt);
+    : orderAction(spec, state.order, input.hasReceipt);
 }
 
 /**
  * 对账异常时的下一动作.
  *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @param {{optionSet: number, followUp: string}} guide 处理方式.
  * @param {string | undefined} restoreTarget 建议恢复的提交.
  * @returns {string} 下一动作.
  */
-function anomalyAction(guide, restoreTarget) {
+function anomalyAction(spec, guide, restoreTarget) {
   const restore =
     restoreTarget === undefined
       ? "告知用户没有可用的恢复来源, 请改选其它选项"
       : `运行 restore ${shortHash(restoreTarget)}`;
-  return `回复 "验收异常", 使用第 ${guide.optionSet} 组选项; ${guide.followUp.replace(RESTORE_SLOT, restore)}`;
+  return `${replyStep(spec, "验收异常", guide.optionSet)}; ${guide.followUp.replace(RESTORE_SLOT, restore)}`;
 }
 
 /**
  * 当前有工单时, 按工单状态给出下一动作.
  *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @param {{id: string, status: string}} order 当前工单.
  * @param {boolean} hasReceipt 回执文件是否存在.
  * @returns {string} 下一动作.
  */
-function orderAction(order, hasReceipt) {
+function orderAction(spec, order, hasReceipt) {
   switch (order.status) {
     case "drafting":
-      return `写完工单 ${order.id} 的 order.md, 运行 order set issued, 再回复 "工单发布"`;
+      return `写完工单 ${order.id} 的 order.md, 运行 order set issued, 再${replyStep(spec, "工单发布")}`;
     case "issued":
       return hasReceipt
-        ? `工单 ${order.id} 已有回执: 读回执; 执行受阻时运行 order set blocked 再回复 "受阻处理"; 执行完成时, 测试需要授权就回复 "测试授权", 否则运行 order set reviewing 并派验收子代理`
+        ? `工单 ${order.id} 已有回执: 读回执; 执行受阻时运行 order set blocked 再${replyStep(spec, "受阻处理")}; 执行完成时, 测试需要授权就${replyStep(spec, "测试授权")}, 否则运行 order set reviewing 并派验收子代理`
         : `等待工单 ${order.id} 的回执: 执行会话写入回执文件, 或发来消息后由你把内容写入回执文件`;
     case "blocked":
-      return `工单 ${order.id} 受阻: 回复 "受阻处理"`;
+      return `工单 ${order.id} 受阻: ${replyStep(spec, "受阻处理")}`;
     case "reviewing":
-      return `工单 ${order.id} 验收中: 用 review-brief 的输出派验收子代理, 结论写入 review.md, 再回复 "验收报告"`;
+      return `工单 ${order.id} 验收中: 用 review-brief 的输出派验收子代理, 结论写入 review.md, 再${replyStep(spec, "验收报告")}`;
     case "accepted":
-      return `工单 ${order.id} 已通过验收: 回复 "确认提交"`;
+      return `工单 ${order.id} 已通过验收: ${replyStep(spec, "确认提交")}`;
     case "committing":
       return `工单 ${order.id} 正在提交: 确认提交完成后运行 order set committed`;
     default:

@@ -10,7 +10,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { checkEnvironment } from "../lib/environment.mjs";
-import { ANOMALY_GUIDES, nextAction } from "../lib/guidance.mjs";
+import { ANOMALY_GUIDES, nextAction, replyStep } from "../lib/guidance.mjs";
 import {
   PROBE_FILE,
   PROJECT_COMMAND_PATH,
@@ -38,6 +38,18 @@ import { readStateIfValid, saveState } from "./support.mjs";
 const SNAPSHOT_SEARCH_LIMIT = 50;
 
 /**
+ * "初始设置" 中请用户确认初始化的选项组.
+ * @type {number}
+ */
+const SETUP_OPTION = 1;
+
+/**
+ * "初始设置" 中说明环境不满足, 无法初始化的选项组.
+ * @type {number}
+ */
+const SETUP_BLOCKED_OPTION = 2;
+
+/**
  * 执行 enter 或 status 命令.
  *
  * @param {object} options 命令参数.
@@ -48,13 +60,14 @@ const SNAPSHOT_SEARCH_LIMIT = 50;
  * @returns {string[]} 输出各行.
  */
 export function runEnter({ cwd, sessionId, shouldClaim, now }) {
+  const spec = loadSpec();
   const environment = checkEnvironment(cwd);
   const nodeLine = `- 运行环境: Node.js ${environment.nodeVersion}${environment.isNodeSupported ? "" : ", 版本过低, 需要 22 或更高版本"}`;
   if (environment.repositoryRoot === undefined) {
     return [
       "- 版本控制: 当前目录不是 Git 仓库",
       nodeLine,
-      '- 下一动作: 回复 "初始设置", 使用第 2 组选项, 提示先运行 /waypoint:repo-init',
+      `- 下一动作: ${replyStep(spec, "初始设置", SETUP_BLOCKED_OPTION)}, 提示先运行 /waypoint:repo-init`,
     ];
   }
   const projectRoot = environment.repositoryRoot;
@@ -63,7 +76,7 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
     return [
       "- 初始标记: 状态文件损坏",
       nodeLine,
-      `- 下一动作: 回复 "运行受阻", 说明状态文件损坏; 用户同意后运行 snapshots 查看快照, 再运行 restore <快照>`,
+      `- 下一动作: ${replyStep(spec, "运行受阻")}, 说明状态文件损坏; 用户同意后运行 snapshots 查看快照, 再运行 restore <快照>`,
     ];
   }
   const isHookInstalled = hasAllNavigatorHooks(
@@ -80,13 +93,21 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
     isHookInstalled,
     isNodeSupported: environment.isNodeSupported,
     projectRoot,
+    spec,
   });
   if (blocker !== undefined) {
     return [...lines, `- 下一动作: ${blocker}`];
   }
   return [
     ...lines,
-    ...describeProgress({ projectRoot, state, sessionId, shouldClaim, now }),
+    ...describeProgress({
+      projectRoot,
+      state,
+      sessionId,
+      shouldClaim,
+      now,
+      spec,
+    }),
   ];
 }
 
@@ -99,10 +120,17 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
  * @param {string | undefined} options.sessionId 调用技能的会话.
  * @param {boolean} options.shouldClaim 是否写入状态.
  * @param {string} options.now 当前时间.
+ * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
  * @returns {string[]} 输出各行.
  */
-function describeProgress({ projectRoot, state, sessionId, shouldClaim, now }) {
-  const spec = loadSpec();
+function describeProgress({
+  projectRoot,
+  state,
+  sessionId,
+  shouldClaim,
+  now,
+  spec,
+}) {
   const reconciliation = reconcile(projectRoot, state);
   const isAnomaly = Object.hasOwn(ANOMALY_GUIDES, reconciliation.kind);
   const isNewSession =
@@ -150,6 +178,7 @@ function describeProgress({ projectRoot, state, sessionId, shouldClaim, now }) {
       hasReceipt,
       isNewSession: shouldClaim && isNewSession,
       restoreTarget,
+      spec,
     })}`,
   ];
 }
@@ -261,23 +290,31 @@ function describeInit(state) {
  * @param {boolean} options.isHookInstalled hook 是否已全部安装.
  * @param {boolean} options.isNodeSupported Node.js 版本是否满足要求.
  * @param {string} options.projectRoot 项目根目录.
+ * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
  * @returns {string | undefined} 下一动作; 没有问题时为 undefined.
  */
-function findBlocker({ state, isHookInstalled, isNodeSupported, projectRoot }) {
+function findBlocker({
+  state,
+  isHookInstalled,
+  isNodeSupported,
+  projectRoot,
+  spec,
+}) {
+  const setup = replyStep(spec, "初始设置", SETUP_OPTION);
   if (!isNodeSupported) {
-    return '回复 "初始设置", 使用第 2 组选项, 提示先安装 Node.js 22 或更高版本';
+    return `${replyStep(spec, "初始设置", SETUP_BLOCKED_OPTION)}, 提示先安装 Node.js 22 或更高版本`;
   }
   if (state === undefined || state.init.status === INIT_UNINSTALLED) {
-    return '回复 "初始设置", 使用第 1 组选项';
+    return setup;
   }
   if (!isHookInstalled) {
-    return '初始化不完整: 回复 "初始设置", 使用第 1 组选项, 用户选 A 后运行 init 修复';
+    return `初始化不完整: ${setup}, 用户选 A 后运行 init 修复`;
   }
   if (state.init.status === INIT_PENDING) {
     return `完成自检: 用 Write 工具写入 ${path.join(projectRoot, PROBE_FILE)} (预期被拒绝), 再运行 node ${PROJECT_COMMAND_PATH} init --verify`;
   }
   if (compareVersions(state.skillVersion, runtimeVersion()) < 0) {
-    return `项目中的运行脚本较旧 (${state.skillVersion}), 回复 "初始设置", 使用第 1 组选项, 用户选 A 后运行 init 升级`;
+    return `项目中的运行脚本较旧 (${state.skillVersion}), ${setup}, 用户选 A 后运行 init 升级`;
   }
   return undefined;
 }

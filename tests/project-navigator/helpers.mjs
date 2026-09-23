@@ -116,6 +116,16 @@ export function runCommand(command, args, cwd) {
 }
 
 /**
+ * 从 reply 命令的输出中取出骨架: 跳过前面的填写要求, 从一级标题开始.
+ *
+ * @param {string} output reply 命令的标准输出.
+ * @returns {string} 骨架.
+ */
+export function replySkeleton(output) {
+  return output.slice(output.search(/^# /mu));
+}
+
+/**
  * 在临时仓库中完成初始化与自检, 使指定会话成为编排会话.
  *
  * @param {string} root 仓库根目录.

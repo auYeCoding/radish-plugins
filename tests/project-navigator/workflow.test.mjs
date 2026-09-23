@@ -17,6 +17,7 @@ import {
   claimSession,
   isOrchestratorSession,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/sessions.mjs";
+import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { createInitialState } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs";
 import { WorkflowError } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-error.mjs";
 import {
@@ -366,13 +367,17 @@ test("下一动作: 按对账结果与工单状态给出", () => {
     hasReceipt: false,
     isNewSession: false,
     restoreTarget: undefined,
+    spec: loadSpec(),
   };
   const fresh = createInitialState({
     skillVersion: "0.1.0",
     sessionId: "s",
     now: NOW,
   });
-  assert.match(nextAction({ ...base, state: fresh }), /首次接入/u);
+  assert.match(
+    nextAction({ ...base, state: fresh }),
+    /回复 "首次接入" \(reply entry\)/u,
+  );
   const issued = stateWithIssuedOrder();
   assert.match(
     nextAction({ ...base, state: issued, isNewSession: true }),
@@ -390,7 +395,7 @@ test("下一动作: 按对账结果与工单状态给出", () => {
       reconciliation: { ...consistent, kind: "rollback" },
       restoreTarget: COMMITS.base,
     }),
-    /验收异常", 使用第 1 组选项.+restore aaaaaaa/u,
+    /验收异常", 使用第 1 组选项 \(reply anomaly --option 1\).+restore aaaaaaa/u,
   );
   assert.match(
     nextAction({

@@ -6,6 +6,7 @@
  */
 
 import { RESEARCH_FRAME, buildReviewBrief } from "../lib/briefs.mjs";
+import { orderTestCommands } from "../lib/code-checks.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import { openProject } from "./support.mjs";
 
@@ -31,6 +32,7 @@ export function runBrief({ command, cwd }) {
       return buildReviewBrief({
         projectRoot: context.projectRoot,
         order,
+        testCommands: orderTestCommands(context.state),
       }).split("\n");
     }
     default:

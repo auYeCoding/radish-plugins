@@ -73,6 +73,16 @@ test("校验: 缺少一级标题", () => {
   assert.equal(check(text).length, 1);
 });
 
+test("校验: 标题前的一句过程说明不算违规", () => {
+  const text = `自检已通过, 下面是回复.\n\n---\n\n${filledReply("首次接入")}`;
+  assert.deepEqual(check(text), []);
+});
+
+test("校验: 标题前不能有代码块", () => {
+  const text = `\`\`\`js\nconsole.log(1)\n\`\`\`\n\n${filledReply("首次接入")}`;
+  assert.ok(check(text).some((problem) => problem.includes("过程说明")));
+});
+
 test("校验: 未知的回复类型", () => {
   const text = filledReply("首次接入").replace("# 首次接入", "# 随便写写");
   assert.match(check(text)[0], /不是允许的回复类型/u);
@@ -110,6 +120,16 @@ test("校验: 人类总结超过字数上限", () => {
     `${SPEC.format.summarySeparator}\n${longSummary}`,
   );
   assert.ok(check(text).some((problem) => problem.includes("上限")));
+});
+
+test("校验: 人类总结按汉字与单词计数, 空格与标点不算", () => {
+  const summary = `${"很".repeat(SPEC.format.summaryMaxLength - 10)}, 运行 main.py, 修改 src/app.js, 然后提交.`;
+  assert.ok([...summary].length > SPEC.format.summaryMaxLength);
+  const text = filledReply("首次接入").replace(
+    `${SPEC.format.summarySeparator}\n${FILLER}`,
+    `${SPEC.format.summarySeparator}\n${summary}`,
+  );
+  assert.deepEqual(check(text), []);
 });
 
 test("校验: 缺少人类总结", () => {

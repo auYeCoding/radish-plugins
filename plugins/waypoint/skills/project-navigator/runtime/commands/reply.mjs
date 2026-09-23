@@ -1,11 +1,12 @@
 /**
- * @file reply 命令: 输出某种回复的骨架, "当前进展" 已按状态填好.
+ * @file reply 命令: 输出某种回复的填写要求与骨架, "当前进展" 已按状态填好.
  * 不带回复类型时, 列出全部回复类型及其编号与选项组数.
  */
 
 import { buildLaunchPrompt } from "../lib/briefs.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import { renderReplySkeleton } from "../lib/render.mjs";
+import { renderReplyGuide } from "../lib/reply-guide.mjs";
 import { loadSpec, resolveReplyType } from "../lib/spec.mjs";
 import { readState } from "../lib/state.mjs";
 import { renderTable } from "../lib/table.mjs";
@@ -41,7 +42,14 @@ export function runReply({ cwd, type, optionSet }) {
     spec,
     launchPrompt: order === null ? undefined : buildLaunchPrompt(order),
   });
-  return skeleton.trimEnd().split("\n");
+  return [
+    ...renderReplyGuide({
+      type: resolvedType,
+      role: spec.replies[resolvedType].role,
+      spec,
+    }),
+    ...skeleton.trimEnd().split("\n"),
+  ];
 }
 
 /**

@@ -7,9 +7,11 @@
  * - order tests --from <草稿>, 草稿格式 {"commands": ["npm test"]}
  */
 
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, renameSync } from "node:fs";
 import path from "node:path";
 
+import { issueBlocker } from "../lib/code-checks.mjs";
+import { replyStep } from "../lib/guidance.mjs";
 import { formatNumber } from "../lib/numbering.mjs";
 import { orderFilePath, projectRelativePath } from "../lib/paths.mjs";
 import { headCommit } from "../lib/repo.mjs";
@@ -32,6 +34,18 @@ import {
  * @type {number}
  */
 const RESPLIT_THRESHOLD = 2;
+
+/**
+ * "验收报告" 中发布修复工单的选项组.
+ * @type {number}
+ */
+const FIX_OPTION = 2;
+
+/**
+ * "验收报告" 中重新拆分切片的选项组.
+ * @type {number}
+ */
+const RESPLIT_OPTION = 3;
 
 /**
  * 执行 order 命令.
@@ -102,8 +116,8 @@ function createNewOrder(context, values, now) {
 }
 
 /**
- * 转换当前工单状态. 受阻后重新发布时, 先把旧回执改名归档, 避免被当成新回执;
- * 验收不通过时, 按同一切片连续不通过的次数提示使用哪组选项.
+ * 转换当前工单状态. 发布前核对代码检查判据; 受阻后重新发布时, 先把旧回执改名归档,
+ * 避免被当成新回执; 验收不通过时, 按同一切片连续不通过的次数提示使用哪组选项.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {string | undefined} status 目标状态.
@@ -115,6 +129,9 @@ function changeStatus(context, status, now) {
     throw new WorkflowError("order set 缺少目标状态.");
   }
   const order = context.state.order;
+  if (status === "issued") {
+    assertIssuable(context);
+  }
   const next = setOrderStatus(
     context.state,
     status,
@@ -130,9 +147,34 @@ function changeStatus(context, status, now) {
     lines.push(`- 旧回执已归档: ${archived}`);
   }
   if (status === "rejected") {
-    lines.push(rejectionAction(state, order?.slice ?? null));
+    lines.push(rejectionAction(context.spec, state, order?.slice ?? null));
   }
   return lines;
+}
+
+/**
+ * 核对当前工单能否发布: 会改动代码的工单必须带代码检查判据.
+ *
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @returns {void}
+ * @throws {WorkflowError} 不能发布时, 原因写明补救办法.
+ */
+function assertIssuable(context) {
+  const order = context.state.order;
+  if (order === null) {
+    return;
+  }
+  const orderFile = path.join(
+    context.projectRoot,
+    orderFilePath(order.folder, "order"),
+  );
+  const blocker = issueBlocker(
+    context.state,
+    existsSync(orderFile) ? readFileSync(orderFile, "utf8") : undefined,
+  );
+  if (blocker !== undefined) {
+    throw new WorkflowError(blocker);
+  }
 }
 
 /**
@@ -161,13 +203,14 @@ function archiveReceipt(projectRoot, folder) {
 /**
  * 验收不通过后的下一动作: 同一切片连续不通过达到阈值时重新拆分, 否则发布修复工单.
  *
+ * @param {import("../lib/spec.mjs").TemplateSpec} spec 模板规格.
  * @param {import("../lib/state.mjs").NavigatorState} state 写入后的状态.
  * @param {string | null} sliceId 工单所属切片.
  * @returns {string} 下一动作行.
  */
-function rejectionAction(state, sliceId) {
+function rejectionAction(spec, state, sliceId) {
   const count = sliceId === null ? 0 : consecutiveRejections(state, sliceId);
   return count >= RESPLIT_THRESHOLD
-    ? `- 下一动作: 切片 ${sliceId} 已连续 ${count} 次验收不通过, 回复 "验收报告", 使用第 3 组选项`
-    : '- 下一动作: 回复 "验收报告", 使用第 2 组选项; 用户选 A 后运行 order new --kind fix';
+    ? `- 下一动作: 切片 ${sliceId} 已连续 ${count} 次验收不通过, ${replyStep(spec, "验收报告", RESPLIT_OPTION)}`
+    : `- 下一动作: ${replyStep(spec, "验收报告", FIX_OPTION)}; 用户选 A 后运行 order new --kind fix`;
 }

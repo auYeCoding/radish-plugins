@@ -112,7 +112,7 @@ A requirement change can come in at any stage and returns to the same position a
 ## Round trip of a work order
 
 1. **Issue.** The orchestrator writes the work order and replies with "工单发布", which contains a launch prompt.
-2. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". It can edit business files only after you choose A.
+2. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". Its "模块划分" (module plan) section lists the modules to create and change, and what changes in the entry file; read it before you choose A. It can edit business files only after you choose A.
 3. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
    - A. Document report: the executor writes the receipt file, and you tell the orchestrator it is done.
    - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open.
@@ -120,6 +120,8 @@ A requirement change can come in at any stage and returns to the same position a
 5. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit.
 
 Work orders run strictly one at a time. If the same slice fails review twice in a row, the orchestrator suggests splitting it smaller.
+
+Every work order that changes code carries a fixed criterion, "代码检查通过" (code checks pass). The check commands are chosen during selection, using each language's established check tools with function length and complexity rules enabled. If the checks fail, the work order cannot pass review.
 
 ## What replies look like
 

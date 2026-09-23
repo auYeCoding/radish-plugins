@@ -20,6 +20,8 @@ import {
   renderOptionBlock,
 } from "../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
 import { renderTable } from "../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
+import { UNIT_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/text-units.mjs";
+import { describeWritingRules } from "../plugins/waypoint/skills/project-navigator/runtime/lib/writing-rules.mjs";
 
 /**
  * 仓库根目录的绝对路径.
@@ -122,6 +124,7 @@ const GENERATORS = Object.freeze({
   "receipt-structures": ({ spec }) => receiptStructures(spec),
   punctuation: ({ punctuation }) => punctuationRules(punctuation),
   "writing-rules": ({ spec }) => writingRulesTable(spec),
+  "unit-rule": () => [UNIT_RULE],
   "writing-words": ({ spec }) => writingWords(spec),
 });
 
@@ -240,7 +243,7 @@ function repliesDocument({ spec }) {
   return [
     "# 回复类型",
     "",
-    `每条回复都以 "# 类型" 开头, 第一节固定为 "## ${spec.format.progressTitle}", 结尾依次是一个选项块与一个人类总结块. 回复前运行 \`reply <编号> --option <组号>\` 取得骨架, 按骨架填写.`,
+    `每条回复都以 "# 类型" 开头, 第一节固定为 "## ${spec.format.progressTitle}", 结尾依次是一个选项块与一个人类总结块. 回复前运行 \`reply <编号> --option <组号>\` 取得填写要求与骨架, 按要求在骨架上填写.`,
     ...groups,
     "",
   ].join("\n");
@@ -377,20 +380,10 @@ function punctuationRules(punctuation) {
  */
 function writingRulesTable(spec) {
   const writing = spec.writing;
+  const base = describeWritingRules(writing);
   const descriptions = {
-    structure: "记录文件的标题, 节与键名不符合规格",
-    sentence: `没有标点的片段超过 ${writing.sentence.maxLength} 字; 达到 ${writing.sentence.hintLength} 字时给出提示`,
-    paragraph: `连续的普通文本超过 ${writing.paragraph.maxLines} 行`,
-    listLength: `同一层列表超过 ${writing.listLength.maxItems} 项`,
-    listDepth: `列表嵌套超过 ${writing.listDepth.maxDepth} 层`,
-    bold: `一节中加粗超过 ${writing.bold.maxPerSection} 处`,
-    particle: `一个片段中 "${writing.particle.character}" 超过 ${writing.particle.maxPerPhrase} 个`,
-    jargon: "使用黑话, 见禁用词",
-    metaphor: "使用比喻用词, 见禁用词",
-    translationese: "使用翻译腔句式, 见禁用词",
-    pronoun: '句首使用没有名词的指代词, 例如 "它", "这是"',
-    table: "表格源码的竖线没有按显示宽度对齐",
-    length: `回复超过 ${writing.length.maxReplyLines} 行, 或记录文件超过 ${writing.length.maxFileLines} 行 (只追加的记录不限)`,
+    ...base,
+    sentence: `${base.sentence}; 达到 ${writing.sentence.hintLength} 字时给出提示`,
   };
   return renderTable(
     ["类别", "级别", "规则"],

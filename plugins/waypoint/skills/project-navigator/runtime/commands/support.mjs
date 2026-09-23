@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { ANOMALY_GUIDES, replyStep } from "../lib/guidance.mjs";
 import {
   DRAFTS_DIRECTORY,
   isUnderDirectory,
@@ -42,12 +43,13 @@ export function openProject(cwd, { allowAnomaly = false } = {}) {
   if (state === undefined || state.init.status !== INIT_ACTIVE) {
     throw new WorkflowError("项目尚未完成初始化, 请先运行 init 并通过自检.");
   }
+  const spec = loadSpec();
   if (!allowAnomaly && state.pendingAnomaly !== undefined) {
     throw new WorkflowError(
-      `对账异常 "${RECONCILE_LABELS[state.pendingAnomaly] ?? state.pendingAnomaly}" 尚未处理: 先回复 "验收异常", 再按用户的选择运行 restore 或 adopt.`,
+      `对账异常 "${RECONCILE_LABELS[state.pendingAnomaly] ?? state.pendingAnomaly}" 尚未处理: 先${replyStep(spec, "验收异常", ANOMALY_GUIDES[state.pendingAnomaly]?.optionSet)}, 再按用户的选择运行 restore 或 adopt.`,
     );
   }
-  return { projectRoot, state, spec: loadSpec() };
+  return { projectRoot, state, spec };
 }
 
 /**
