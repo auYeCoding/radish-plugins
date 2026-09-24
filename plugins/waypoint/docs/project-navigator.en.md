@@ -82,7 +82,11 @@ On the first invocation, the skill checks the environment and asks whether to se
 2. Adds guard hooks and allow rules to `.claude/settings.json`, keeping your existing settings. The allow rules are also copied to the machine-local `.claude/settings.local.json`, which is not committed.
 3. Runs a self-check: it deliberately attempts one forbidden write to confirm the guard hooks are active.
 
-Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks and moving to another machine.
+Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks and moving to another machine. The skill guards against files being left out in three places:
+
+- The `.gitignore` inside `.navigator/` re-includes the plugin's files, so rules such as `lib/` or `bin/` in your project cannot leave them out.
+- On initialization and on every invocation, the skill checks the plugin's files against all of Git's ignore rules (the project's `.gitignore` files at every level, plus the machine-local and global excludes). If a rule ignores `.navigator/` as a whole, or the configuration under `.claude/`, the skill stops and names the rule, so you can change it before continuing.
+- After each work order is committed, any file under `.navigator/` or in the plugin-managed configuration that is still uncommitted is listed, and the work order is complete only after a follow-up commit.
 
 ## Roles
 

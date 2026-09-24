@@ -12,6 +12,7 @@ import path from "node:path";
 import { checkEnvironment } from "../lib/environment.mjs";
 import { ANOMALY_GUIDES, nextAction, replyStep } from "../lib/guidance.mjs";
 import {
+  NAVIGATOR_IGNORE_FILE,
   PROBE_FILE,
   PROJECT_COMMAND_PATH,
   PROJECT_SETTINGS_FILE,
@@ -21,12 +22,21 @@ import {
 } from "../lib/paths.mjs";
 import { RECONCILE_LABELS, reconcile } from "../lib/reconcile.mjs";
 import { renderProgressSection } from "../lib/render.mjs";
-import { countTrackedFiles, readGitBlob, shortHash } from "../lib/repo.mjs";
+import {
+  countTrackedFiles,
+  findIgnoredPaths,
+  readGitBlob,
+  shortHash,
+} from "../lib/repo.mjs";
 import { claimSession } from "../lib/sessions.mjs";
 import { hasAllNavigatorHooks, readSettingsFile } from "../lib/settings.mjs";
 import { listSnapshots } from "../lib/snapshots.mjs";
 import { loadSpec } from "../lib/spec.mjs";
 import { INIT_ACTIVE, INIT_PENDING, INIT_UNINSTALLED } from "../lib/state.mjs";
+import {
+  requiredTrackedPaths,
+  summarizeIgnoredPaths,
+} from "../lib/tracked-paths.mjs";
 import { compareVersions, runtimeVersion } from "../lib/version.mjs";
 import { adoptCommit } from "../lib/workflow-orders.mjs";
 import { readStateIfValid, saveState } from "./support.mjs";
@@ -283,7 +293,9 @@ function describeInit(state) {
 }
 
 /**
- * 找出阻止进入编排的问题, 并给出下一动作.
+ * 找出阻止进入编排的问题, 并给出下一动作. 必须入库的路径被忽略规则漏掉时也要停下:
+ * 否则新写的记录会悄悄漏提交. 这一项放在升级检查之后, 旧版本写的状态目录
+ * `.gitignore` 由升级改正.
  *
  * @param {object} options 判断参数.
  * @param {import("../lib/state.mjs").NavigatorState | undefined} options.state 状态.
@@ -315,6 +327,10 @@ function findBlocker({
   }
   if (compareVersions(state.skillVersion, runtimeVersion()) < 0) {
     return `项目中的运行脚本较旧 (${state.skillVersion}), ${setup}, 用户选 A 后运行 init 升级`;
+  }
+  const ignored = findIgnoredPaths(projectRoot, requiredTrackedPaths(spec));
+  if (ignored.length > 0) {
+    return `${replyStep(spec, "运行受阻")}, 说明编排记录, 运行脚本或项目配置会被 Git 忽略, 无法入库: ${summarizeIgnoredPaths(ignored).join("; ")}. 用户修改这些规则后重新调用技能; 规则在 ${NAVIGATOR_IGNORE_FILE} 中时, 用 init 参数重新调用技能即可恢复`;
   }
   return undefined;
 }

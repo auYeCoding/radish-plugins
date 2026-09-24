@@ -36,6 +36,12 @@ export const NAVIGATOR_ENTRIES = Object.freeze({
 export const STATE_FILE = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.state}`;
 
 /**
+ * 状态目录自己的 `.gitignore`, 相对于项目根目录; 由 init 写入.
+ * @type {string}
+ */
+export const NAVIGATOR_IGNORE_FILE = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.ignoreFile}`;
+
+/**
  * 插件脚本目录, 相对于项目根目录; 受保护, 只有 init 能写.
  * @type {string}
  */

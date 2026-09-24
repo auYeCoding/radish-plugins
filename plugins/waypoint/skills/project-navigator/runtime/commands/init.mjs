@@ -3,7 +3,8 @@
  *
  * 初始化分两步: 第一步写入状态目录, 运行脚本副本与 hook 配置, 并发出自检请求;
  * 编排会话随后尝试一次被禁止的写入, 守卫拦下时留下心跳; 第二步 (`--verify`)
- * 核对心跳, 确认 hook 在当前会话中已经生效.
+ * 核对心跳, 确认 hook 在当前会话中已经生效. 写入之前先检查状态目录中必须入库的
+ * 路径是否会被项目的忽略规则漏掉.
  */
 
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -26,7 +27,11 @@ import {
 } from "../lib/paths.mjs";
 import { readProbeState, writeProbeRequest } from "../lib/registry.mjs";
 import { renderGlossarySeed } from "../lib/render-plan.mjs";
-import { ensureLocallyIgnored, headCommit } from "../lib/repo.mjs";
+import {
+  ensureLocallyIgnored,
+  findIgnoredPaths,
+  headCommit,
+} from "../lib/repo.mjs";
 import { claimSession } from "../lib/sessions.mjs";
 import {
   mergeNavigatorHooks,
@@ -43,6 +48,10 @@ import {
   readState,
   writeState,
 } from "../lib/state.mjs";
+import {
+  requiredTrackedPaths,
+  summarizeIgnoredPaths,
+} from "../lib/tracked-paths.mjs";
 import { runtimeVersion } from "../lib/version.mjs";
 
 /**
@@ -52,10 +61,21 @@ import { runtimeVersion } from "../lib/version.mjs";
 const EMPTY_DIRECTORIES = Object.freeze(["plan", "orders", "drafts", "guide"]);
 
 /**
- * 状态目录内 `.gitignore` 的内容: 草稿只是命令行脚本的输入, 不入库.
+ * 状态目录内 `.gitignore` 的内容. 先重新纳入各级目录与插件写入的文件类型,
+ * 避免项目中 `bin/`, `lib/`, `*.json` 之类的规则漏掉运行脚本与记录; 其它文件
+ * (例如系统与编辑器生成的文件) 仍按项目规则处理. 最后排除草稿: 草稿只是
+ * 命令行脚本的输入, 不入库. 后写的规则优先.
  * @type {string}
  */
-const NAVIGATOR_GITIGNORE = "drafts/\n";
+const NAVIGATOR_GITIGNORE = [
+  "!*/",
+  "!*.md",
+  "!*.mjs",
+  "!*.json",
+  "!.gitignore",
+  "drafts/",
+  "",
+].join("\n");
 
 /**
  * 执行 init 命令.
@@ -87,7 +107,8 @@ export function runInit({ cwd, sessionId, isVerify, now }) {
 }
 
 /**
- * 写入状态目录, 运行脚本副本与 hook 配置, 并发出自检请求.
+ * 写入状态目录, 运行脚本副本与 hook 配置, 并发出自检请求. 先写入状态目录的
+ * `.gitignore` 并检查必须入库的路径, 仍有路径被忽略时不做其它改动.
  *
  * @param {string} projectRoot 项目根目录.
  * @param {string | undefined} sessionId 发起初始化的会话.
@@ -95,6 +116,14 @@ export function runInit({ cwd, sessionId, isVerify, now }) {
  * @returns {string[]} 输出各行.
  */
 function installNavigator(projectRoot, sessionId, now) {
+  writeIgnoreFile(projectRoot);
+  const ignored = findIgnoredPaths(
+    projectRoot,
+    requiredTrackedPaths(loadSpec()),
+  );
+  if (ignored.length > 0) {
+    return ignoredPathLines(ignored);
+  }
   const version = runtimeVersion();
   const existing = readState(projectRoot);
   createDirectories(projectRoot);
@@ -212,7 +241,38 @@ function copyExecutorGuide(projectRoot) {
 }
 
 /**
- * 创建状态目录及其空子目录与 `.gitignore`.
+ * 生成必须入库的路径被忽略时的输出: 按忽略规则分组, 写明影响的路径数与一个例子.
+ *
+ * @param {import("../lib/repo.mjs").IgnoredPath[]} ignored 被忽略的路径.
+ * @returns {string[]} 输出各行.
+ */
+function ignoredPathLines(ignored) {
+  return [
+    "- 设置结果: 未执行, 编排记录, 运行脚本或项目配置会被 Git 忽略, 无法入库",
+    ...summarizeIgnoredPaths(ignored).map(
+      (summary) => `- 忽略规则: ${summary}`,
+    ),
+    "- 处理办法: 修改上面的忽略规则, 让这些文件能够入库, 然后重新运行 init",
+  ];
+}
+
+/**
+ * 创建状态目录并写入其 `.gitignore`; 每次初始化与升级都重写.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @returns {void}
+ */
+function writeIgnoreFile(projectRoot) {
+  mkdirSync(navigatorPath(projectRoot), { recursive: true });
+  writeFileSync(
+    navigatorPath(projectRoot, "ignoreFile"),
+    NAVIGATOR_GITIGNORE,
+    "utf8",
+  );
+}
+
+/**
+ * 创建状态目录中的空子目录.
  *
  * @param {string} projectRoot 项目根目录.
  * @returns {void}
@@ -221,11 +281,6 @@ function createDirectories(projectRoot) {
   for (const entry of EMPTY_DIRECTORIES) {
     mkdirSync(navigatorPath(projectRoot, entry), { recursive: true });
   }
-  writeFileSync(
-    navigatorPath(projectRoot, "ignoreFile"),
-    NAVIGATOR_GITIGNORE,
-    "utf8",
-  );
 }
 
 /**

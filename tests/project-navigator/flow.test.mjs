@@ -309,7 +309,11 @@ projectTest("流程: 执行会话登记, 对齐, 回执, 验收与提交", (cont
     undefined,
   );
   assert.equal(project(["order", "set", "committing"]).status, 0);
-  const head = commitPaths(root, [".navigator", "src"], "feat: 导出 CSV");
+  commitPaths(root, [".navigator", "src"], "feat: 导出 CSV");
+  const incomplete = project(["order", "set", "committed"]);
+  assert.equal(incomplete.status, 1, "项目配置漏提交时不能收尾");
+  assert.match(incomplete.stdout, /\.claude\/settings\.json/u);
+  const head = commitPaths(root, [".claude/settings.json"], "chore: 补交配置");
   assert.equal(project(["order", "set", "committed"]).status, 0);
   const after = project(["status"]).stdout;
   assert.match(after, /对账结果: 一致/u);

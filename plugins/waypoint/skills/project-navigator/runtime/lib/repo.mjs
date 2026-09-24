@@ -201,6 +201,123 @@ export function countTrackedFiles(worktreeRoot) {
 }
 
 /**
+ * @typedef {object} IgnoredPath 一条会被 Git 忽略的路径.
+ * @property {string} path 以正斜杠分隔的项目相对路径.
+ * @property {string} rule 生效的忽略规则: 规则所在文件, 行号与规则原文.
+ */
+
+/**
+ * `git check-ignore --verbose` 的输出行: 规则文件, 行号, 规则原文, 制表符, 路径.
+ * 规则文件可能是带盘符的绝对路径, 所以从行号处切分.
+ * @type {RegExp}
+ */
+const CHECK_IGNORE_LINE_PATTERN = /^(.*):(\d+):(.*)\t(.*)$/u;
+
+/**
+ * `git check-ignore` 在没有任何路径被忽略时的退出码.
+ * @type {number}
+ */
+const CHECK_IGNORE_NONE_STATUS = 1;
+
+/**
+ * 按忽略规则 (不看是否已跟踪) 找出会被 Git 忽略的路径. 最后生效的是
+ * 取反规则 (以 "!" 开头) 的路径不算被忽略.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @param {readonly string[]} relativePaths 以正斜杠分隔的项目相对路径.
+ * @returns {IgnoredPath[]} 会被忽略的路径及其规则.
+ * @throws {Error} git 无法运行时.
+ */
+export function findIgnoredPaths(worktreeRoot, relativePaths) {
+  if (relativePaths.length === 0) {
+    return [];
+  }
+  const result = spawnSync(
+    GIT_EXECUTABLE,
+    [
+      "-c",
+      "core.quotePath=false",
+      "check-ignore",
+      "--no-index",
+      "--verbose",
+      "--stdin",
+    ],
+    {
+      cwd: worktreeRoot,
+      input: `${relativePaths.join("\n")}\n`,
+      encoding: "utf8",
+      windowsHide: true,
+    },
+  );
+  if (
+    result.error !== undefined ||
+    (result.status !== 0 && result.status !== CHECK_IGNORE_NONE_STATUS)
+  ) {
+    throw new Error(
+      `repo: git check-ignore 失败: ${result.error?.message ?? result.stderr.trim()}`,
+    );
+  }
+  return result.stdout
+    .split("\n")
+    .map((line) => CHECK_IGNORE_LINE_PATTERN.exec(line))
+    .filter((match) => match !== null && !match[3].startsWith("!"))
+    .map((match) => ({
+      path: match[4],
+      rule: `${match[1]}:${match[2]}: ${match[3]}`,
+    }));
+}
+
+/**
+ * `git status --porcelain -z` 每条记录中状态码与路径之间的字符数: 两位状态码与一个空格.
+ * @type {number}
+ */
+const STATUS_CODE_WIDTH = 3;
+
+/**
+ * 重命名或复制记录的状态码首字母; 这类记录后面多跟一段原路径.
+ * @type {readonly string[]}
+ */
+const PAIRED_STATUS_CODES = Object.freeze(["R", "C"]);
+
+/**
+ * 列出指定范围内相对 HEAD 尚未入库的路径: 已改动, 已暂存未提交, 以及未跟踪但
+ * 没有被忽略的文件.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @param {readonly string[]} pathspecs 检查范围, 项目相对路径.
+ * @returns {string[]} 以正斜杠分隔的项目相对路径.
+ * @throws {Error} git 无法运行时.
+ */
+export function listUncommittedPaths(worktreeRoot, pathspecs) {
+  const result = spawnSync(
+    GIT_EXECUTABLE,
+    [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--",
+      ...pathspecs,
+    ],
+    { cwd: worktreeRoot, encoding: "utf8", windowsHide: true },
+  );
+  if (result.error !== undefined || result.status !== 0) {
+    throw new Error(
+      `repo: git status 失败: ${result.error?.message ?? result.stderr.trim()}`,
+    );
+  }
+  const entries = result.stdout.split("\0").filter((entry) => entry !== "");
+  const paths = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    paths.push(entries[index].slice(STATUS_CODE_WIDTH));
+    if (PAIRED_STATUS_CODES.includes(entries[index][0])) {
+      index += 1;
+    }
+  }
+  return paths;
+}
+
+/**
  * 确保某个路径被 Git 忽略. 已被忽略时不做任何事; 否则把它写进仓库的
  * `info/exclude`, 这个文件只在本机生效, 不改动用户的 `.gitignore`.
  *
