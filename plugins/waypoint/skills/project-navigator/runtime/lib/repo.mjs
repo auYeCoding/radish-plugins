@@ -268,6 +268,56 @@ export function findIgnoredPaths(worktreeRoot, relativePaths) {
 }
 
 /**
+ * `git status --porcelain -z` 每条记录中状态码与路径之间的字符数: 两位状态码与一个空格.
+ * @type {number}
+ */
+const STATUS_CODE_WIDTH = 3;
+
+/**
+ * 重命名或复制记录的状态码首字母; 这类记录后面多跟一段原路径.
+ * @type {readonly string[]}
+ */
+const PAIRED_STATUS_CODES = Object.freeze(["R", "C"]);
+
+/**
+ * 列出指定范围内相对 HEAD 尚未入库的路径: 已改动, 已暂存未提交, 以及未跟踪但
+ * 没有被忽略的文件.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @param {readonly string[]} pathspecs 检查范围, 项目相对路径.
+ * @returns {string[]} 以正斜杠分隔的项目相对路径.
+ * @throws {Error} git 无法运行时.
+ */
+export function listUncommittedPaths(worktreeRoot, pathspecs) {
+  const result = spawnSync(
+    GIT_EXECUTABLE,
+    [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--",
+      ...pathspecs,
+    ],
+    { cwd: worktreeRoot, encoding: "utf8", windowsHide: true },
+  );
+  if (result.error !== undefined || result.status !== 0) {
+    throw new Error(
+      `repo: git status 失败: ${result.error?.message ?? result.stderr.trim()}`,
+    );
+  }
+  const entries = result.stdout.split("\0").filter((entry) => entry !== "");
+  const paths = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    paths.push(entries[index].slice(STATUS_CODE_WIDTH));
+    if (PAIRED_STATUS_CODES.includes(entries[index][0])) {
+      index += 1;
+    }
+  }
+  return paths;
+}
+
+/**
  * 确保某个路径被 Git 忽略. 已被忽略时不做任何事; 否则把它写进仓库的
  * `info/exclude`, 这个文件只在本机生效, 不改动用户的 `.gitignore`.
  *

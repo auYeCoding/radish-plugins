@@ -97,4 +97,4 @@
    - 用户选 B: 参数写 "提交并推送", 纳入范围同上.
    - 用户选 C: 不带参数, 由该技能自己的流程决定.
 4. 纳入范围之外还有改动时, 该技能会列出并询问, 按用户的回答处理.
-5. 提交完成后运行 `order set committed`. 切片的工单全部完成时运行 `slice <编号> done`.
+5. 提交完成后运行 `order set committed`. `.navigator/`, `.claude/settings.json` 或 `.claude/rules/engineering.md` 中还有没入库的文件时, 命令会拒绝并列出这些文件: 按输出再次调用 `waypoint:commit-message` 补交, 然后重新运行. 切片的工单全部完成时运行 `slice <编号> done`.

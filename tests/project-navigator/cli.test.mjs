@@ -22,6 +22,7 @@ import {
   commitPaths,
   createTemporaryDirectory,
   createTemporaryRepository,
+  initializeProject,
   runCommand,
   runHook,
 } from "./helpers.mjs";
@@ -196,7 +197,15 @@ test("命令行: 项目规则忽略 lib/, bin/ 与各类文件时, init 写入�
   try {
     writeFileSync(
       path.join(root, ".gitignore"),
-      ["lib/", "bin/", "*.json", "*.md", "*.mjs", ".DS_Store", ""].join("\n"),
+      [
+        "lib/",
+        "bin/",
+        "*.mjs",
+        ".navigator/**/*.json",
+        ".navigator/**/*.md",
+        ".DS_Store",
+        "",
+      ].join("\n"),
       "utf8",
     );
     commitPaths(root, [".gitignore"], "ignore rules");
@@ -228,6 +237,49 @@ test("命令行: 项目规则忽略 lib/, bin/ 与各类文件时, init 写入�
     assert.equal(isIgnored(".navigator/drafts/roadmap.json"), true);
     assert.equal(isIgnored(".navigator/plan/.DS_Store"), true);
     assert.equal(isIgnored("lib/app.py"), true, "项目自己的规则不受影响");
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 初始化之后项目规则开始忽略插件文件时, 进入编排会被拦下并报出规则", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    initializeProject(root, SESSION_ID);
+    const before = runCommand(
+      PLUGIN_COMMAND,
+      ["enter", "--session", SESSION_ID],
+      root,
+    );
+    assert.doesNotMatch(before.stdout, /运行受阻/u);
+    writeFileSync(path.join(root, ".gitignore"), ".claude/\n", "utf8");
+    const after = runCommand(
+      PLUGIN_COMMAND,
+      ["enter", "--session", SESSION_ID],
+      root,
+    );
+    assert.equal(after.status, 0);
+    assert.match(after.stdout, /下一动作: 回复 "运行受阻"/u);
+    assert.match(after.stdout, /\.gitignore:1: \.claude\//u);
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 项目规则忽略插件管理的项目配置时, init 同样停下报告", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    writeFileSync(path.join(root, ".gitignore"), "*.json\n", "utf8");
+    commitPaths(root, [".gitignore"], "ignore json");
+    const init = runCommand(
+      PLUGIN_COMMAND,
+      ["init", "--session", SESSION_ID],
+      root,
+    );
+    assert.match(init.stdout, /设置结果: 未执行/u);
+    assert.match(init.stdout, /例如 \.claude\/settings\.json/u);
   } finally {
     repository.cleanup();
   }

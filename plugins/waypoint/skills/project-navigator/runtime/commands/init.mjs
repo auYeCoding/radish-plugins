@@ -48,7 +48,10 @@ import {
   readState,
   writeState,
 } from "../lib/state.mjs";
-import { requiredTrackedPaths } from "../lib/tracked-paths.mjs";
+import {
+  requiredTrackedPaths,
+  summarizeIgnoredPaths,
+} from "../lib/tracked-paths.mjs";
 import { runtimeVersion } from "../lib/version.mjs";
 
 /**
@@ -244,14 +247,12 @@ function copyExecutorGuide(projectRoot) {
  * @returns {string[]} 输出各行.
  */
 function ignoredPathLines(ignored) {
-  const groups = Map.groupBy(ignored, (entry) => entry.rule);
   return [
-    "- 设置结果: 未执行, 状态目录中有文件会被 Git 忽略, 编排记录与运行脚本无法入库",
-    ...[...groups].map(
-      ([rule, entries]) =>
-        `- 忽略规则: ${rule}, 影响 ${entries.length} 个路径, 例如 ${entries[0].path}`,
+    "- 设置结果: 未执行, 编排记录, 运行脚本或项目配置会被 Git 忽略, 无法入库",
+    ...summarizeIgnoredPaths(ignored).map(
+      (summary) => `- 忽略规则: ${summary}`,
     ),
-    `- 处理办法: 修改上面的忽略规则, 让 ${NAVIGATOR_DIRECTORY}/ 下的文件能够入库, 然后重新运行 init`,
+    "- 处理办法: 修改上面的忽略规则, 让这些文件能够入库, 然后重新运行 init",
   ];
 }
 
