@@ -10,9 +10,16 @@ import { readFileSync } from "node:fs";
 import { SPEC_FILE } from "./paths.mjs";
 
 /**
- * @typedef {object} SectionSpec 回复中一个二级节的规格.
+ * @typedef {object} TableSpec 节中表格的规格.
+ * @property {string[]} columns 表头各列, 按顺序.
+ * @property {Record<string, string[]>} [choices] 只能取固定值的列, 键为列名, 值为允许的取值.
+ */
+
+/**
+ * @typedef {object} SectionSpec 回复或记录文件中一个二级节的规格.
  * @property {string} title 节标题, 4 个汉字.
  * @property {string[]} [keys] 键值行的键名, 按顺序; 省略时节内容不固定.
+ * @property {TableSpec} [table] 节中必须有的表格; 与 keys 不同时使用.
  * @property {boolean} [allowLaunchPrompt] 是否允许放启动提示词代码块.
  */
 

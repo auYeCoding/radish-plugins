@@ -69,6 +69,22 @@ function fill(text) {
 }
 
 /**
+ * 按骨架写入验收记录, 判据核对只有一行, 结论为指定值.
+ *
+ * @param {string} folder 工单文件夹的绝对路径.
+ * @param {(args: readonly string[]) => {status: number | null, stdout: string}} project 调用项目内命令行的函数.
+ * @param {string} verdict 判据结论.
+ * @returns {void}
+ */
+function writeReview(folder, project, verdict) {
+  const text = fill(project(["template", "review"]).stdout).replace(
+    `| ${FILLER} | ${FILLER} | ${FILLER} |`,
+    `| ${FILLER} | ${verdict} | ${FILLER} |`,
+  );
+  writeFileSync(path.join(folder, "review.md"), text, "utf8");
+}
+
+/**
  * 写入草稿文件并返回其相对路径.
  *
  * @param {string} root 项目根目录.
@@ -281,6 +297,7 @@ projectTest("流程: 执行会话登记, 对齐, 回执, 验收与提交", (cont
     "deny",
     "验收中执行会话不能再改业务文件",
   );
+  writeReview(folder, project, "通过");
   assert.equal(project(["order", "set", "accepted"]).status, 0);
   assert.equal(
     hook({
@@ -410,6 +427,58 @@ projectTest(
 );
 
 projectTest(
+  "流程: 判据核对不全是通过时, 不能请用户人工验收, 也不能通过验收",
+  (context) => {
+    const { project } = context;
+    const folder = issueFirstOrder(context);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    const missing = project(["order", "set", "accepted"]);
+    assert.equal(missing.status, 1);
+    assert.match(missing.stdout, /review\.md 还没有写入/u);
+    writeReview(folder, project, "未验证");
+    const refused = project(["order", "set", "accepted"]);
+    assert.equal(refused.status, 1);
+    assert.match(refused.stdout, /结论为 "未验证"/u);
+    const manual = project(["reply", "review", "--option", "1"]);
+    assert.equal(manual.status, 1);
+    assert.match(manual.stdout, /order set rejected/u);
+    assert.equal(project(["reply", "review", "--option", "2"]).status, 0);
+    writeReview(folder, project, "通过");
+    assert.equal(project(["reply", "review", "--option", "1"]).status, 0);
+    assert.equal(project(["order", "set", "accepted"]).status, 0);
+  },
+);
+
+projectTest(
+  "流程: 选型工单核对证据需要回执, 不通过时下一动作是新建选型工单",
+  ({ root, project }) => {
+    const noOrder = project(["evidence"]);
+    assert.equal(noOrder.status, 1);
+    assert.match(noOrder.stdout, /当前没有选型工单/u);
+    assert.equal(
+      project(["order", "new", "--kind", "selection", "--slug", "transport"])
+        .status,
+      0,
+    );
+    const folder = path.join(root, ".navigator", "orders", "0001-transport");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      path.join(folder, "order.md"),
+      fill(project(["template", "order"]).stdout),
+      "utf8",
+    );
+    assert.equal(project(["order", "set", "issued"]).status, 0);
+    const noReceipt = project(["evidence"]);
+    assert.equal(noReceipt.status, 1);
+    assert.match(noReceipt.stdout, /还没有回执/u);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    const rejected = project(["order", "set", "rejected"]);
+    assert.equal(rejected.status, 0, rejected.stdout);
+    assert.match(rejected.stdout, /order new --kind selection/u);
+  },
+);
+
+projectTest(
   "流程: 读取工单文件的会话登记为执行会话, 编排会话不会被登记",
   (context) => {
     const { root, hook } = context;
@@ -468,8 +537,10 @@ projectTest(
 
 projectTest("流程: 提交后未记录时, 下次进入自动纳入自己的提交", (context) => {
   const { root, project } = context;
-  issueFirstOrder(context);
-  for (const status of ["reviewing", "accepted", "committing"]) {
+  const folder = issueFirstOrder(context);
+  assert.equal(project(["order", "set", "reviewing"]).status, 0);
+  writeReview(folder, project, "通过");
+  for (const status of ["accepted", "committing"]) {
     assert.equal(project(["order", "set", status]).status, 0);
   }
   commitPaths(root, [".navigator"], "feat: 导出 CSV");

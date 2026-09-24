@@ -23,6 +23,7 @@ It is not meant for small tasks such as fixing a typo, patching a small bug, or 
 - [Git](https://git-scm.com): the project must be a Git repository with at least one commit. If it is not a repository yet, run [`/waypoint:repo-init`](repo-init.en.md) first.
 - [Node.js](https://nodejs.org) 22 or later: the guard hooks and the record scripts run on Node.js.
 - Start Claude Code in the project root. Executor sessions do not use worktrees.
+- During selection, the public git repositories (https) of the chosen dependencies must be reachable: the review fetches source code from the original repositories to verify the evidence.
 
 ## Invocation
 
@@ -97,15 +98,15 @@ The project's hooks enforce these boundaries. For example, the orchestrator is b
 
 ## Stages
 
-| No. | Stage     | What happens                                                                                                 |
-| --- | --------- | ------------------------------------------------------------------------------------------------------------ |
-| 0   | Survey    | Existing projects only: read the repository, run a build and test check, write a status report               |
-| 1   | Framing   | Understand the requirement, research the problem domain, report, Socratic brainstorming, project brief       |
-| 2   | Main flow | Write the shortest path through the core scenario, split it into milestones and slices, register risks       |
-| 3   | Selection | Compare engineering standards and pick the comment language; executors select technologies with source proof |
-| 4   | Skeleton  | The first slice: the smallest version that runs the main flow end to end                                     |
-| 5   | Slices    | Deliver slice by slice, with a review at the end of each milestone                                           |
-| 6   | Closing   | Overall acceptance against the brief, statistics, and a retrospective                                        |
+| No. | Stage     | What happens                                                                                                                                                          |
+| --- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Survey    | Existing projects only: read the repository, run a build and test check, write a status report                                                                        |
+| 1   | Framing   | Understand the requirement, research the problem domain, report, Socratic brainstorming, project brief                                                                |
+| 2   | Main flow | Write the shortest path through the core scenario, split it into milestones and slices, register risks                                                                |
+| 3   | Selection | Compare engineering standards and pick the comment language; executors select technologies with source proof, which the review fetches from the original repositories |
+| 4   | Skeleton  | The first slice: the smallest version that runs the main flow end to end                                                                                              |
+| 5   | Slices    | Deliver slice by slice, with a review at the end of each milestone                                                                                                    |
+| 6   | Closing   | Overall acceptance against the brief, statistics, and a retrospective                                                                                                 |
 
 A requirement change can come in at any stage and returns to the same position afterwards. Skipping a stage requires your explicit approval and a written reason.
 
@@ -116,12 +117,14 @@ A requirement change can come in at any stage and returns to the same position a
 3. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
    - A. Document report: the executor writes the receipt file, and you tell the orchestrator it is done.
    - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open.
-4. **Review.** The orchestrator sends the reviewer subagent to check each criterion, then asks you to verify by hand. Tests that need real accounts or have external effects run only after you agree.
+4. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree.
 5. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit.
 
 Work orders run strictly one at a time. If the same slice fails review twice in a row, the orchestrator suggests splitting it smaller.
 
-Every work order that changes code carries a fixed criterion, "代码检查通过" (code checks pass). The check commands are chosen during selection, using each language's established check tools with function length and complexity rules enabled. If the checks fail, the work order cannot pass review.
+Every work order that changes code carries a fixed criterion, "代码检查通过" (code checks pass). The check commands are chosen during selection, using each language's established check tools with function length and complexity rules enabled, and they do not check `.navigator/` or `.claude/`. If the checks fail, the work order cannot pass review.
+
+A selection receipt lists its source evidence in a table: capability, repository, version, path, lines, and note. The reviewer subagent runs the `evidence` command, which fetches those lines from the original repository at that version, and checks them one by one without relying on the executor's copy. When a selection order fails, the orchestrator opens a new selection order to correct it.
 
 ## What replies look like
 
@@ -241,3 +244,4 @@ Run `/waypoint:project-navigator uninstall`. The hooks and allow rules are remov
 - A reply with a format problem is sent back for one rewrite, but the faulty version stays on the screen.
 - File edits made through shell commands are checked only roughly, and the hooks do not restrict what you do in your own editor.
 - Message reports require the orchestrator and executor sessions to be open at the same time on the same machine.
+- Source evidence supports only public git repositories; a dependency without a public repository is marked unverified, and you decide whether to accept that risk.

@@ -15,8 +15,10 @@ import { replyStep } from "../lib/guidance.mjs";
 import { formatNumber } from "../lib/numbering.mjs";
 import { orderFilePath, projectRelativePath } from "../lib/paths.mjs";
 import { headCommit } from "../lib/repo.mjs";
+import { orderAcceptanceBlockers } from "../lib/review-record.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import {
+  SELECTION_ORDER_KIND,
   authorizeTests,
   consecutiveRejections,
   createOrder,
@@ -116,8 +118,9 @@ function createNewOrder(context, values, now) {
 }
 
 /**
- * 转换当前工单状态. 发布前核对代码检查判据; 受阻后重新发布时, 先把旧回执改名归档,
- * 避免被当成新回执; 验收不通过时, 按同一切片连续不通过的次数提示使用哪组选项.
+ * 转换当前工单状态. 发布前核对代码检查判据; 通过验收前核对验收记录的判据结论;
+ * 受阻后重新发布时, 先把旧回执改名归档, 避免被当成新回执; 验收不通过时,
+ * 按工单类型与同一切片连续不通过的次数提示下一动作.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {string | undefined} status 目标状态.
@@ -131,6 +134,9 @@ function changeStatus(context, status, now) {
   const order = context.state.order;
   if (status === "issued") {
     assertIssuable(context);
+  }
+  if (status === "accepted" && order?.status === "reviewing") {
+    assertAcceptable(context);
   }
   const next = setOrderStatus(
     context.state,
@@ -146,10 +152,30 @@ function changeStatus(context, status, now) {
   if (archived !== undefined) {
     lines.push(`- 旧回执已归档: ${archived}`);
   }
-  if (status === "rejected") {
-    lines.push(rejectionAction(context.spec, state, order?.slice ?? null));
+  if (status === "rejected" && order !== null) {
+    lines.push(rejectionAction(context.spec, state, order));
   }
   return lines;
+}
+
+/**
+ * 核对当前工单能否通过验收: 验收记录的判据核对表中每条都必须是通过.
+ *
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @returns {void}
+ * @throws {WorkflowError} 有判据不是通过, 或验收记录缺失时, 原因写明下一步.
+ */
+function assertAcceptable(context) {
+  const order = context.state.order;
+  if (order === null) {
+    return;
+  }
+  const blockers = orderAcceptanceBlockers(context.projectRoot, order);
+  if (blockers.length > 0) {
+    throw new WorkflowError(
+      `工单 ${order.id} 不能通过验收: ${blockers.join(" ")} 有判据不通过或未验证时运行 order set rejected, 按输出处理.`,
+    );
+  }
 }
 
 /**
@@ -201,16 +227,23 @@ function archiveReceipt(projectRoot, folder) {
 }
 
 /**
- * 验收不通过后的下一动作: 同一切片连续不通过达到阈值时重新拆分, 否则发布修复工单.
+ * 验收不通过后的下一动作: 选型工单重新发布选型工单 (修复工单要求已登记检查命令,
+ * 而检查命令在选型通过后才登记); 同一切片连续不通过达到阈值时重新拆分;
+ * 其余情况发布修复工单.
  *
  * @param {import("../lib/spec.mjs").TemplateSpec} spec 模板规格.
  * @param {import("../lib/state.mjs").NavigatorState} state 写入后的状态.
- * @param {string | null} sliceId 工单所属切片.
+ * @param {{kind: string, slice: string | null}} order 被判为不通过的工单.
  * @returns {string} 下一动作行.
  */
-function rejectionAction(spec, state, sliceId) {
-  const count = sliceId === null ? 0 : consecutiveRejections(state, sliceId);
+function rejectionAction(spec, state, order) {
+  const fixStep = replyStep(spec, "验收报告", FIX_OPTION);
+  if (order.kind === SELECTION_ORDER_KIND) {
+    return `- 下一动作: ${fixStep}; 用户选 A 后运行 order new --kind ${SELECTION_ORDER_KIND}, 新工单的判据写明要补正的问题`;
+  }
+  const count =
+    order.slice === null ? 0 : consecutiveRejections(state, order.slice);
   return count >= RESPLIT_THRESHOLD
-    ? `- 下一动作: 切片 ${sliceId} 已连续 ${count} 次验收不通过, ${replyStep(spec, "验收报告", RESPLIT_OPTION)}`
-    : `- 下一动作: ${replyStep(spec, "验收报告", FIX_OPTION)}; 用户选 A 后运行 order new --kind fix`;
+    ? `- 下一动作: 切片 ${order.slice} 已连续 ${count} 次验收不通过, ${replyStep(spec, "验收报告", RESPLIT_OPTION)}`
+    : `- 下一动作: ${fixStep}; 用户选 A 后运行 order new --kind fix`;
 }

@@ -36,12 +36,18 @@ export const TERMINAL_ORDER_STATUSES = Object.freeze([
 ]);
 
 /**
+ * 选型工单的类型名.
+ * @type {string}
+ */
+export const SELECTION_ORDER_KIND = "selection";
+
+/**
  * 工单类型.
  * @type {readonly string[]}
  */
 export const ORDER_KINDS = Object.freeze([
   "implementation",
-  "selection",
+  SELECTION_ORDER_KIND,
   "runcheck",
   "fix",
 ]);

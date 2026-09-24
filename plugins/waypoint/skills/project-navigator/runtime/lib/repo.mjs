@@ -1,5 +1,6 @@
 /**
- * @file 调用 git 查询仓库信息. 只在命令行脚本中使用, hook 的热路径不启动 git.
+ * @file 调用 git: 查询本仓库信息, 以及为源码证据访问第三方公开仓库.
+ * 只在命令行脚本中使用, hook 的热路径不启动 git.
  */
 
 import { spawnSync } from "node:child_process";
@@ -19,6 +20,29 @@ const GIT_EXECUTABLE = "git";
  * @type {number}
  */
 const SHORT_HASH_LENGTH = 7;
+
+/**
+ * 访问第三方仓库时附加的环境变量: 不在终端询问账号, 不弹出凭据管理器的窗口.
+ * 需要账号的仓库直接失败, 避免命令卡住.
+ * @type {Readonly<Record<string, string>>}
+ */
+const NON_INTERACTIVE_ENVIRONMENT = Object.freeze({
+  GIT_TERMINAL_PROMPT: "0",
+  GCM_INTERACTIVE: "never",
+});
+
+/**
+ * 访问第三方仓库时放在最前面的 git 参数: 清空凭据助手, 不读取本机保存的账号.
+ * @type {readonly string[]}
+ */
+const NO_CREDENTIAL_ARGUMENTS = Object.freeze(["-c", "credential.helper="]);
+
+/**
+ * @typedef {object} GitOutcome 一次 git 运行的结果.
+ * @property {boolean} isSuccess 退出码为 0 时为 true.
+ * @property {Buffer} stdout 标准输出的原始字节.
+ * @property {string} message 失败原因: git 的错误输出, 或无法启动, 超时的说明; 成功时为空字符串.
+ */
 
 /**
  * 截取显示用的短提交哈希.
@@ -55,6 +79,38 @@ export function runGit(directory, args, options = {}) {
     return undefined;
   }
   return result.stdout.trim();
+}
+
+/**
+ * 以不读凭据, 不弹提示的方式运行 git, 保留原始输出与失败原因.
+ * 用于访问第三方公开仓库; 调用方用 `--git-dir` 指明仓库, 不依赖工作目录.
+ *
+ * @param {readonly string[]} args git 参数.
+ * @param {number} timeout 超时毫秒数.
+ * @returns {GitOutcome} 运行结果.
+ */
+export function runIsolatedGit(args, timeout) {
+  const result = spawnSync(
+    GIT_EXECUTABLE,
+    [...NO_CREDENTIAL_ARGUMENTS, ...args],
+    {
+      windowsHide: true,
+      timeout,
+      env: { ...process.env, ...NON_INTERACTIVE_ENVIRONMENT },
+    },
+  );
+  if (result.error !== undefined) {
+    return {
+      isSuccess: false,
+      stdout: Buffer.alloc(0),
+      message: `git 无法完成: ${result.error.message}`,
+    };
+  }
+  return {
+    isSuccess: result.status === 0,
+    stdout: result.stdout,
+    message: result.status === 0 ? "" : result.stderr.toString("utf8").trim(),
+  };
 }
 
 /**

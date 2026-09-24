@@ -5,7 +5,12 @@
  * 全文再校验. 不合格的写入被拒绝, 拒绝理由列出需要修改的地方.
  */
 
-import { checkKeyLines, checkSummary, splitSections } from "./layout.mjs";
+import {
+  checkKeyLines,
+  checkSummary,
+  checkTable,
+  splitSections,
+} from "./layout.mjs";
 import { parseMarkdown } from "./markdown.mjs";
 import { PLACEHOLDER } from "./render.mjs";
 
@@ -108,6 +113,7 @@ function checkProgress(sections, spec) {
 
 /**
  * 校验进展之后的正文各节: 固定节 (或可选序列之一), 以及只追加的条目.
+ * 有多种可选序列时, 优先报告标题对得上的那一种的问题.
  *
  * @param {import("./layout.mjs").Section[]} sections 正文各节.
  * @param {FileSpec} fileSpec 文件规格.
@@ -118,7 +124,11 @@ function checkBody(sections, fileSpec) {
   const results = candidates.map((fixed) =>
     checkWithFixedSections(sections, fixed, fileSpec),
   );
-  return results.find((problems) => problems.length === 0) ?? results[0];
+  const chosen =
+    results.find((result) => result.problems.length === 0) ??
+    results.find((result) => result.isTitleMatch) ??
+    results[0];
+  return chosen.problems;
 }
 
 /**
@@ -127,7 +137,7 @@ function checkBody(sections, fileSpec) {
  * @param {import("./layout.mjs").Section[]} sections 正文各节.
  * @param {import("./spec.mjs").SectionSpec[]} fixed 固定节序列.
  * @param {FileSpec} fileSpec 文件规格.
- * @returns {string[]} 问题列表.
+ * @returns {{isTitleMatch: boolean, problems: string[]}} 标题是否与该序列一致, 以及问题列表.
  */
 function checkWithFixedSections(sections, fixed, fileSpec) {
   const head = sections.slice(0, fixed.length);
@@ -135,17 +145,35 @@ function checkWithFixedSections(sections, fixed, fileSpec) {
   if (
     head.map((section) => section.title).join("|") !== expectedTitles.join("|")
   ) {
-    return [
-      `二级标题应依次为 ${expectedTitles.map((title) => `"${title}"`).join(", ") || "无固定节"}.`,
-    ];
+    return {
+      isTitleMatch: false,
+      problems: [
+        `二级标题应依次为 ${expectedTitles.map((title) => `"${title}"`).join(", ") || "无固定节"}.`,
+      ],
+    };
   }
   const problems = fixed.flatMap((sectionSpec, index) =>
-    sectionSpec.keys === undefined
-      ? []
-      : checkKeyLines(head[index], sectionSpec.keys),
+    checkFixedSection(head[index], sectionSpec),
   );
   problems.push(...checkEntries(sections.slice(fixed.length), fileSpec));
-  return problems;
+  return { isTitleMatch: true, problems };
+}
+
+/**
+ * 按节规格校验一个固定节的内容: 键值行或表格.
+ *
+ * @param {import("./layout.mjs").Section} section 节.
+ * @param {import("./spec.mjs").SectionSpec} sectionSpec 节规格.
+ * @returns {string[]} 问题列表.
+ */
+function checkFixedSection(section, sectionSpec) {
+  if (sectionSpec.keys !== undefined) {
+    return checkKeyLines(section, sectionSpec.keys);
+  }
+  if (sectionSpec.table !== undefined) {
+    return checkTable(section, sectionSpec.table);
+  }
+  return [];
 }
 
 /**

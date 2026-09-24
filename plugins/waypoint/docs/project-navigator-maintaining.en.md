@@ -18,15 +18,15 @@ The skill has three layers, each with one job:
 
 In a user's project, the skill uses these locations:
 
-| Location                       | Contents                                                                                     | Committed |
-| ------------------------------ | -------------------------------------------------------------------------------------------- | --------- |
-| `.navigator/`                  | State file, record files, executor guide, copies of the runtime and reference files (`bin/`) | Yes       |
-| `.navigator/drafts/`           | JSON drafts that the orchestrator passes to commands                                         | No        |
-| `.claude/settings.json`        | Guard hooks and allow rules                                                                  | Yes       |
-| `.claude/settings.local.json`  | Machine-local copy of the allow rules, excluded via `.git/info/exclude`                      | No        |
-| `.claude/rules/engineering.md` | Project standards, loaded automatically by every session in the project                      | Yes       |
-| `.git/navigator/`              | Executor session registrations, self-check request and heartbeat                             | No        |
-| `refs/navigator/snapshots`     | Snapshots of the state directory, outside any branch history                                 | No        |
+| Location                       | Contents                                                                                              | Committed |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- | --------- |
+| `.navigator/`                  | State file, record files, executor guide, copies of the runtime and reference files (`bin/`)          | Yes       |
+| `.navigator/drafts/`           | JSON drafts that the orchestrator passes to commands                                                  | No        |
+| `.claude/settings.json`        | Guard hooks and allow rules                                                                           | Yes       |
+| `.claude/settings.local.json`  | Machine-local copy of the allow rules, excluded via `.git/info/exclude`                               | No        |
+| `.claude/rules/engineering.md` | Project standards, loaded automatically by every session in the project                               | Yes       |
+| `.git/navigator/`              | Executor session registrations, self-check request and heartbeat, source evidence cache (`evidence/`) | No        |
+| `refs/navigator/snapshots`     | Snapshots of the state directory, outside any branch history                                          | No        |
 
 ## Design decisions
 
@@ -77,6 +77,13 @@ Each entry states the decision, the reason, and what breaks if it changes.
 - **Mechanical modularity checks belong to the project's code check tools; the plugin does not parse code.** Selection picks a check tool with function length and complexity rules enabled, and `codecheck set` registers the check commands. Skeletons of implementation and fix orders prefill a "代码检查通过" (code checks pass) criterion, `order set issued` verifies the criterion text, and the check commands count as authorized tests. When no suitable tool exists, a reason must be registered instead. If changed: modularity relies only on reminders and judgment, and ever-growing functions still pass review.
 - **The reviewer subagent lists both Bash and PowerShell.** Child sessions may not find Git Bash; with Bash alone the reviewer cannot run any command, and every criterion that needs a run becomes "unverified". The guard applies the same rules to both. If changed: every review fails in PowerShell-only environments.
 
+### Selection and review verdicts
+
+- **Selection source evidence is a table, the `evidence` command fetches the cited lines from the original repository at the stated version, and the reviewer subagent verifies evidence only through that command.** The evidence lives outside the repository, and neither the orchestrator nor the reviewer may go online, so the reviewer used to check only the format of the evidence, never its content. git returns the original content, so line numbers are exact, and a wrong version name or path fails outright; web fetches are rewritten by a model and their line numbers are unreliable, so the reviewer gets no web tools. Each fetch takes a depth-1 commit and downloads files on demand, cached in `.git/navigator/evidence/`; only https addresses are accepted, and git reads no credentials and shows no prompts. The guard allows only `evidence` without arguments, so the reviewer cannot use it to reach arbitrary addresses. If changed: source evidence cannot be verified independently, and verification falls back to the executor vouching for itself or to the user checking by hand.
+- **A criterion verdict is one of 通过 (pass), 不通过 (fail), 未验证 (unverified), enforced by the scripts.** The values are defined in the spec's criteria table and checked when `review.md` is written; while any verdict is not 通过, both `order set accepted` and `reply review --option 1` refuse. If changed: the reviewer can invent verdicts such as "partially verified", and the orchestrator then asks the user to verify by hand, bypassing "anything unverified fails".
+- **A rejected selection order is followed by a new selection order, not a fix order.** Fix orders require registered check commands, which are registered only after a selection passes. If changed: the workflow gets stuck after a rejected selection.
+- **Check commands exclude `.navigator/` and `.claude/`.** Some formatters also process Markdown by default and pull the navigator records into the checks, while executors cannot edit those directories. If changed: the format of the records makes the "代码检查通过" (code checks pass) criterion fail on every implementation order.
+
 ## Component map
 
 Entry points and commands:
@@ -95,6 +102,7 @@ Entry points and commands:
 | `commands/order.mjs`     | Creating work orders, status transitions, test authorization, archiving old receipts |
 | `commands/records.mjs`   | Risks, decisions, and changes                                                        |
 | `commands/brief.mjs`     | Review and research delegation prompts                                               |
+| `commands/evidence.mjs`  | Fetches the source lines cited in a selection receipt's evidence table               |
 | `commands/snapshot.mjs`  | Snapshot listing, restore, and adopt                                                 |
 | `commands/check.mjs`     | Script layer of checkups                                                             |
 | `commands/standards.mjs` | Writes the project standards                                                         |
@@ -103,16 +111,17 @@ Entry points and commands:
 
 Modules in `runtime/lib/`:
 
-| Group                    | Files                                                                                                                                |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Paths and state          | `paths.mjs`, `state.mjs`, `numbering.mjs`, `validation.mjs`, `workflow-error.mjs`                                                    |
-| Spec and layout          | `spec.mjs`, `markdown.mjs`, `layout.mjs`, `reply-checks.mjs`, `file-checks.mjs`, `edits.mjs`, `writing-checks.mjs`, `text-units.mjs` |
-| Generation               | `render.mjs`, `render-plan.mjs`, `table.mjs`, `briefs.mjs`, `reminders.mjs`, `guidance.mjs`, `reply-guide.mjs`, `writing-rules.mjs`  |
-| Guard                    | `guard.mjs`, `guard-paths.mjs`, `guard-commands.mjs`                                                                                 |
-| Sessions                 | `sessions.mjs`, `executors.mjs`, `registry.mjs`                                                                                      |
-| Workflow                 | `workflow-orders.mjs`, `workflow-plan.mjs`, `workflow-records.mjs`, `code-checks.mjs`                                                |
-| Repository and snapshots | `repo.mjs`, `snapshots.mjs`, `reconcile.mjs`                                                                                         |
-| Environment and settings | `environment.mjs`, `version.mjs`, `settings.mjs`                                                                                     |
+| Group                    | Files                                                                                                                                      |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Paths and state          | `paths.mjs`, `state.mjs`, `numbering.mjs`, `validation.mjs`, `workflow-error.mjs`                                                          |
+| Spec and layout          | `spec.mjs`, `markdown.mjs`, `layout.mjs`, `reply-checks.mjs`, `file-checks.mjs`, `edits.mjs`, `writing-checks.mjs`, `text-units.mjs`       |
+| Generation               | `render.mjs`, `render-plan.mjs`, `table.mjs`, `briefs.mjs`, `reminders.mjs`, `guidance.mjs`, `reply-guide.mjs`, `writing-rules.mjs`        |
+| Guard                    | `guard.mjs`, `guard-paths.mjs`, `guard-commands.mjs`                                                                                       |
+| Sessions                 | `sessions.mjs`, `executors.mjs`, `registry.mjs`                                                                                            |
+| Workflow                 | `workflow-orders.mjs`, `workflow-plan.mjs`, `workflow-records.mjs`, `code-checks.mjs`, `review-record.mjs`                                 |
+| Source evidence          | `source-evidence.mjs` (evidence table and verification output), `source-fetch.mjs` (fetching files from third-party repositories with git) |
+| Repository and snapshots | `repo.mjs`, `snapshots.mjs`, `reconcile.mjs`                                                                                               |
+| Environment and settings | `environment.mjs`, `version.mjs`, `settings.mjs`                                                                                           |
 
 Other parts of the repository:
 
@@ -122,50 +131,54 @@ Other parts of the repository:
 
 ## Troubleshooting
 
-| Symptom                                                            | Root cause                                                                                    | Files                                         | How to verify                                                                |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------- |
-| Invoking the skill aborts with a permission check failure          | `allowed-tools` was removed or changed                                                        | `SKILL.md`                                    | Invoke it once in the default permission mode                                |
-| The self-check fails                                               | The session did not load the new hooks, or a global setting disables hooks                    | `commands/init.mjs`, `lib/settings.mjs`       | Restart the session and check again; drive `hook.mjs` through standard input |
-| Plugin commands ask for approval                                   | The command form differs from the allow rules, or the machine-local file is missing           | `lib/settings.mjs`, `lib/guard-commands.mjs`  | Compare the rules in `.claude/settings.local.json` with the command          |
-| Replies keep being sent back                                       | The reply ignored the skeleton, or the spec and the reference files disagree                  | `lib/reply-checks.mjs`, `spec/templates.json` | Fill a skeleton from `reply` and check it; run `npm test`                    |
-| After pasting the launch prompt, the session is still "other"      | The first line was edited, the order is not issued, or the session was an orchestrator        | `lib/executors.mjs`, `lib/briefs.mjs`         | Inspect `.git/navigator/sessions/<session id>.json`                          |
-| The user chose A, but the executor still cannot edit files         | "开工对齐" failed the format check, or the order was reissued and the round changed           | `runtime/hook.mjs`, `lib/executors.mjs`       | Check `isAwaitingAlignment` and `alignedRound` in the registration           |
-| Every invocation reports that the records differ from the snapshot | Something rewrote `.navigator/` after the snapshot, and the end-of-reply snapshot did not run | `runtime/hook.mjs`, `lib/snapshots.mjs`       | Check the latest snapshots with `git log refs/navigator/snapshots`           |
-| Every command reports an unresolved anomaly                        | `state.json` contains `pendingAnomaly`                                                        | `commands/support.mjs`, `commands/enter.mjs`  | Follow the anomaly flow and run `adopt` or `restore`                         |
-| Issuing an implementation order is denied, mentioning code checks  | No check commands are registered, or the criteria lack the exact code check criterion         | `lib/code-checks.mjs`, `commands/order.mjs`   | Check `codeChecks` in `state.json`; fetch `template order` again             |
-| After upgrading the plugin, the project behaves the same           | `version` in `plugin.json` was not bumped, so the project copy never asks to upgrade          | `lib/version.mjs`                             | Compare `.navigator/bin/runtime-version.json` with the plugin version        |
-| Dispatching the reviewer subagent is denied                        | The prompt is not the verbatim output of `review-brief`                                       | `lib/guard.mjs`                               | Run `review-brief` again and paste it unchanged                              |
+| Symptom                                                            | Root cause                                                                                                                                           | Files                                         | How to verify                                                                   |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------- |
+| Invoking the skill aborts with a permission check failure          | `allowed-tools` was removed or changed                                                                                                               | `SKILL.md`                                    | Invoke it once in the default permission mode                                   |
+| The self-check fails                                               | The session did not load the new hooks, or a global setting disables hooks                                                                           | `commands/init.mjs`, `lib/settings.mjs`       | Restart the session and check again; drive `hook.mjs` through standard input    |
+| Plugin commands ask for approval                                   | The command form differs from the allow rules, or the machine-local file is missing                                                                  | `lib/settings.mjs`, `lib/guard-commands.mjs`  | Compare the rules in `.claude/settings.local.json` with the command             |
+| Replies keep being sent back                                       | The reply ignored the skeleton, or the spec and the reference files disagree                                                                         | `lib/reply-checks.mjs`, `spec/templates.json` | Fill a skeleton from `reply` and check it; run `npm test`                       |
+| After pasting the launch prompt, the session is still "other"      | The first line was edited, the order is not issued, or the session was an orchestrator                                                               | `lib/executors.mjs`, `lib/briefs.mjs`         | Inspect `.git/navigator/sessions/<session id>.json`                             |
+| The user chose A, but the executor still cannot edit files         | "开工对齐" failed the format check, or the order was reissued and the round changed                                                                  | `runtime/hook.mjs`, `lib/executors.mjs`       | Check `isAwaitingAlignment` and `alignedRound` in the registration              |
+| Every invocation reports that the records differ from the snapshot | Something rewrote `.navigator/` after the snapshot, and the end-of-reply snapshot did not run                                                        | `runtime/hook.mjs`, `lib/snapshots.mjs`       | Check the latest snapshots with `git log refs/navigator/snapshots`              |
+| Every command reports an unresolved anomaly                        | `state.json` contains `pendingAnomaly`                                                                                                               | `commands/support.mjs`, `commands/enter.mjs`  | Follow the anomaly flow and run `adopt` or `restore`                            |
+| Issuing an implementation order is denied, mentioning code checks  | No check commands are registered, or the criteria lack the exact code check criterion                                                                | `lib/code-checks.mjs`, `commands/order.mjs`   | Check `codeChecks` in `state.json`; fetch `template order` again                |
+| After upgrading the plugin, the project behaves the same           | `version` in `plugin.json` was not bumped, so the project copy never asks to upgrade                                                                 | `lib/version.mjs`                             | Compare `.navigator/bin/runtime-version.json` with the plugin version           |
+| Dispatching the reviewer subagent is denied                        | The prompt is not the verbatim output of `review-brief`                                                                                              | `lib/guard.mjs`                               | Run `review-brief` again and paste it unchanged                                 |
+| `evidence` cannot fetch a version or file                          | The version differs from the repository's tag naming, the path is an installed-package path, the repository needs an account, or the network is down | `lib/source-fetch.mjs`                        | Retry the row with `evidence check` and read git's original error in the output |
+| `order set accepted` or `reply review --option 1` is refused       | A verdict in the criteria table of `review.md` is not 通过, or the table is missing                                                                  | `lib/review-record.mjs`                       | Inspect the criteria table in `review.md`                                       |
 
 ## Change process
 
-| What you changed                        | What else to do                                                                                                          |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `spec/templates.json`                   | `npm run gen:docs` and `npm test`; check section names and option set numbers used in hand-written references            |
-| The order of a reply type's option sets | Code refers to set numbers: `lib/guidance.mjs`, `commands/order.mjs`, `commands/enter.mjs`, plus hand-written references |
-| `scripts/navigator-docs/`               | `npm run gen:docs`                                                                                                       |
-| `shared/punctuation.md`                 | `npm run gen:docs`: the executor guide and `writing.md` embed the punctuation rules                                      |
-| `runtime/`                              | `npm test`; bump `version` in `plugin.json` on release, or initialized projects are never asked to run `init` to upgrade |
-| The state file structure                | Bump `STATE_SCHEMA_VERSION` and fill in fields for older states in `normalizeState`                                      |
-| `SKILL.md`                              | The size check in `npm test`; a smoke test with `claude -p`                                                              |
-| Subagent names                          | `SUBAGENT_TYPES` in `lib/guard.mjs`, and `SKILL.md`                                                                      |
-| The plugin name `waypoint`              | `SUBAGENT_TYPES`, `COMMIT_SKILL`, and the `/waypoint:` commands in the documentation                                     |
+| What you changed                                              | What else to do                                                                                                                                |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec/templates.json`                                         | `npm run gen:docs` and `npm test`; check section names and option set numbers used in hand-written references                                  |
+| The order of a reply type's option sets                       | Code refers to set numbers: `lib/guidance.mjs`, `commands/order.mjs`, `commands/enter.mjs`, `commands/reply.mjs`, plus hand-written references |
+| Columns or values of the evidence table or the criteria table | The constants in `lib/source-evidence.mjs` and `lib/review-record.mjs`; `spec.test.mjs` checks that both sides match                           |
+| `scripts/navigator-docs/`                                     | `npm run gen:docs`                                                                                                                             |
+| `shared/punctuation.md`                                       | `npm run gen:docs`: the executor guide and `writing.md` embed the punctuation rules                                                            |
+| `runtime/`                                                    | `npm test`; bump `version` in `plugin.json` on release, or initialized projects are never asked to run `init` to upgrade                       |
+| The state file structure                                      | Bump `STATE_SCHEMA_VERSION` and fill in fields for older states in `normalizeState`                                                            |
+| `SKILL.md`                                                    | The size check in `npm test`; a smoke test with `claude -p`                                                                                    |
+| Subagent names                                                | `SUBAGENT_TYPES` in `lib/guard.mjs`, and `SKILL.md`                                                                                            |
+| The plugin name `waypoint`                                    | `SUBAGENT_TYPES`, `COMMIT_SKILL`, and the `/waypoint:` commands in the documentation                                                           |
 
 ## Tests
 
 - `npm test` runs every test in `tests/project-navigator/`:
 
-| File                            | Covers                                                                                                            |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `spec.test.mjs`                 | Titles and keys are four Chinese characters, ids are unique, options in a set have equal width                    |
-| `reply-checks.test.mjs`         | A filled sample of every option set of every reply passes; common violations are reported                         |
-| `file-checks.test.mjs`          | Every record file skeleton passes; entries and closing sections; edits are rebuilt before checking                |
-| `writing-checks.test.mjs`       | One hit and one miss for every writing rule                                                                       |
-| `guard.test.mjs`                | A decision table of role, tool, path or command, and state                                                        |
-| `workflow.test.mjs`             | Order statuses, roadmap, records, session takeover, executor alignment, next action                               |
-| `snapshots.test.mjs`            | In temporary repositories: snapshot deduplication, byte-exact restore, every reconciliation case                  |
-| `settings.test.mjs`             | Idempotent settings merge; uninstall removes only its own entries                                                 |
-| `cli.test.mjs`, `flow.test.mjs` | Initialization, the work order round trip, anomaly handling, and checkups through the project's commands and hook |
-| `docs.test.mjs`                 | Generated documents are in sync with the spec; `SKILL.md` stays within its size limit                             |
+| File                            | Covers                                                                                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec.test.mjs`                 | Titles and keys are four Chinese characters, ids are unique, options in a set have equal width                                         |
+| `reply-checks.test.mjs`         | A filled sample of every option set of every reply passes; common violations are reported                                              |
+| `file-checks.test.mjs`          | Every record file skeleton passes; entries and closing sections; table sections; edits are rebuilt before checking                     |
+| `evidence.test.mjs`             | Reading and validating the evidence table, fetching lines by version from a local temporary repository, the single-row check command   |
+| `writing-checks.test.mjs`       | One hit and one miss for every writing rule                                                                                            |
+| `guard.test.mjs`                | A decision table of role, tool, path or command, and state                                                                             |
+| `workflow.test.mjs`             | Order statuses, roadmap, records, session takeover, executor alignment, next action                                                    |
+| `snapshots.test.mjs`            | In temporary repositories: snapshot deduplication, byte-exact restore, every reconciliation case                                       |
+| `settings.test.mjs`             | Idempotent settings merge; uninstall removes only its own entries                                                                      |
+| `cli.test.mjs`, `flow.test.mjs` | Initialization, the work order round trip, verdict enforcement, anomaly handling, and checkups through the project's commands and hook |
+| `docs.test.mjs`                 | Generated documents are in sync with the spec; `SKILL.md` stays within its size limit                                                  |
 
 - `npm run gen:docs -- --check` checks on its own that the generated documents are in sync. CI runs both.
 
@@ -191,6 +204,12 @@ Additional findings from smoke tests (`claude -p`, default permission mode):
 - An `Edit(...)` allow rule also covers the Write tool.
 - Without a scope limit in the research frame, one framing research took more than 80 web calls and about 13 minutes; the frame now limits it to 20 calls in total.
 
+Fetching source evidence (git 2.55, 2026-09-23):
+
+- Fetching a few lines of one file from GitHub by tag or full commit hash, at depth 1 with on-demand file download, takes about 2 seconds and leaves a cache of about 100 KB.
+- A wrong tag name (for example, a missing `v`) and a wrong path (for example, a missing `src/`) both fail outright; a nonexistent repository fails within about 2 seconds without a credential window.
+- With a local path as the remote, git reports that on-demand download is unsupported and fetches everything, with the same result; the tests rely on this and use local temporary repositories.
+
 Still to be tested interactively: whether leaving plan mode in bypass mode shows a prompt, the session identity of Agent Team members, and whether a new turn opened by a cross-session message triggers UserPromptSubmit. The design no longer depends on the first two, and Agent Teams are disabled in the orchestrator session by default.
 
 ## Pre-release manual tests
@@ -210,7 +229,7 @@ In a temporary repository with `claude --plugin-dir ./plugins/waypoint`, confirm
 1. Framing a new project: requirement understanding, problem-domain research, the research report, divergent and convergent brainstorming, and the project brief.
 2. Surveying an existing project, including the run-check work order.
 3. Standards comparison: at most three conflicts per round, the comment language, and writing `.claude/rules/engineering.md`.
-4. When a selection receipt lacks source evidence, the reviewer subagent marks it unverified.
+4. The evidence table of a selection receipt: the executor self-checks with `evidence check`; the reviewer subagent verifies with `evidence`; a wrong version or path is marked unverified, the order fails, and the next action is a new selection order.
 5. After the language selection, register the code check commands; before registration, issuing an implementation order is denied; after it, order skeletons prefill the check criterion and the reviewer subagent can run the check commands.
 
 ### Work order round trip
@@ -220,7 +239,7 @@ In a temporary repository with `claude --plugin-dir ./plugins/waypoint`, confirm
 3. The executor is denied when editing business files before the user chooses A, and when committing; "开工对齐" includes "模块划分", and a reply without it is sent back.
 4. Tests with external effects are preceded by "测试授权".
 5. The reviewer subagent returns conclusions with evidence, and is denied when it tries to write a file.
-6. One accepted and one rejected review; two rejections in a row on the same slice suggest splitting it.
+6. One accepted and one rejected review; two rejections in a row on the same slice suggest splitting it; with an unverified criterion, `reply review --option 1` and `order set accepted` are refused.
 7. All three commit options go through `commit-message`, and reconciliation is consistent afterwards.
 
 ### Changes, reviews, and anomalies
@@ -237,3 +256,4 @@ In a temporary repository with `claude --plugin-dir ./plugins/waypoint`, confirm
 - Writes made through shell commands are checked only roughly from the command text; for example, a file written from a scripting language is not detected.
 - The hooks do not restrict the user; hand edits to record files are caught by reconciliation.
 - Every tool call starts Node.js once more, about 70 milliseconds in local measurements, and only in initialized projects.
+- Source evidence supports only https addresses of public git repositories; a dependency without a public repository can only be marked unverified, and the user decides. `evidence` only fetches the cited lines; whether those lines really support the note is still the reviewer's judgment.

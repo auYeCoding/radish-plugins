@@ -46,6 +46,7 @@ import {
   orchestratorResumeReminder,
 } from "./lib/reminders.mjs";
 import { checkReply, locateReply } from "./lib/reply-checks.mjs";
+import { criteriaTableSpec } from "./lib/review-record.mjs";
 import { identifyRole } from "./lib/sessions.mjs";
 import { takeSnapshot } from "./lib/snapshots.mjs";
 import { findReply, loadSpec } from "./lib/spec.mjs";
@@ -184,6 +185,7 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
       ? readExecutorRecord(projectRoot, sessionId)
       : undefined;
   const testCommands = orderTestCommands(state);
+  const spec = loadSpec();
   const decision = decideToolUse({
     role,
     isSubagent: typeof input.agent_id === "string",
@@ -199,11 +201,16 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
       reviewBrief:
         state.order === null
           ? undefined
-          : buildReviewBrief({ projectRoot, order: state.order, testCommands }),
+          : buildReviewBrief({
+              projectRoot,
+              order: state.order,
+              testCommands,
+              criteriaTable: criteriaTableSpec(spec),
+            }),
       researchFrame: RESEARCH_FRAME,
     },
     readFile: (relativePath) => readProjectFile(projectRoot, relativePath),
-    spec: loadSpec(),
+    spec,
   });
   if (decision.isProbe === true) {
     writeProbeHeartbeat(projectRoot, sessionId, now);

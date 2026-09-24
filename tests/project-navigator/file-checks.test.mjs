@@ -17,6 +17,7 @@ import {
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
 import { renderGlossarySeed } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/render-plan.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
+import { renderTable } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
 
 /**
  * 模板规格.
@@ -31,21 +32,55 @@ const SPEC = loadSpec();
 const FILLER = "已填写的内容";
 
 /**
- * 生成某种文件的合格样例.
+ * 生成某种文件的合格样例: 表格中只能取固定值的列填第一个允许的值, 其余占位符填普通文字.
  *
  * @param {string} kind 文件种类.
  * @param {number} [variantIndex] 结构编号, 从 0 开始.
  * @returns {string} 合格的文件全文.
  */
 function filledFile(kind, variantIndex = 0) {
-  return renderFileSkeleton({
-    fileSpec: SPEC.files[kind],
+  const fileSpec = SPEC.files[kind];
+  const sections = (fileSpec.variants ?? [fileSpec.sections ?? []])[
+    variantIndex
+  ];
+  const skeleton = renderFileSkeleton({
+    fileSpec,
     variantIndex,
     state: undefined,
     spec: SPEC,
-  })
+  });
+  return sections
+    .filter((section) => section.table !== undefined)
+    .reduce(
+      (text, section) =>
+        text.replace(placeholderRow(section.table), sampleRow(section.table)),
+      skeleton,
+    )
     .split(PLACEHOLDER)
     .join(FILLER);
+}
+
+/**
+ * 骨架中表格的占位行.
+ *
+ * @param {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TableSpec} table 表格规格.
+ * @returns {string} 占位行.
+ */
+function placeholderRow(table) {
+  return renderTable(table.columns, [table.columns.map(() => PLACEHOLDER)])[2];
+}
+
+/**
+ * 填好的表格行: 只能取固定值的列填第一个允许的值, 其余列填普通文字.
+ *
+ * @param {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TableSpec} table 表格规格.
+ * @returns {string} 表格行.
+ */
+function sampleRow(table) {
+  const cells = table.columns.map(
+    (column) => table.choices?.[column]?.[0] ?? FILLER,
+  );
+  return `| ${cells.join(" | ")} |`;
 }
 
 /**
@@ -107,6 +142,40 @@ test("文件: 键值行缺少一个键", () => {
 
 test("文件: 选型回执使用第二种结构", () => {
   assert.deepEqual(check("receipt", filledFile("receipt", 1)), []);
+});
+
+test("文件: 判据核对的结论只能取规格中的值", () => {
+  const text = filledFile("review").replace("| 通过 |", "| 部分验证 |");
+  const problems = check("review", text);
+  assert.ok(
+    problems.some(
+      (problem) => problem.includes("部分验证") && problem.includes("只能是"),
+    ),
+    problems.join("\n"),
+  );
+});
+
+test("文件: 表格中有空单元格", () => {
+  const text = filledFile("review").replace(
+    `| ${FILLER} | 通过 | ${FILLER} |`,
+    `| ${FILLER} | 通过 |  |`,
+  );
+  assert.ok(
+    check("review", text).some((problem) => problem.includes("每格都要填写")),
+  );
+});
+
+test("文件: 选型回执缺少证据表时指出表格问题, 不误报为结构 1 的标题问题", () => {
+  const text = filledFile("receipt", 1).replace(
+    /## 能力核实\n\n(?:\|.*\n)+/u,
+    "## 能力核实\n\n只写了一段文字.\n",
+  );
+  const problems = check("receipt", text);
+  assert.ok(
+    problems.some((problem) => problem.includes("表头依次为")),
+    problems.join("\n"),
+  );
+  assert.ok(!problems.some((problem) => problem.includes("二级标题应依次为")));
 });
 
 test("文件: 节中贴代码", () => {
