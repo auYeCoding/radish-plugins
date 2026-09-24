@@ -12,6 +12,8 @@ import {
   EXECUTOR_GUIDE_FILE,
   orderFilePath,
 } from "./paths.mjs";
+import { VERDICTS } from "./review-record.mjs";
+import { EVIDENCE_COMMAND, EVIDENCE_SECTION } from "./source-evidence.mjs";
 
 /**
  * 一次问题域调研中网络搜索与网页抓取的总次数上限. 立项调研只需形成基本认知,
@@ -72,16 +74,25 @@ export function buildLaunchPrompt(order) {
 }
 
 /**
- * 生成验收委派提示词.
+ * 生成验收委派提示词. 交回表格的列取自验收记录的规格, 结论只用三种固定取值,
+ * 与写入 review.md 时的校验一致.
  *
  * @param {object} options 生成参数.
  * @param {string} options.projectRoot 项目根目录.
  * @param {{id: string, folder: string, baseCommit: string, kind: string}} options.order 当前工单.
  * @param {readonly string[]} options.testCommands 可运行的测试命令: 代码检查命令与用户授权的测试.
+ * @param {import("./spec.mjs").TableSpec} options.criteriaTable 验收记录中判据核对表的规格.
  * @returns {string} 提示词全文.
  */
-export function buildReviewBrief({ projectRoot, order, testCommands }) {
+export function buildReviewBrief({
+  projectRoot,
+  order,
+  testCommands,
+  criteriaTable,
+}) {
   const tests = testCommands.length === 0 ? "无" : testCommands.join("; ");
+  const { pass, fail, unverified } = VERDICTS;
+  const verdicts = Object.values(VERDICTS).join(", ");
   return [
     `# 验收委派 ${order.id}`,
     "",
@@ -97,19 +108,19 @@ export function buildReviewBrief({ projectRoot, order, testCommands }) {
     "",
     "## 核对要求",
     "",
-    '1. 逐条对照工单的 "验收判据", 每条给出结论 (通过, 不通过, 未验证) 与证据 (文件路径与行号, 或测试输出).',
+    `1. 逐条对照工单的 "验收判据", 每条给出结论与证据 (文件路径与行号, 或命令输出). 结论只能是 ${verdicts} 之一, 不用其它说法; 无法确认的写 ${unverified}, 并写明缺少什么.`,
     `2. 回执一致: 用 git diff ${order.baseCommit} --stat 与回执的 "改动清单" 比对, 列出不一致之处.`,
     "3. 接线核查: 从程序入口追到本工单的新代码, 写出调用链经过的文件路径; 追不到即为未接线.",
     '4. 范围核查: 列出工单 "工作范围" 之外的改动.',
     "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试, 是否放宽了代码检查的规则或加了忽略标记.",
     '6. 测试运行: 只运行 "已授权测试" 中的命令, 原样记录结果; 没有授权的测试不运行.',
     `7. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
-    '8. 选型工单另查: 回执 "能力核实" 中每项关键能力是否附源码证据 (仓库地址, 版本或提交, 文件路径与行号); 缺证据的判为未验证.',
+    `8. 选型工单另查: 运行 \`${EVIDENCE_COMMAND}\`, 它从原仓库按版本取回回执 "${EVIDENCE_SECTION}" 表中每条证据引用的源码行. 逐条判断源码是否支持该行 "说明" 所述的能力: 支持的为 ${pass}, 不支持的为 ${fail}, 取不到源码的为 ${unverified}. 工单要求的关键能力在表中没有证据的, 也为 ${unverified}. 不用其它方式获取源码.`,
     "",
     "## 交回格式",
     "",
-    "1. 判据核对: 表格, 列为 判据, 结论, 证据.",
+    `1. 判据核对: 表格, 列为 ${criteriaTable.columns.join(", ")}.`,
     "2. 专项检查: 依次写 回执一致, 接线核查, 范围核查, 测试改动, 测试运行, 规范核查, 每项一行结论加证据.",
-    "3. 人工验收: 需要用户亲手运行才能确认的判据, 写成逐步操作, 命令原样取自回执.",
+    '3. 人工验收: 需要用户亲手运行才能确认的判据, 写成逐步操作, 命令原样取自回执; 回执中没有这样的命令时写 "无".',
   ].join("\n");
 }

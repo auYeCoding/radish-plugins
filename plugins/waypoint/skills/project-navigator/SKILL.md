@@ -65,6 +65,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 | `order set <状态>`                                       | 转换工单状态                                                                                               |
 | `order tests --from <草稿>`                              | 登记可运行的测试命令: `{"commands": []}`                                                                   |
 | `review-brief`, `research-brief`                         | 取得验收与调研的委派提示词                                                                                 |
+| `evidence`                                               | 从原仓库取回选型回执证据表引用的源码行; 由验收子代理运行, 编排会话不用它自己核验                           |
 | `risk add --from <草稿>`                                 | 登记风险: `{"description", "severity": "high/medium/low", "source", "handling"}`                           |
 | `risk set <编号> <状态> [--from <草稿>]`                 | 状态为 open, investigating, resolved, accepted; 草稿 `{"handling"}`                                        |
 | `decision add --from <草稿>`                             | 登记决策: `{"title"}`                                                                                      |

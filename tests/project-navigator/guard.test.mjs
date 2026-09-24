@@ -405,6 +405,47 @@ const SUBAGENT_CASES = Object.freeze([
     input: { command: "git diff abc1234 --stat" },
     expected: "allow",
   },
+  {
+    name: "验收子代理核对源码证据",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "PowerShell",
+    input: { command: "node .navigator/bin/runtime/navigator.mjs evidence" },
+    expected: "allow",
+  },
+  {
+    name: "验收子代理借证据命令访问任意地址",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "Bash",
+    input: {
+      command:
+        "node .navigator/bin/runtime/navigator.mjs evidence check https://example.com/x v1 a.py 1",
+    },
+    expected: "deny",
+  },
+  {
+    name: "验收子代理运行其它插件命令",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "Bash",
+    input: {
+      command: "node .navigator/bin/runtime/navigator.mjs order set accepted",
+    },
+    expected: "deny",
+  },
+  {
+    name: "阅读子代理核对源码证据",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reader",
+    tool: "Bash",
+    input: { command: "node .navigator/bin/runtime/navigator.mjs evidence" },
+    expected: "deny",
+  },
 ]);
 
 /**

@@ -2,9 +2,12 @@
  * @file 命令行守卫: 编排会话的命令白名单, 以及执行会话与其它会话的命令禁令.
  *
  * 编排会话只允许三类命令: 插件自带的命令行脚本, 只读的 git 命令, 用户已授权的
- * 测试命令; 到了提交步骤, 再放行提交所需的 git 命令. 含有管道, 重定向, 命令串联
- * 等 shell 元字符的命令一律视为复合命令, 除非与已授权的测试命令逐字相同.
+ * 测试命令; 到了提交步骤, 再放行提交所需的 git 命令. 验收子代理另外可以运行
+ * 核对源码证据的插件命令. 含有管道, 重定向, 命令串联等 shell 元字符的命令
+ * 一律视为复合命令, 除非与已授权的测试命令逐字相同.
  */
+
+import { EVIDENCE_COMMAND_NAME } from "./source-evidence.mjs";
 
 /**
  * 表示复合命令的 shell 元字符: 分号, 与, 或, 管道, 重定向, 命令替换, 换行.
@@ -84,9 +87,17 @@ const PROTECTED_PATH_PATTERN =
   /\.navigator[\\/]|\.claude[\\/](settings|rules)/iu;
 
 /**
+ * 编排会话派出的子代理运行了不允许的命令时的拒绝理由.
+ * @type {string}
+ */
+const REVIEWER_COMMAND_REASON =
+  "验收子代理只能运行只读 git 命令, 委派提示词中的源码证据核对命令, 以及用户已授权的测试命令.";
+
+/**
  * @typedef {object} CommandContext 判定命令时需要的状态.
  * @property {string[]} authorizedTests 用户已授权的测试命令.
  * @property {boolean} isCommitStep 是否处于提交步骤 (工单已验收通过).
+ * @property {boolean} [canVerifyEvidence] 是否可以运行核对源码证据的插件命令 (只有验收子代理可以).
  */
 
 /**
@@ -114,7 +125,8 @@ export function checkOrchestratorCommand(command, context) {
 }
 
 /**
- * 判定编排会话派出的验收子代理的一条命令: 只放行只读 git 与已授权的测试命令.
+ * 判定编排会话派出的子代理的一条命令: 放行只读 git 与已授权的测试命令;
+ * 验收子代理另外可以运行不带参数的源码证据核对命令.
  *
  * @param {string} command 命令全文.
  * @param {CommandContext} context 判定上下文.
@@ -125,10 +137,30 @@ export function checkReviewerCommand(command, context) {
   if (context.authorizedTests.includes(trimmed)) {
     return undefined;
   }
-  if (!COMPOUND_PATTERN.test(trimmed) && isReadOnlyGit(trimmed)) {
+  if (COMPOUND_PATTERN.test(trimmed)) {
+    return REVIEWER_COMMAND_REASON;
+  }
+  if (isReadOnlyGit(trimmed)) {
     return undefined;
   }
-  return "验收子代理只能运行只读 git 命令与用户已授权的测试命令.";
+  if (context.canVerifyEvidence === true && isEvidenceCommand(trimmed)) {
+    return undefined;
+  }
+  return REVIEWER_COMMAND_REASON;
+}
+
+/**
+ * 判断命令是否为不带参数的源码证据核对命令.
+ *
+ * @param {string} command 去掉首尾空白的命令.
+ * @returns {boolean} 是时返回 true.
+ */
+function isEvidenceCommand(command) {
+  const match = NAVIGATOR_COMMAND_PATTERN.exec(command);
+  return (
+    match !== null &&
+    command.slice(match[0].length).trim() === EVIDENCE_COMMAND_NAME
+  );
 }
 
 /**

@@ -9,6 +9,7 @@
  * - 阶段: stage <阶段编号>, step <步骤标识>, skip <阶段编号> --from <草稿>
  * - 推进路线: roadmap --from <草稿>, milestone <编号> <状态>, slice <编号> <状态>
  * - 工单: order new|set|tests, review-brief, research-brief
+ * - 源码证据: evidence, evidence check <仓库> <版本> <路径> <行号>
  * - 记录: risk, decision, change
  * - 对账: snapshots, restore <提交>, adopt
  * - 体检与规范: check [文件...], standards --from <草稿>, codecheck set --from <草稿>
@@ -23,6 +24,7 @@ import { runBrief } from "./commands/brief.mjs";
 import { runCheck } from "./commands/check.mjs";
 import { runCodeCheck } from "./commands/codecheck.mjs";
 import { runEnter } from "./commands/enter.mjs";
+import { runEvidence } from "./commands/evidence.mjs";
 import { runInit } from "./commands/init.mjs";
 import { runOrder } from "./commands/order.mjs";
 import { runPlan } from "./commands/plan.mjs";
@@ -33,6 +35,7 @@ import { runStage } from "./commands/stage.mjs";
 import { runStandards } from "./commands/standards.mjs";
 import { runTemplate } from "./commands/template.mjs";
 import { runUninstall } from "./commands/uninstall.mjs";
+import { EVIDENCE_COMMAND_NAME } from "./lib/source-evidence.mjs";
 
 /**
  * 命令出错时的退出码.
@@ -72,6 +75,7 @@ const WORKFLOW_COMMANDS = Object.freeze({
   change: runRecords,
   "review-brief": runBrief,
   "research-brief": runBrief,
+  [EVIDENCE_COMMAND_NAME]: runEvidence,
   snapshots: runSnapshot,
   restore: runSnapshot,
   adopt: runSnapshot,

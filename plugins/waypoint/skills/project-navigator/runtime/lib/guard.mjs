@@ -237,7 +237,7 @@ function decideAgent(toolInput, context) {
 
 /**
  * 判定编排会话子代理的工具调用: 只读; 调研子代理可以联网; 验收子代理可以运行
- * 只读 git 与已授权测试; 其它子代理只能运行只读 git.
+ * 只读 git, 已授权测试与源码证据核对命令; 其它子代理只能运行只读 git.
  *
  * @param {GuardInput} input 守卫输入.
  * @returns {GuardDecision} 判定结果.
@@ -253,11 +253,12 @@ function decideSubagentTool(input) {
       : deny("只有调研子代理可以联网.");
   }
   if (SHELL_TOOLS.includes(toolName)) {
+    const isReviewer = agentType === SUBAGENT_TYPES.reviewer;
     return toDecision(
       checkReviewerCommand(String(toolInput.command ?? ""), {
-        authorizedTests:
-          agentType === SUBAGENT_TYPES.reviewer ? context.authorizedTests : [],
+        authorizedTests: isReviewer ? context.authorizedTests : [],
         isCommitStep: false,
+        canVerifyEvidence: isReviewer,
       }),
     );
   }

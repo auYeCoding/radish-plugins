@@ -5,6 +5,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import {
+  CRITERIA_CHECK_SECTION,
+  CRITERION_COLUMN,
+  VERDICTS,
+  VERDICT_COLUMN,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/review-record.mjs";
+import {
+  EVIDENCE_COLUMNS,
+  EVIDENCE_SECTION,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/source-evidence.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { displayWidth } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
 
@@ -82,6 +92,39 @@ for (const [kind, fileSpec] of Object.entries(SPEC.files)) {
     }
   });
 }
+
+test("规格: 表格节的列不重复, 固定取值只用于已有的列且不重复", () => {
+  const sections = Object.values(SPEC.files).flatMap((fileSpec) =>
+    (fileSpec.variants ?? [fileSpec.sections ?? []]).flat(),
+  );
+  for (const { title, keys, table } of sections) {
+    if (table === undefined) {
+      continue;
+    }
+    assert.equal(keys, undefined, `${title} 不能同时有键名与表格`);
+    assert.equal(new Set(table.columns).size, table.columns.length, title);
+    for (const [column, values] of Object.entries(table.choices ?? {})) {
+      assert.ok(table.columns.includes(column), `${title} 没有列 ${column}`);
+      assert.ok(values.length > 0, `${title} 的 ${column} 至少一个取值`);
+      assert.equal(new Set(values).size, values.length, `${title} ${column}`);
+    }
+  }
+});
+
+test("规格: 证据表与判据核对表和代码中的常量一致", () => {
+  const evidence = SPEC.files.receipt.variants
+    .flat()
+    .find((section) => section.title === EVIDENCE_SECTION)?.table;
+  assert.deepEqual(evidence?.columns, Object.values(EVIDENCE_COLUMNS));
+  const criteria = SPEC.files.review.sections.find(
+    (section) => section.title === CRITERIA_CHECK_SECTION,
+  )?.table;
+  assert.ok(criteria?.columns.includes(CRITERION_COLUMN));
+  assert.deepEqual(
+    criteria?.choices?.[VERDICT_COLUMN],
+    Object.values(VERDICTS),
+  );
+});
 
 for (const [type, reply] of Object.entries(SPEC.replies)) {
   test(`规格: "${type}" 的标题, 键名与选项符合版式规则`, () => {

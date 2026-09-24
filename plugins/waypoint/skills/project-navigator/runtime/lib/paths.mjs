@@ -151,6 +151,13 @@ export const PROBE_HEARTBEAT_FILE = "probe.json";
 export const RUNTIME_REGISTRY_DIRECTORY = "navigator";
 
 /**
+ * 源码证据缓存在运行期登记目录中的子目录名: 每个第三方仓库一个裸仓库.
+ * 放在 Git 目录中, 不进入工作区, 检查工具与格式化工具都扫不到.
+ * @type {string}
+ */
+export const EVIDENCE_CACHE_DIRECTORY = "evidence";
+
+/**
  * init 复制进 `.navigator/bin/` 的目录, 相对于技能目录. 复制后保持同样的相对
  * 布局, 因此运行脚本在插件目录与项目副本中用同一套相对路径找到规格文件.
  * 参考文件也复制进项目: 读取项目之外的插件文件在默认权限模式下需要用户批准.
@@ -295,6 +302,16 @@ export function registryDirectory(worktreeRoot) {
     gitCommonDirectory(worktreeRoot),
     RUNTIME_REGISTRY_DIRECTORY,
   );
+}
+
+/**
+ * 返回源码证据缓存目录的绝对路径.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @returns {string} 缓存目录的绝对路径.
+ */
+export function evidenceCacheDirectory(worktreeRoot) {
+  return path.join(registryDirectory(worktreeRoot), EVIDENCE_CACHE_DIRECTORY);
 }
 
 /**

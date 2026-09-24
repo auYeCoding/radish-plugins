@@ -272,7 +272,7 @@ function replySummary(title, reply, spec) {
 }
 
 /**
- * 描述一个节: 标题, 键名, 是否放启动提示词.
+ * 描述一个节: 标题, 键名或表格, 是否放启动提示词.
  *
  * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").SectionSpec} section 节规格.
  * @returns {string} 描述.
@@ -280,8 +280,23 @@ function replySummary(title, reply, spec) {
 function sectionLabel(section) {
   const keys =
     section.keys === undefined ? "" : ` (${section.keys.join(", ")})`;
+  const table =
+    section.table === undefined ? "" : ` (${tableLabel(section.table)})`;
   const launch = section.allowLaunchPrompt === true ? " (放启动提示词)" : "";
-  return `${section.title}${keys}${launch}`;
+  return `${section.title}${keys}${table}${launch}`;
+}
+
+/**
+ * 描述表格节: 表格的列, 以及只能取固定值的列.
+ *
+ * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TableSpec} table 表格规格.
+ * @returns {string} 描述.
+ */
+function tableLabel(table) {
+  const choices = Object.entries(table.choices ?? {}).map(
+    ([column, values]) => `, "${column}" 只能填 ${values.join("/")}`,
+  );
+  return `表格, 列为 ${table.columns.join(", ")}${choices.join("")}`;
 }
 
 /**
