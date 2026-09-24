@@ -82,7 +82,7 @@ On the first invocation, the skill checks the environment and asks whether to se
 2. Adds guard hooks and allow rules to `.claude/settings.json`, keeping your existing settings. The allow rules are also copied to the machine-local `.claude/settings.local.json`, which is not committed.
 3. Runs a self-check: it deliberately attempts one forbidden write to confirm the guard hooks are active.
 
-Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks and moving to another machine.
+Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks and moving to another machine. For this reason, initialization checks the project's ignore rules: the `.gitignore` inside `.navigator/` re-includes the plugin's files, so rules such as `lib/` or `bin/` in your project cannot leave them out. If a rule ignores `.navigator/` as a whole, the skill stops before changing any settings and names the rule, so you can change it and initialize again.
 
 ## Roles
 

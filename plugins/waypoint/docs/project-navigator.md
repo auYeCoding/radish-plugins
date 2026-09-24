@@ -80,7 +80,7 @@
 2. 在 `.claude/settings.json` 中加入防护 hook 与放行规则, 保留你已有的配置. 放行规则另存一份到本机的 `.claude/settings.local.json`, 这份文件不入库.
 3. 做一次自检: 故意尝试一次被禁止的写入, 确认防护 hook 已经生效.
 
-`.navigator/` 与 `.claude/settings.json` 都要纳入版本控制, 回退或换机器时记录才不会丢失.
+`.navigator/` 与 `.claude/settings.json` 都要纳入版本控制, 回退或换机器时记录才不会丢失. 为此初始化时会检查项目的忽略规则: `.navigator/` 自带的 `.gitignore` 会把插件文件重新纳入, 以防项目里 `lib/`, `bin/` 之类的规则误伤; 如果有规则把 `.navigator/` 整个忽略了, 技能会在改动任何配置之前停下, 指出是哪条规则, 请你改掉后再初始化.
 
 ## 角色分工
 

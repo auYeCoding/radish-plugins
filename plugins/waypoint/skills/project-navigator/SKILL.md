@@ -89,7 +89,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 
 1. 按 "当前状态" 填写 "检查结果" 四项. "设置内容" 固定写: 状态目录为 "创建 .navigator/, 含状态文件, 执行手册, 术语表, 运行脚本"; 防护配置为 "在 .claude/settings.json 中加入防护 hook, 保留已有配置"; 初始标记为 "写入技能版本与初始化时间".
 2. 用户选 A, 或调用参数为 `init` 时, 运行 `node "${CLAUDE_SKILL_DIR}/runtime/navigator.mjs" init --session "${CLAUDE_SESSION_ID}"`.
-3. 按输出中的 "自检步骤" 完成自检: 用 Write 写入指定的探测文件, 这次写入预期被拒绝; 然后运行输出给出的 `init --verify` 命令.
+3. 按输出中的 "自检步骤" 完成自检: 用 Write 写入指定的探测文件, 这次写入预期被拒绝; 然后运行输出给出的 `init --verify` 命令. 输出为 "设置结果: 未执行" 时不做自检, 回复 "运行受阻", 如实转告其中的忽略规则与处理办法.
 4. 自检通过后运行 `status` 确认, 再回复 "首次接入". 自检未通过时, 如实转告输出中的原因与处理办法.
 5. 用户选 B 时结束, 不做任何修改.
 

@@ -4,7 +4,13 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
@@ -13,6 +19,7 @@ import {
   PROBE_FILE,
   PROJECT_COMMAND,
   PROJECT_HOOK,
+  commitPaths,
   createTemporaryDirectory,
   createTemporaryRepository,
   runCommand,
@@ -177,6 +184,76 @@ test("命令行: 初始化, 自检, 登记与卸载的完整流程", () => {
     assert.ok(
       existsSync(path.join(root, ".navigator", "state.json")),
       "卸载保留记录",
+    );
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 项目规则忽略 lib/, bin/ 与各类文件时, init 写入的文件仍能入库, 草稿与杂项文件不入库", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    writeFileSync(
+      path.join(root, ".gitignore"),
+      ["lib/", "bin/", "*.json", "*.md", "*.mjs", ".DS_Store", ""].join("\n"),
+      "utf8",
+    );
+    commitPaths(root, [".gitignore"], "ignore rules");
+    const init = runCommand(
+      PLUGIN_COMMAND,
+      ["init", "--session", SESSION_ID],
+      root,
+    );
+    assert.match(init.stdout, /设置结果: 已写入/u, init.stdout);
+    const written = readdirSync(path.join(root, ".navigator"), {
+      recursive: true,
+    })
+      .map(
+        (relative) =>
+          `.navigator/${String(relative).split(path.sep).join("/")}`,
+      )
+      .filter((relative) => statSync(path.join(root, relative)).isFile());
+    const ignored = spawnSync("git", ["check-ignore", "--stdin"], {
+      cwd: root,
+      input: written.join("\n"),
+      encoding: "utf8",
+    }).stdout.trim();
+    assert.ok(written.length > 0);
+    assert.equal(ignored, "", "init 写入的文件都应能入库");
+    const isIgnored = (relative) =>
+      spawnSync("git", ["check-ignore", "-q", relative], { cwd: root })
+        .status === 0;
+    assert.equal(isIgnored(".navigator/orders/0001-x/review.md"), false);
+    assert.equal(isIgnored(".navigator/drafts/roadmap.json"), true);
+    assert.equal(isIgnored(".navigator/plan/.DS_Store"), true);
+    assert.equal(isIgnored("lib/app.py"), true, "项目自己的规则不受影响");
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 项目规则忽略整个状态目录时, init 报告规则并且不写入其它文件", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    writeFileSync(path.join(root, ".gitignore"), ".navigator/\n", "utf8");
+    commitPaths(root, [".gitignore"], "ignore navigator");
+    const init = runCommand(
+      PLUGIN_COMMAND,
+      ["init", "--session", SESSION_ID],
+      root,
+    );
+    assert.equal(init.status, 0);
+    assert.match(init.stdout, /设置结果: 未执行/u);
+    assert.match(init.stdout, /忽略规则: \.gitignore:1: \.navigator\//u);
+    assert.equal(
+      existsSync(path.join(root, ".navigator", "state.json")),
+      false,
+    );
+    assert.equal(
+      existsSync(path.join(root, ".claude", "settings.json")),
+      false,
     );
   } finally {
     repository.cleanup();
