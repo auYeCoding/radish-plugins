@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-25
+
 ### Added
 
 - `project-navigator`: evidence files for a work order. After alignment, the executor can write files such as raw captures and reproduction scripts into `artifacts/` in its work order folder; they are committed with the work order whatever their type, and the reviewer subagent reads them by the paths listed in the receipt. Before, the executor could write only the receipt under `.navigator/`, so a work order that asked for a capture to be saved could not be followed, and evidence ended up outside the repository. Projects initialized with an earlier version should run `init` again to upgrade, so the new ignore rule is written.
@@ -76,7 +78,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.4.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.5.0...HEAD
+[0.5.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.5.0
 [0.4.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.4.0
 [0.3.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.3.1
 [0.3.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.3.0
