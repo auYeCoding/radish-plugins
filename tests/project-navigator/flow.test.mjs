@@ -209,6 +209,33 @@ projectTest("流程: 路线与工单发布, 回复骨架带启动提示词", (co
   assert.equal(retried.output, undefined, "已打回过一次时放行");
 });
 
+projectTest("流程: 发布后等待回执, 回执写入后转为读回执", (context) => {
+  const { project, hook } = context;
+  const folder = issueFirstOrder(context);
+  assert.match(project(["status"]).stdout, /回复 "等待回执" \(reply wait\)/u);
+  const reply = fill(replySkeleton(project(["reply", "wait"]).stdout));
+  assert.match(reply, /^\[回执到位\]$/mu);
+  const accepted = hook({
+    session_id: ORCHESTRATOR,
+    hook_event_name: "Stop",
+    last_assistant_message: reply,
+  });
+  assert.equal(accepted.output, undefined, "填好的等待回执回复合格");
+  const receiptFile = path.join(folder, "receipt.md");
+  writeFileSync(
+    receiptFile,
+    fill(project(["template", "receipt"]).stdout),
+    "utf8",
+  );
+  hook({
+    session_id: ORCHESTRATOR,
+    hook_event_name: "PostToolUse",
+    tool_name: "Write",
+    tool_input: { file_path: receiptFile },
+  });
+  assert.match(project(["status"]).stdout, /工单 0001 已有回执/u);
+});
+
 projectTest("流程: 执行会话登记, 对齐, 回执, 验收与提交", (context) => {
   const { root, project, hook } = context;
   const folder = issueFirstOrder(context);
@@ -480,6 +507,7 @@ projectTest(
     const brief = project(["review-brief"]).stdout;
     assert.match(brief, new RegExp(`已授权取证工具: ${EVIDENCE_TOOL}`, "u"));
     assert.match(brief, /用户测试记录: .+user-tests\.md/u);
+    assert.match(brief, /证据文件目录: .+0001-export-csv[\\/]artifacts/u);
     const reviewerCall = (toolName) =>
       hook({
         session_id: ORCHESTRATOR,

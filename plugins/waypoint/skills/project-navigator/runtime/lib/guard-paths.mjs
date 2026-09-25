@@ -12,6 +12,7 @@ import {
   PROBE_FILE,
   PROTECTED_CONFIG_FILES,
   isUnderDirectory,
+  orderArtifactsPath,
   orderFilePath,
   relativePathsEqual,
 } from "./paths.mjs";
@@ -22,6 +23,20 @@ import { USER_TESTS_FILE_KIND, checkUserOutputs } from "./user-tests.mjs";
  * @type {string}
  */
 const RECORD_EXTENSION = ".md";
+
+/**
+ * 执行会话在开工对齐之前改动业务文件或证据文件时的拒绝理由.
+ * @type {string}
+ */
+const EXECUTOR_UNALIGNED_REASON =
+  '开工对齐尚未完成: 请先按 "开工对齐" 版式回复, 等用户选择 "A. 继续执行." 后再改动业务文件或证据文件.';
+
+/**
+ * 执行会话写本工单回执与证据文件之外的编排记录时的拒绝理由.
+ * @type {string}
+ */
+const EXECUTOR_RECORD_REASON =
+  ".navigator/ 下只能写本工单的回执, 以及本工单文件夹 artifacts/ 下的证据文件; 其它文件是编排记录, 执行中的发现请写进回执或汇报给编排会话.";
 
 /**
  * @typedef {object} WriteRequest 一次项目内写入.
@@ -97,7 +112,8 @@ function decideOrchestratorWrite(request) {
 }
 
 /**
- * 判定执行会话的写入: 只能写本工单回执与业务文件, 且对齐之前不能写业务文件.
+ * 判定执行会话的写入: 只能写本工单回执, 本工单的证据文件与业务文件;
+ * 对齐之前不能写证据文件与业务文件.
  *
  * @param {WriteRequest} request 写入请求.
  * @returns {import("./guard.mjs").GuardDecision} 判定结果.
@@ -110,26 +126,31 @@ function decideExecutorWrite(request) {
     );
   }
   if (isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)) {
-    const ownReceipt =
-      context.executorFolder === undefined
-        ? undefined
-        : orderFilePath(context.executorFolder, "receipt");
-    if (
-      ownReceipt !== undefined &&
-      relativePathsEqual(relativePath, ownReceipt)
-    ) {
-      return checkStructure(request);
-    }
-    return deny(
-      ".navigator/ 下只有本工单的回执可以写; 其它文件是编排记录, 执行中的发现请写进回执或汇报给编排会话.",
-    );
+    return decideExecutorRecordWrite(request);
   }
-  if (!context.isAligned) {
-    return deny(
-      '开工对齐尚未完成: 请先按 "开工对齐" 版式回复, 等用户选择 "A. 继续执行." 后再改动业务文件.',
-    );
+  return context.isAligned ? allow() : deny(EXECUTOR_UNALIGNED_REASON);
+}
+
+/**
+ * 判定执行会话在状态目录中的写入: 本工单回执任何时候都能写 (受阻时可能还没有
+ * 对齐), 本工单的证据文件在对齐之后能写, 其它编排记录一律拒绝.
+ *
+ * @param {WriteRequest} request 写入请求.
+ * @returns {import("./guard.mjs").GuardDecision} 判定结果.
+ */
+function decideExecutorRecordWrite(request) {
+  const { relativePath, context } = request;
+  const folder = context.executorFolder;
+  if (folder === undefined) {
+    return deny(EXECUTOR_RECORD_REASON);
   }
-  return allow();
+  if (relativePathsEqual(relativePath, orderFilePath(folder, "receipt"))) {
+    return checkStructure(request);
+  }
+  if (isUnderDirectory(relativePath, orderArtifactsPath(folder))) {
+    return context.isAligned ? allow() : deny(EXECUTOR_UNALIGNED_REASON);
+  }
+  return deny(EXECUTOR_RECORD_REASON);
 }
 
 /**

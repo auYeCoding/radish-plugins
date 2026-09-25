@@ -64,7 +64,7 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 2. Each selection question gets a work order, announced with "工单发布" (work order issued). Then:
    1. Open a new Claude Code session in the project root and paste the launch prompt from the "后续操作" (next steps) section of the reply.
    2. After reading the work order, the executor replies with "开工对齐" (alignment). Check its plan; it starts working only after you reply `A`.
-   3. When done, the executor replies with "执行完成" (done). Reply `A` to have it write the receipt file, then go back to the orchestrator session and tell it the work is done.
+   3. When done, the executor replies with "执行完成" (done). Reply `A` to have it write the receipt file, then go back to the orchestrator session and reply `A` in "等待回执" (awaiting receipt).
 3. The orchestrator sends the reviewer subagent to check the work and replies with "验收报告" (review report), listing steps for you to verify by hand. Reply `A` once everything checks out.
 4. In "确认提交" (confirm commit), choose to commit only, commit and push, or hand over to commit-message.
 
@@ -116,10 +116,10 @@ A requirement change can come in at any stage and returns to the same position a
 
 ## Round trip of a work order
 
-1. **Issue.** The orchestrator writes the work order and replies with "工单发布", which contains a launch prompt.
+1. **Issue.** The orchestrator writes the work order and replies with "工单发布", which contains a launch prompt. After you choose A, the orchestrator replies with "等待回执" (awaiting receipt), showing where the work order and the receipt are, and waits for the executor to finish.
 2. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". Its "模块划分" (module plan) section lists the modules to create and change, and what changes in the entry file; read it before you choose A. It can edit business files only after you choose A.
 3. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
-   - A. Document report: the executor writes the receipt file, and you tell the orchestrator it is done.
+   - A. Document report: the executor writes the receipt file; go back to the orchestrator and choose A in "等待回执". If the receipt is not there yet, the orchestrator replies with "等待回执" again and says the receipt was not found.
    - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open.
 4. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree; see [Test authorization and evidence tools](#test-authorization-and-evidence-tools) below.
 5. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit. If there are changes outside the receipt (for example, editor project files), the orchestrator lists them and asks whether to include them.
@@ -196,11 +196,13 @@ You only need to reply with an option letter, adding details after it when neede
     ├── order.md        Work order
     ├── receipt.md      Receipt
     ├── user-tests.md   Output of tests you ran yourself (only when you choose to run them)
+    ├── artifacts/      Evidence files left by the executor, such as raw captures or reproduction scripts (only when needed)
     └── review.md       Review record
 ```
 
 - `plan/roadmap.md` and `plan/risks.md` are generated from the state. Do not edit them by hand.
 - `.navigator/drafts/` holds drafts the orchestrator uses to pass Chinese text to the scripts, and is not committed.
+- `artifacts/` in a work order folder holds evidence files left by the executor, such as raw captures and reproduction scripts. The executor can write there only after you choose A; the files are committed with the work order whatever their type, and the reviewer subagent reads them by path. A script in it runs during review only after test authorization.
 - Whenever the records change, the scripts back up `.navigator/` to the hidden Git ref `refs/navigator/snapshots`. The ref is not part of any branch history, and neither `git reset` nor `git checkout` removes it.
 
 ## Rollbacks and anomalies

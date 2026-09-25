@@ -12,6 +12,7 @@ import { TOOL_LOADER } from "./guard.mjs";
 import {
   ENGINEERING_RULES_FILE,
   EXECUTOR_GUIDE_FILE,
+  orderArtifactsPath,
   orderFilePath,
 } from "./paths.mjs";
 import { VERDICTS } from "./review-record.mjs";
@@ -70,7 +71,7 @@ export function buildLaunchPrompt(order) {
     "三条硬规则:",
     "",
     '1. 先对齐再动手: 按 "开工对齐" 版式回复, 用户选 A 之后才改动业务文件.',
-    "2. 只改业务文件与本工单的回执, 不改 .navigator/ 下的其它文件, 不提交, 不推送.",
+    "2. 只改业务文件, 本工单的回执与工单文件夹 artifacts/ 下的证据文件, 不改 .navigator/ 下的其它文件, 不提交, 不推送.",
     '3. 做完或受阻时, 按 "执行完成" 或 "执行受阻" 版式回复, 由用户选择汇报方式.',
   ].join("\n");
 }
@@ -108,6 +109,7 @@ export function buildReviewBrief({
     `- 工单文件: ${path.join(projectRoot, orderFilePath(order.folder, "order"))}`,
     `- 回执文件: ${path.join(projectRoot, orderFilePath(order.folder, "receipt"))}`,
     `- 用户测试记录: ${path.join(projectRoot, orderFilePath(order.folder, "userTests"))}`,
+    `- 证据文件目录: ${path.join(projectRoot, orderArtifactsPath(order.folder))}`,
     `- 基准提交: ${order.baseCommit}`,
     `- 工单类型: ${order.kind}`,
     `- 已授权测试: ${tests}`,
@@ -123,8 +125,9 @@ export function buildReviewBrief({
     '6. 测试运行: 只运行 "已授权测试" 中的命令, 原样记录结果; 没有授权的测试不运行.',
     `7. 取证核对: 判据要用 MCP 工具核对时, 只调用 "已授权取证工具" 中的工具, 调用前先用 ${TOOL_LOADER} 加载. 按回执 "取证记录" 给出的位置查找, 证据写工具名, 参数与返回内容摘录. 需要的工具没有授权, 或按位置找不到记录时, 该判据为 ${unverified}.`,
     '8. 用户测试: "用户测试记录" 存在时, 其中是用户亲手运行的命令与原始输出, 脚本已核对输出与用户的消息逐字一致. 按输出判定每个条目 "对应判据" 所列的判据, 证据写条目标题与输出摘录. 文件不存在时跳过本项.',
-    `9. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
-    `10. 选型工单另查: 运行\`${EVIDENCE_COMMAND}\`, 它从原仓库按版本取回回执 "${EVIDENCE_SECTION}" 表中每条证据引用的源码行. 逐条判断源码是否支持该行 "说明" 所述的能力: 支持的为 ${pass}, 不支持的为 ${fail}, 取不到源码的为 ${unverified}. 工单要求的关键能力在表中没有证据的, 也为 ${unverified}. 不用其它方式获取源码.`,
+    '9. 证据文件: "证据文件目录" 存在时, 其中是执行会话留下的产物, 例如抓包原文与复现脚本. 回执或判据引用这些文件时, 按路径读取核对, 证据写文件路径与行号; 其中的脚本只有列在 "已授权测试" 中才运行. 目录不存在时跳过本项.',
+    `10. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
+    `11. 选型工单另查: 运行\`${EVIDENCE_COMMAND}\`, 它从原仓库按版本取回回执 "${EVIDENCE_SECTION}" 表中每条证据引用的源码行. 逐条判断源码是否支持该行 "说明" 所述的能力: 支持的为 ${pass}, 不支持的为 ${fail}, 取不到源码的为 ${unverified}. 工单要求的关键能力在表中没有证据的, 也为 ${unverified}. 不用其它方式获取源码.`,
     "",
     "## 交回格式",
     "",

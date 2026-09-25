@@ -71,6 +71,13 @@ export const ORDER_FILES = Object.freeze({
 });
 
 /**
+ * 工单文件夹中存放证据文件的子目录名: 执行会话留下的抓包原文, 复现脚本等
+ * 供验收独立复核的产物.
+ * @type {string}
+ */
+export const ORDER_ARTIFACTS_DIRECTORY = "artifacts";
+
+/**
  * 运行脚本在项目内的副本中, 记录其版本号的文件名.
  * @type {string}
  */
@@ -256,6 +263,16 @@ export function navigatorPath(projectRoot, entry) {
  */
 export function orderFilePath(folder, kind) {
   return `${ORDERS_DIRECTORY}/${folder}/${ORDER_FILES[kind]}`;
+}
+
+/**
+ * 返回工单文件夹中证据文件目录的项目相对路径.
+ *
+ * @param {string} folder 工单文件夹名, 例如 "0007-export-csv".
+ * @returns {string} 以正斜杠分隔的项目相对路径, 不带结尾斜杠.
+ */
+export function orderArtifactsPath(folder) {
+  return `${ORDERS_DIRECTORY}/${folder}/${ORDER_ARTIFACTS_DIRECTORY}`;
 }
 
 /**

@@ -295,6 +295,22 @@
         }
       ]
     },
+    "等待回执": {
+      "id": "wait",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "回执情况",
+          "keys": ["工单文件", "回执路径", "回执状态", "汇报方式"]
+        }
+      ],
+      "optionSets": [
+        {
+          "title": "回执到位",
+          "choices": ["执行完成, 读取回执.", "修改工单, 请提需求."]
+        }
+      ]
+    },
     "测试授权": {
       "id": "test-auth",
       "role": "orchestrator",
