@@ -128,7 +128,7 @@ function orderAction(spec, order, hasReceipt) {
     case "issued":
       return hasReceipt
         ? `工单 ${order.id} 已有回执: 读回执; 执行受阻时运行 order set blocked 再${replyStep(spec, "受阻处理")}; 执行完成时, 测试或取证工具需要授权就${replyStep(spec, "测试授权")}, 否则运行 order set reviewing 并派验收子代理`
-        : `等待工单 ${order.id} 的回执: 执行会话写入回执文件, 或发来消息后由你把内容写入回执文件`;
+        : `等待工单 ${order.id} 的回执: ${replyStep(spec, "等待回执")}; 执行会话发来消息时, 把内容写入回执文件后再运行 status; 回执是否写入以 status 输出为准`;
     case "blocked":
       return `工单 ${order.id} 受阻: ${replyStep(spec, "受阻处理")}`;
     case "reviewing":

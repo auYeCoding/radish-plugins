@@ -383,7 +383,10 @@ test("下一动作: 按对账结果与工单状态给出", () => {
     nextAction({ ...base, state: issued, isNewSession: true }),
     /恢复进度/u,
   );
-  assert.match(nextAction({ ...base, state: issued }), /等待工单 0001 的回执/u);
+  assert.match(
+    nextAction({ ...base, state: issued }),
+    /等待工单 0001 的回执: 回复 "等待回执" \(reply wait\)/u,
+  );
   assert.match(
     nextAction({ ...base, state: issued, hasReceipt: true }),
     /已有回执/u,

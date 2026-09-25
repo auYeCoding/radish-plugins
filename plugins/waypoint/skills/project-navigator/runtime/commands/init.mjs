@@ -16,6 +16,8 @@ import {
   GLOSSARY_FILE,
   GUIDE_SOURCE_FILE,
   NAVIGATOR_DIRECTORY,
+  NAVIGATOR_ENTRIES,
+  ORDER_ARTIFACTS_DIRECTORY,
   PROBE_FILE,
   PROJECT_COMMAND_PATH,
   PROJECT_LOCAL_SETTINGS_FILE,
@@ -62,9 +64,10 @@ const EMPTY_DIRECTORIES = Object.freeze(["plan", "orders", "drafts", "guide"]);
 
 /**
  * 状态目录内 `.gitignore` 的内容. 先重新纳入各级目录与插件写入的文件类型,
- * 避免项目中 `bin/`, `lib/`, `*.json` 之类的规则漏掉运行脚本与记录; 其它文件
- * (例如系统与编辑器生成的文件) 仍按项目规则处理. 最后排除草稿: 草稿只是
- * 命令行脚本的输入, 不入库. 后写的规则优先.
+ * 避免项目中 `bin/`, `lib/`, `*.json` 之类的规则漏掉运行脚本与记录; 工单的
+ * 证据文件类型不固定 (例如脚本, 抓包导出), 整个目录重新纳入. 其它文件 (例如
+ * 系统与编辑器生成的文件) 仍按项目规则处理. 最后排除草稿: 草稿只是命令行脚本
+ * 的输入, 不入库. 后写的规则优先.
  * @type {string}
  */
 const NAVIGATOR_GITIGNORE = [
@@ -73,6 +76,7 @@ const NAVIGATOR_GITIGNORE = [
   "!*.mjs",
   "!*.json",
   "!.gitignore",
+  `!${NAVIGATOR_ENTRIES.orders}/*/${ORDER_ARTIFACTS_DIRECTORY}/**`,
   "drafts/",
   "",
 ].join("\n");

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: evidence files for a work order. After alignment, the executor can write files such as raw captures and reproduction scripts into `artifacts/` in its work order folder; they are committed with the work order whatever their type, and the reviewer subagent reads them by the paths listed in the receipt. Before, the executor could write only the receipt under `.navigator/`, so a work order that asked for a capture to be saved could not be followed, and evidence ended up outside the repository. Projects initialized with an earlier version should run `init` again to upgrade, so the new ignore rule is written.
+
+### Fixed
+
+- `project-navigator`: after a work order is issued, the orchestrator no longer loops on "工单发布" (work order issued). A new reply type, "等待回执" (awaiting receipt), shows the work order and receipt paths and how to report; choose A once the executor has written the receipt, or B to change the work order. Before, an issued work order without a receipt had no reply type, so choosing "已发工单, 等待回执" (issued, awaiting receipt) brought back the same "工单发布" reply, and resuming or upgrading in that state did the same.
+- `project-navigator`: after an upgrade through `init`, the orchestrator follows the next action from `status` instead of always replying with "首次接入" (first entry).
+
 ## [0.4.0] - 2026-09-25
 
 ### Added

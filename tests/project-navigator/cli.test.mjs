@@ -204,6 +204,8 @@ test("命令行: 项目规则忽略 lib/, bin/ 与各类文件时, init 写入�
         ".navigator/**/*.json",
         ".navigator/**/*.md",
         ".DS_Store",
+        "*.py",
+        "*.har",
         "",
       ].join("\n"),
       "utf8",
@@ -234,6 +236,16 @@ test("命令行: 项目规则忽略 lib/, bin/ 与各类文件时, init 写入�
       spawnSync("git", ["check-ignore", "-q", relative], { cwd: root })
         .status === 0;
     assert.equal(isIgnored(".navigator/orders/0001-x/review.md"), false);
+    assert.equal(
+      isIgnored(".navigator/orders/0001-x/artifacts/repro.py"),
+      false,
+      "证据文件不论类型都能入库",
+    );
+    assert.equal(
+      isIgnored(".navigator/orders/0001-x/artifacts/capture/record.har"),
+      false,
+    );
+    assert.equal(isIgnored(".navigator/orders/0001-x/notes.py"), true);
     assert.equal(isIgnored(".navigator/drafts/roadmap.json"), true);
     assert.equal(isIgnored(".navigator/plan/.DS_Store"), true);
     assert.equal(isIgnored("lib/app.py"), true, "项目自己的规则不受影响");
