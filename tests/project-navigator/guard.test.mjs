@@ -51,12 +51,60 @@ const VALID_GLOSSARY = [
 ].join("\n");
 
 /**
- * 默认的状态上下文: 当前工单已发布, 执行会话已对齐, 已授权 npm test.
+ * 测试用的已登记取证工具.
+ * @type {string}
+ */
+const EVIDENCE_TOOL = "mcp__Reqable__capture_live_filter";
+
+/**
+ * 用户测试记录, 相对于项目根目录.
+ * @type {string}
+ */
+const USER_TESTS_FILE = ".navigator/orders/0001-x/user-tests.md";
+
+/**
+ * 用户粘贴的测试输出, 带 Windows 换行与行尾空格.
+ * @type {string}
+ */
+const PASTED_OUTPUT = "HTTP/2 200   \r\nx-mid: aZ3f\r\n";
+
+/**
+ * 生成结构合格的用户测试记录, 每段输出一个条目.
+ *
+ * @param {readonly string[]} outputs 各条目的输出.
+ * @returns {string} 文件全文.
+ */
+function userTestsFile(outputs) {
+  return [
+    "# 用户测试",
+    "",
+    ...outputs.flatMap((output, index) => [
+      `## 测试 ${String(index + 1).padStart(4, "0")}: 注册第一步`,
+      "",
+      "- 测试命令: `python main.py --step 1`",
+      "- 对应判据: 判据 2",
+      "",
+      "```output",
+      output,
+      "```",
+      "",
+    ]),
+    "```text",
+    SPEC.format.summarySeparator,
+    "用户运行了注册第一步.",
+    "```",
+    "",
+  ].join("\n");
+}
+
+/**
+ * 默认的状态上下文: 当前工单已发布, 执行会话已对齐, 已授权 npm test 与一个取证工具.
  * @type {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardContext}
  */
 const BASE_CONTEXT = Object.freeze({
   orderStatus: "issued",
   authorizedTests: ["npm test"],
+  evidenceTools: [EVIDENCE_TOOL],
   executorFolder: "0001-x",
   isOrderActive: true,
   isAligned: true,
@@ -74,7 +122,10 @@ const BASE_CONTEXT = Object.freeze({
  * @property {string} [target] 写入目标, 相对于项目根目录.
  * @property {Record<string, any>} [input] 其余工具参数.
  * @property {Partial<import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardContext>} [context] 覆盖的状态上下文.
+ * @property {string} [previous] 写入目标的当前内容.
+ * @property {string[]} [prompts] 编排会话最近收到的用户消息.
  * @property {"allow" | "deny"} expected 预期判定.
+ * @property {RegExp} [reason] 拒绝理由必须匹配的内容.
  * @property {boolean} [isProbe] 是否预期为自检探测.
  */
 
@@ -213,6 +264,93 @@ const ORCHESTRATOR_CASES = Object.freeze([
     tool: "Bash",
     input: { command: "git commit -m x" },
     expected: "deny",
+    reason: /只运行三类命令/u,
+  },
+  {
+    name: "提交步骤中用 -m 提交时理由给出放行的写法",
+    role: "orchestrator",
+    tool: "Bash",
+    input: { command: 'git commit -m "feat: 导出" -m "- 新增导出"' },
+    context: { orderStatus: "committing" },
+    expected: "deny",
+    reason: /git commit -F -.*heredoc.*不用 `-m`/u,
+  },
+  {
+    name: "提交步骤中用 -F 文件提交时理由给出放行的写法",
+    role: "orchestrator",
+    tool: "PowerShell",
+    input: { command: "git commit -F .navigator/drafts/message.txt" },
+    context: { orderStatus: "committing" },
+    expected: "deny",
+    reason: /git commit -F -/u,
+  },
+  {
+    name: "提交步骤中运行复合命令时理由说明提交写法不受限",
+    role: "orchestrator",
+    tool: "Bash",
+    input: {
+      command:
+        "git rev-parse --is-inside-work-tree && git rev-parse -q --verify HEAD",
+    },
+    context: { orderStatus: "committing" },
+    expected: "deny",
+    reason: /复合命令.*heredoc/u,
+  },
+  {
+    name: "提交步骤中用 PowerShell 管道提交",
+    role: "orchestrator",
+    tool: "PowerShell",
+    input: {
+      command:
+        "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\nfeat: 导出\n'@ | git commit -F -",
+    },
+    context: { orderStatus: "committing" },
+    expected: "allow",
+  },
+  {
+    name: "调用已登记的取证工具",
+    role: "orchestrator",
+    tool: EVIDENCE_TOOL,
+    expected: "deny",
+  },
+  {
+    name: "写用户测试记录且输出与用户消息一致",
+    role: "orchestrator",
+    tool: "Write",
+    target: USER_TESTS_FILE,
+    input: { content: userTestsFile(["HTTP/2 200\nx-mid: aZ3f"]) },
+    prompts: ["继续", `输出如下:\r\n${PASTED_OUTPUT}谢谢`],
+    expected: "allow",
+  },
+  {
+    name: "写用户测试记录且输出被改写",
+    role: "orchestrator",
+    tool: "Write",
+    target: USER_TESTS_FILE,
+    input: { content: userTestsFile(["HTTP/2 200\nx-mid: 已获取"]) },
+    prompts: [`输出如下:\r\n${PASTED_OUTPUT}`],
+    expected: "deny",
+    reason: /逐字/u,
+  },
+  {
+    name: "追加用户测试时不再核对已有的输出",
+    role: "orchestrator",
+    tool: "Write",
+    target: USER_TESTS_FILE,
+    input: { content: userTestsFile(["旧输出", "HTTP/2 200\nx-mid: aZ3f"]) },
+    previous: userTestsFile(["旧输出"]),
+    prompts: [PASTED_OUTPUT],
+    expected: "allow",
+  },
+  {
+    name: "写用户测试记录且输出为空",
+    role: "orchestrator",
+    tool: "Write",
+    target: USER_TESTS_FILE,
+    input: { content: userTestsFile([""]) },
+    prompts: [PASTED_OUTPUT],
+    expected: "deny",
+    reason: /不能为空/u,
   },
   {
     name: "提交步骤中暂存",
@@ -446,6 +584,47 @@ const SUBAGENT_CASES = Object.freeze([
     input: { command: "node .navigator/bin/runtime/navigator.mjs evidence" },
     expected: "deny",
   },
+  {
+    name: "验收子代理加载工具定义",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "ToolSearch",
+    expected: "allow",
+  },
+  {
+    name: "验收子代理调用已登记的取证工具",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: EVIDENCE_TOOL,
+    expected: "allow",
+  },
+  {
+    name: "验收子代理调用未登记的 MCP 工具",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "mcp__Reqable__capture_live_clear",
+    expected: "deny",
+    reason: /未验证/u,
+  },
+  {
+    name: "验收子代理调用其它工具",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "WebFetch",
+    expected: "deny",
+  },
+  {
+    name: "阅读子代理调用已登记的取证工具",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reader",
+    tool: EVIDENCE_TOOL,
+    expected: "deny",
+  },
 ]);
 
 /**
@@ -613,7 +792,8 @@ function decide(testCase) {
     toolInput,
     projectRoot: PROJECT_ROOT,
     context: { ...BASE_CONTEXT, ...testCase.context },
-    readFile: () => undefined,
+    readFile: () => testCase.previous,
+    readRecentPrompts: () => testCase.prompts ?? [],
     spec: SPEC,
   });
 }
@@ -630,6 +810,9 @@ for (const testCase of [
     assert.equal(decision.isProbe === true, testCase.isProbe === true);
     if (testCase.expected === "deny") {
       assert.ok((decision.reason ?? "").length > 0, "拒绝时必须给出理由");
+    }
+    if (testCase.reason !== undefined) {
+      assert.match(decision.reason ?? "", testCase.reason);
     }
   });
 }
@@ -656,6 +839,7 @@ test("守卫: Windows 风格的反斜杠路径同样受保护", () => {
     projectRoot: PROJECT_ROOT,
     context: BASE_CONTEXT,
     readFile: () => undefined,
+    readRecentPrompts: () => [],
     spec: SPEC,
   });
   assert.equal(decision.decision, "deny");

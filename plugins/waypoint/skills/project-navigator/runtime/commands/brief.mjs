@@ -34,6 +34,7 @@ export function runBrief({ command, cwd }) {
         projectRoot: context.projectRoot,
         order,
         testCommands: orderTestCommands(context.state),
+        evidenceTools: context.state.evidenceTools,
         criteriaTable: criteriaTableSpec(context.spec),
       }).split("\n");
     }

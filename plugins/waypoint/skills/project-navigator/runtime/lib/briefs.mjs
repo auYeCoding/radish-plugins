@@ -7,6 +7,8 @@
 
 import path from "node:path";
 
+import { describeEvidenceTools } from "./evidence-tools.mjs";
+import { TOOL_LOADER } from "./guard.mjs";
 import {
   ENGINEERING_RULES_FILE,
   EXECUTOR_GUIDE_FILE,
@@ -75,12 +77,14 @@ export function buildLaunchPrompt(order) {
 
 /**
  * 生成验收委派提示词. 交回表格的列取自验收记录的规格, 结论只用三种固定取值,
- * 与写入 review.md 时的校验一致.
+ * 与写入 review.md 时的校验一致. 用户测试记录的路径总是写出, 由子代理判断
+ * 文件是否存在, 这样同一状态下命令与守卫生成的提示词完全相同.
  *
  * @param {object} options 生成参数.
  * @param {string} options.projectRoot 项目根目录.
  * @param {{id: string, folder: string, baseCommit: string, kind: string}} options.order 当前工单.
  * @param {readonly string[]} options.testCommands 可运行的测试命令: 代码检查命令与用户授权的测试.
+ * @param {readonly string[]} options.evidenceTools 用户授权的 MCP 取证工具.
  * @param {import("./spec.mjs").TableSpec} options.criteriaTable 验收记录中判据核对表的规格.
  * @returns {string} 提示词全文.
  */
@@ -88,6 +92,7 @@ export function buildReviewBrief({
   projectRoot,
   order,
   testCommands,
+  evidenceTools,
   criteriaTable,
 }) {
   const tests = testCommands.length === 0 ? "无" : testCommands.join("; ");
@@ -102,9 +107,11 @@ export function buildReviewBrief({
     "",
     `- 工单文件: ${path.join(projectRoot, orderFilePath(order.folder, "order"))}`,
     `- 回执文件: ${path.join(projectRoot, orderFilePath(order.folder, "receipt"))}`,
+    `- 用户测试记录: ${path.join(projectRoot, orderFilePath(order.folder, "userTests"))}`,
     `- 基准提交: ${order.baseCommit}`,
     `- 工单类型: ${order.kind}`,
     `- 已授权测试: ${tests}`,
+    `- 已授权取证工具: ${describeEvidenceTools(evidenceTools)}`,
     "",
     "## 核对要求",
     "",
@@ -114,8 +121,10 @@ export function buildReviewBrief({
     '4. 范围核查: 列出工单 "工作范围" 之外的改动.',
     "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试, 是否放宽了代码检查的规则或加了忽略标记.",
     '6. 测试运行: 只运行 "已授权测试" 中的命令, 原样记录结果; 没有授权的测试不运行.',
-    `7. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
-    `8. 选型工单另查: 运行 \`${EVIDENCE_COMMAND}\`, 它从原仓库按版本取回回执 "${EVIDENCE_SECTION}" 表中每条证据引用的源码行. 逐条判断源码是否支持该行 "说明" 所述的能力: 支持的为 ${pass}, 不支持的为 ${fail}, 取不到源码的为 ${unverified}. 工单要求的关键能力在表中没有证据的, 也为 ${unverified}. 不用其它方式获取源码.`,
+    `7. 取证核对: 判据要用 MCP 工具核对时, 只调用 "已授权取证工具" 中的工具, 调用前先用 ${TOOL_LOADER} 加载. 按回执 "取证记录" 给出的位置查找, 证据写工具名, 参数与返回内容摘录. 需要的工具没有授权, 或按位置找不到记录时, 该判据为 ${unverified}.`,
+    '8. 用户测试: "用户测试记录" 存在时, 其中是用户亲手运行的命令与原始输出, 脚本已核对输出与用户的消息逐字一致. 按输出判定每个条目 "对应判据" 所列的判据, 证据写条目标题与输出摘录. 文件不存在时跳过本项.',
+    `9. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
+    `10. 选型工单另查: 运行\`${EVIDENCE_COMMAND}\`, 它从原仓库按版本取回回执 "${EVIDENCE_SECTION}" 表中每条证据引用的源码行. 逐条判断源码是否支持该行 "说明" 所述的能力: 支持的为 ${pass}, 不支持的为 ${fail}, 取不到源码的为 ${unverified}. 工单要求的关键能力在表中没有证据的, 也为 ${unverified}. 不用其它方式获取源码.`,
     "",
     "## 交回格式",
     "",

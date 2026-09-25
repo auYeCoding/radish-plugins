@@ -19,7 +19,7 @@ import { navigatorPath } from "./paths.mjs";
  * 状态文件结构的版本号; 结构变化时加一, 并在读取时迁移.
  * @type {number}
  */
-export const STATE_SCHEMA_VERSION = 1;
+export const STATE_SCHEMA_VERSION = 2;
 
 /**
  * 初始化状态: 已写入配置, 等待自检确认 hook 生效.
@@ -90,6 +90,7 @@ export class StateConflictError extends Error {
  * @property {object[]} decisions 决策列表.
  * @property {object[]} changes 变更列表.
  * @property {import("./code-checks.mjs").CodeChecks | null} codeChecks 登记的代码检查命令; 尚未登记时为 null.
+ * @property {string[]} evidenceTools 用户授权验收子代理调用的 MCP 取证工具.
  * @property {string | null} lastCommit 记录中的最近提交.
  * @property {string} [pendingAnomaly] 尚未处理的对账异常类别; 存在时暂停快照与其它命令.
  * @property {string} lastAction 最后一个动作的中文描述.
@@ -127,6 +128,7 @@ export function createInitialState({ skillVersion, sessionId, now }) {
     decisions: [],
     changes: [],
     codeChecks: null,
+    evidenceTools: [],
     lastCommit: null,
     lastAction: "初始化",
     updatedAt: now,
@@ -187,7 +189,7 @@ export function writeState(projectRoot, state, now) {
 }
 
 /**
- * 为旧版本写入的状态补齐后来新增的字段, 不修改传入对象.
+ * 为旧版本写入的状态补齐后来新增的字段, 并标为当前结构版本, 不修改传入对象.
  *
  * @param {Record<string, any>} raw 读取到的状态.
  * @returns {NavigatorState} 字段齐全的状态.
@@ -195,6 +197,7 @@ export function writeState(projectRoot, state, now) {
 function normalizeState(raw) {
   return {
     ...raw,
+    schema: STATE_SCHEMA_VERSION,
     formerSessions: raw.formerSessions ?? [],
     milestones: raw.milestones ?? [],
     slices: raw.slices ?? [],
@@ -203,6 +206,7 @@ function normalizeState(raw) {
     decisions: raw.decisions ?? [],
     changes: raw.changes ?? [],
     codeChecks: raw.codeChecks ?? null,
+    evidenceTools: raw.evidenceTools ?? [],
     skipped: raw.skipped ?? [],
   };
 }

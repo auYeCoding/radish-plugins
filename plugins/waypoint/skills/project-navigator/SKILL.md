@@ -74,6 +74,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 | `check [文件...]`                                        | 体检的脚本检查                                                                                             |
 | `standards --from <草稿>`                                | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                     |
 | `codecheck set --from <草稿>`                            | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                       |
+| `tools set --from <草稿>`                                | 登记用户授权的 MCP 取证工具: `{"tools": []}`, 写完整工具名; 只有验收子代理可以调用                         |
 | `snapshots`, `restore <提交>`, `adopt`                   | 处理验收异常                                                                                               |
 
 ## 子代理

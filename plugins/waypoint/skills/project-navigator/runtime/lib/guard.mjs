@@ -11,6 +11,7 @@ import {
   checkOtherCommand,
   checkReviewerCommand,
 } from "./guard-commands.mjs";
+import { describeEvidenceTools } from "./evidence-tools.mjs";
 import { decideProjectWrite } from "./guard-paths.mjs";
 import { projectRelativePath } from "./paths.mjs";
 
@@ -46,7 +47,19 @@ export const COMMIT_SKILL = "waypoint:commit-message";
  * 提交步骤中的工单状态: 验收通过等待提交, 以及正在提交.
  * @type {readonly string[]}
  */
-const COMMIT_STEP_STATUSES = Object.freeze(["accepted", "committing"]);
+export const COMMIT_STEP_STATUSES = Object.freeze(["accepted", "committing"]);
+
+/**
+ * 加载延迟工具定义的工具. 验收子代理调用 MCP 取证工具之前要先用它加载.
+ * @type {string}
+ */
+export const TOOL_LOADER = "ToolSearch";
+
+/**
+ * MCP 工具名的前缀.
+ * @type {string}
+ */
+const MCP_TOOL_PREFIX = "mcp__";
 
 /**
  * 只读工具, 编排会话与其子代理都可以使用.
@@ -65,7 +78,7 @@ const READ_TOOLS = Object.freeze([
  * @type {readonly string[]}
  */
 const ORCHESTRATOR_EXTRA_TOOLS = Object.freeze([
-  "ToolSearch",
+  TOOL_LOADER,
   "ListAgents",
   "SendMessage",
   "TodoWrite",
@@ -101,6 +114,7 @@ const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
  * @typedef {object} GuardContext 判定时需要的状态.
  * @property {string | undefined} orderStatus 当前工单状态.
  * @property {string[]} authorizedTests 当前工单可以运行的测试命令: 代码检查命令与用户授权的测试.
+ * @property {string[]} evidenceTools 用户授权验收子代理调用的 MCP 取证工具.
  * @property {string | undefined} executorFolder 执行会话绑定的工单文件夹名.
  * @property {boolean} isOrderActive 执行会话绑定的工单是否为当前工单且处于已发布状态.
  * @property {boolean} isAligned 执行会话是否已就本轮发布完成开工对齐.
@@ -118,6 +132,7 @@ const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
  * @property {string} projectRoot 项目根目录.
  * @property {GuardContext} context 状态上下文.
  * @property {(relativePath: string) => string | undefined} readFile 读取项目内文件当前内容.
+ * @property {() => string[]} readRecentPrompts 读取编排会话最近收到的用户消息.
  * @property {import("./spec.mjs").TemplateSpec} spec 模板规格.
  */
 
@@ -237,7 +252,8 @@ function decideAgent(toolInput, context) {
 
 /**
  * 判定编排会话子代理的工具调用: 只读; 调研子代理可以联网; 验收子代理可以运行
- * 只读 git, 已授权测试与源码证据核对命令; 其它子代理只能运行只读 git.
+ * 只读 git, 已授权测试与源码证据核对命令, 并可以加载与调用用户授权的 MCP 取证
+ * 工具; 其它子代理只能运行只读 git.
  *
  * @param {GuardInput} input 守卫输入.
  * @returns {GuardDecision} 判定结果.
@@ -246,6 +262,12 @@ function decideSubagentTool(input) {
   const { toolName, toolInput, agentType, context } = input;
   if (READ_TOOLS.includes(toolName)) {
     return allow();
+  }
+  if (agentType === SUBAGENT_TYPES.reviewer) {
+    const evidenceDecision = decideEvidenceTool(toolName, context);
+    if (evidenceDecision !== undefined) {
+      return evidenceDecision;
+    }
   }
   if (WEB_TOOLS.includes(toolName)) {
     return agentType === SUBAGENT_TYPES.researcher
@@ -266,6 +288,26 @@ function decideSubagentTool(input) {
     return deny("编排会话派出的子代理只能读, 不能写任何文件.");
   }
   return deny(`编排会话派出的子代理不使用 ${toolName}.`);
+}
+
+/**
+ * 判定验收子代理加载工具定义与调用 MCP 工具: 加载总是放行; MCP 工具只放行
+ * 用户授权登记的取证工具.
+ *
+ * @param {string} toolName 工具名.
+ * @param {GuardContext} context 状态上下文.
+ * @returns {GuardDecision | undefined} 判定结果; 不是这两类工具时为 undefined.
+ */
+function decideEvidenceTool(toolName, context) {
+  if (toolName === TOOL_LOADER || context.evidenceTools.includes(toolName)) {
+    return allow();
+  }
+  if (!toolName.startsWith(MCP_TOOL_PREFIX)) {
+    return undefined;
+  }
+  return deny(
+    `验收子代理只调用用户授权登记的取证工具 (当前登记: ${describeEvidenceTools(context.evidenceTools)}). ${toolName} 没有登记, 依赖它的判据写 "未验证", 并写明缺少这个工具.`,
+  );
 }
 
 /**
@@ -294,6 +336,7 @@ function decideWrite(input) {
     toolInput: input.toolInput,
     context: input.context,
     readFile: input.readFile,
+    readRecentPrompts: input.readRecentPrompts,
     spec: input.spec,
   });
 }

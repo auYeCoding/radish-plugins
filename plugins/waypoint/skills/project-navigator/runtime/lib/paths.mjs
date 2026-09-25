@@ -61,12 +61,13 @@ export const ORDERS_DIRECTORY = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.orde
 
 /**
  * 工单文件夹中各文件的文件名.
- * @type {Readonly<{order: string, receipt: string, review: string}>}
+ * @type {Readonly<{order: string, receipt: string, review: string, userTests: string}>}
  */
 export const ORDER_FILES = Object.freeze({
   order: "order.md",
   receipt: "receipt.md",
   review: "review.md",
+  userTests: "user-tests.md",
 });
 
 /**
@@ -149,6 +150,12 @@ export const PROBE_FILE = `${BIN_DIRECTORY}/navigator-probe.txt`;
  * @type {string}
  */
 export const PROBE_HEARTBEAT_FILE = "probe.json";
+
+/**
+ * 编排会话最近收到的用户消息在运行期登记目录中的文件名, 供核对用户测试输出.
+ * @type {string}
+ */
+export const PROMPT_HISTORY_FILE = "prompts.json";
 
 /**
  * 运行期登记信息在 Git 目录中的子目录名. 不入库, 也不受回退影响.

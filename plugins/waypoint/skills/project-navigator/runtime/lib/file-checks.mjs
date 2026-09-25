@@ -23,6 +23,7 @@ import { PLACEHOLDER } from "./render.mjs";
  * @property {import("./spec.mjs").SectionSpec[][]} [variants] 多种可选的固定节序列, 满足其一即可.
  * @property {string} [entryPattern] 只追加记录中, 条目标题的正则.
  * @property {string[]} [entryKeys] 每个条目必须依次包含的键.
+ * @property {string} [entryBlock] 每个条目末尾必须恰好有一个代码块, 语言标记为该值, 用来原样保存输出.
  * @property {import("./spec.mjs").SectionSpec[]} [closingSections] 条目之后可选的收尾节.
  */
 
@@ -60,8 +61,9 @@ export function checkFile({ text, fileSpec, spec }) {
   ) {
     return [`第一行必须是一级标题 "# ${fileSpec.title}".`];
   }
-  const { leading, sections, trailing } = splitSections(
-    items.slice(items.indexOf(first) + 1),
+  const { leading, sections, trailing } = returnEntryBlocks(
+    splitSections(items.slice(items.indexOf(first) + 1)),
+    fileSpec,
   );
   const problems = [];
   if (leading.length > 0) {
@@ -75,7 +77,10 @@ export function checkFile({ text, fileSpec, spec }) {
   problems.push(...checkBody(progress.rest, fileSpec));
   if (
     sections.some((section) =>
-      section.items.some((item) => item.kind === "block"),
+      section.items.some(
+        (item) =>
+          item.kind === "block" && item.language !== fileSpec.entryBlock,
+      ),
     )
   ) {
     problems.push("节正文中不能出现代码块, 不能贴代码.");
@@ -88,6 +93,34 @@ export function checkFile({ text, fileSpec, spec }) {
     problems.push(`文件中仍有未填写的 "${PLACEHOLDER}" 标记.`);
   }
   return problems;
+}
+
+/**
+ * 条目带输出代码块的文件, 最后一个条目的输出块紧挨着人类总结, 切节时会一起被
+ * 当作末尾代码块取出; 把人类总结之前的代码块放回最后一节.
+ *
+ * @param {import("./layout.mjs").SplitResult} split 切节结果.
+ * @param {FileSpec} fileSpec 文件规格.
+ * @returns {import("./layout.mjs").SplitResult} 调整后的切节结果.
+ */
+function returnEntryBlocks(split, fileSpec) {
+  const { sections, trailing } = split;
+  if (
+    fileSpec.entryBlock === undefined ||
+    sections.length === 0 ||
+    trailing.length < 2
+  ) {
+    return split;
+  }
+  const last = sections[sections.length - 1];
+  return {
+    ...split,
+    sections: [
+      ...sections.slice(0, -1),
+      { ...last, items: [...last.items, ...trailing.slice(0, -1)] },
+    ],
+    trailing: trailing.slice(-1),
+  };
 }
 
 /**
@@ -206,9 +239,37 @@ function checkEntries(rest, fileSpec) {
       !entryPattern.test(section.title)
     ) {
       problems.push(`多出了不符合规格的二级标题 "## ${section.title}".`);
-    } else if (fileSpec.entryKeys !== undefined) {
-      problems.push(...checkKeyLines(section, fileSpec.entryKeys));
+    } else {
+      problems.push(...checkEntry(section, fileSpec));
     }
+  }
+  return problems;
+}
+
+/**
+ * 校验一个条目: 键值行, 以及规格要求时末尾唯一的输出代码块.
+ *
+ * @param {import("./layout.mjs").Section} section 条目所在的节.
+ * @param {FileSpec} fileSpec 文件规格.
+ * @returns {string[]} 问题列表.
+ */
+function checkEntry(section, fileSpec) {
+  const lines = {
+    ...section,
+    items: section.items.filter((item) => item.kind !== "block"),
+  };
+  const problems =
+    fileSpec.entryKeys === undefined
+      ? []
+      : checkKeyLines(lines, fileSpec.entryKeys);
+  if (fileSpec.entryBlock === undefined) {
+    return problems;
+  }
+  const blocks = section.items.filter((item) => item.kind === "block");
+  if (blocks.length !== 1 || section.items.at(-1)?.kind !== "block") {
+    problems.push(
+      `"## ${section.title}" 末尾应恰好有一个语言标记为 ${fileSpec.entryBlock} 的代码块, 原样放输出.`,
+    );
   }
   return problems;
 }
