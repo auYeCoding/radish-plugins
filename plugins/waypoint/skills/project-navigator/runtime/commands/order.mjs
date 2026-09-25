@@ -223,7 +223,7 @@ function assertCommitted(context) {
   );
   if (uncommitted.length > 0) {
     throw new WorkflowError(
-      `以下文件没有随提交入库: ${uncommitted.join(", ")}. 再次调用 ${COMMIT_SKILL}, 参数写 "提交, 纳入范围: ${uncommitted.join(", ")}", 提交之后重新运行 order set committed.`,
+      `以下文件没有随提交入库: ${uncommitted.join(", ")}. 再次调用 ${COMMIT_SKILL}, 参数写 "提交, 纳入范围: ${uncommitted.join(", ")}; 纳入范围之外的改动用文字列出并询问", 提交之后重新运行 order set committed.`,
     );
   }
 }

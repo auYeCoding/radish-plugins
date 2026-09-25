@@ -15,6 +15,7 @@ import {
   orderFilePath,
   relativePathsEqual,
 } from "./paths.mjs";
+import { USER_TESTS_FILE_KIND, checkUserOutputs } from "./user-tests.mjs";
 
 /**
  * 编排会话可以直接编写的记录文件扩展名.
@@ -31,6 +32,7 @@ const RECORD_EXTENSION = ".md";
  * @property {Record<string, any>} toolInput 工具参数.
  * @property {import("./guard.mjs").GuardContext} context 状态上下文.
  * @property {(relativePath: string) => string | undefined} readFile 读取项目内文件当前内容.
+ * @property {() => string[]} readRecentPrompts 读取编排会话最近收到的用户消息.
  * @property {import("./spec.mjs").TemplateSpec} spec 模板规格.
  */
 
@@ -131,7 +133,8 @@ function decideExecutorWrite(request) {
 }
 
 /**
- * 写入前校验记录文件的结构; 没有规格的文件与无法重建内容的编辑直接放行.
+ * 写入前校验记录文件的结构; 用户测试记录另外核对新写入的输出与用户消息逐字一致.
+ * 没有规格的文件与无法重建内容的编辑直接放行.
  *
  * @param {WriteRequest} request 写入请求.
  * @returns {import("./guard.mjs").GuardDecision} 判定结果.
@@ -141,21 +144,50 @@ function checkStructure(request) {
   if (fileSpec === undefined) {
     return allow();
   }
+  const previous = request.readFile(request.relativePath);
   const content = reconstructContent(
     request.toolName,
     request.toolInput,
-    request.readFile(request.relativePath),
+    previous,
   );
   if (content === undefined) {
     return allow();
   }
   const problems = checkFile({ text: content, fileSpec, spec: request.spec });
-  if (problems.length === 0) {
+  if (problems.length > 0) {
+    return denyWithProblems(
+      `${request.relativePath} 的结构不符合规格, 本次写入已拦下. 请修改后重写:`,
+      problems,
+    );
+  }
+  if (fileSpec !== request.spec.files[USER_TESTS_FILE_KIND]) {
     return allow();
   }
+  const outputProblems = checkUserOutputs({
+    content,
+    previous,
+    prompts: request.readRecentPrompts(),
+    language: fileSpec.entryBlock ?? "",
+  });
+  return outputProblems.length === 0
+    ? allow()
+    : denyWithProblems(
+        `${request.relativePath} 中的输出必须与用户消息逐字一致, 本次写入已拦下:`,
+        outputProblems,
+      );
+}
+
+/**
+ * 构造列出问题的拒绝判定.
+ *
+ * @param {string} header 第一行说明.
+ * @param {readonly string[]} problems 问题列表.
+ * @returns {import("./guard.mjs").GuardDecision} 拒绝判定.
+ */
+function denyWithProblems(header, problems) {
   return deny(
     [
-      `${request.relativePath} 的结构不符合规格, 本次写入已拦下. 请修改后重写:`,
+      header,
       ...problems.map((problem, index) => `${index + 1}. ${problem}`),
     ].join("\n"),
   );

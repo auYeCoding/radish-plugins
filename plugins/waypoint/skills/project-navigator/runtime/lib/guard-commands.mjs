@@ -66,11 +66,50 @@ const FORBIDDEN_COMMIT_FLAGS =
   /\s(--no-verify|--amend|--force|-f|--force-with-lease)(\s|=|$)/u;
 
 /**
- * 一条命令中出现提交或推送的形式, 允许 git 与子命令之间夹带全局参数.
+ * git 与子命令之间可以夹带的全局参数, 例如 `-c core.quotePath=false`.
+ * @type {string}
+ */
+const GIT_WITH_GLOBAL_OPTIONS = String.raw`\bgit(\s+-[^\s]+(\s+[^-\s][^\s]*)?)*\s+`;
+
+/**
+ * 一条命令中出现提交或推送的形式.
  * @type {RegExp}
  */
-const COMMIT_OR_PUSH_PATTERN =
-  /\bgit(\s+-[^\s]+(\s+[^-\s][^\s]*)?)*\s+(commit|push)\b/u;
+const COMMIT_OR_PUSH_PATTERN = new RegExp(
+  `${GIT_WITH_GLOBAL_OPTIONS}(commit|push)\\b`,
+  "u",
+);
+
+/**
+ * 一条命令中出现暂存, 提交或推送的形式; 提交步骤中写法不对时据此给出正确写法.
+ * @type {RegExp}
+ */
+const COMMIT_STEP_GIT_PATTERN = new RegExp(
+  `${GIT_WITH_GLOBAL_OPTIONS}(add|commit|push)\\b`,
+  "u",
+);
+
+/**
+ * 提交步骤放行的写法, 拒绝理由与编排会话的提醒共用. 只放行经标准输入传入提交消息
+ * 的写法: Windows PowerShell 5.1 向外部命令传中文参数会乱码.
+ * @type {string}
+ */
+export const COMMIT_COMMAND_FORMS =
+  "提交步骤只放行以下写法: 暂存用 `git add -- <路径...>`; 提交消息经标准输入传给 `git commit -F -`, Bash 写成 heredoc (`git commit -F - <<'EOF'`, 消息, `EOF`), PowerShell 写成首行 `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`, 其后 `@'`, 消息, `'@ | git commit -F -`; 只提交部分路径时在 `git commit -F -` 之后加 `-- <路径...>`; 推送用不带强制参数的 `git push`. 不用 `-m`, 也不用 `-F <文件>`.";
+
+/**
+ * 编排会话运行复合命令时的拒绝理由.
+ * @type {string}
+ */
+const ORCHESTRATOR_COMPOUND_REASON =
+  "编排会话不运行复合命令 (含管道, 重定向或多条命令串联); 请一次只运行一条插件命令或只读 git 命令.";
+
+/**
+ * 编排会话运行白名单之外的命令时的拒绝理由.
+ * @type {string}
+ */
+const ORCHESTRATOR_COMMAND_REASON =
+  "编排会话只运行三类命令: 插件命令 (node .navigator/bin/runtime/navigator.mjs ...), 只读 git 命令, 用户已授权的测试命令. 装依赖, 构建, 运行业务脚本都属于实现, 请发布工单交给执行会话.";
 
 /**
  * 会改写文件的命令特征, 用于粗查是否试图用命令行改写受保护的路径.
@@ -101,7 +140,9 @@ const REVIEWER_COMMAND_REASON =
  */
 
 /**
- * 判定编排会话 (主会话) 的一条命令是否放行.
+ * 判定编排会话 (主会话) 的一条命令是否放行. 提交步骤中被拒绝的复合命令与
+ * 暂存, 提交, 推送命令, 拒绝理由附上放行的写法, 让模型换成正确写法, 而不是
+ * 误以为不能提交.
  *
  * @param {string} command 命令全文.
  * @param {CommandContext} context 判定上下文.
@@ -116,12 +157,16 @@ export function checkOrchestratorCommand(command, context) {
     return undefined;
   }
   if (COMPOUND_PATTERN.test(trimmed)) {
-    return "编排会话不运行复合命令 (含管道, 重定向或多条命令串联); 请一次只运行一条插件命令或只读 git 命令.";
+    return context.isCommitStep
+      ? `${ORCHESTRATOR_COMPOUND_REASON} ${COMMIT_COMMAND_FORMS}`
+      : ORCHESTRATOR_COMPOUND_REASON;
   }
   if (NAVIGATOR_COMMAND_PATTERN.test(trimmed) || isReadOnlyGit(trimmed)) {
     return undefined;
   }
-  return "编排会话只运行三类命令: 插件命令 (node .navigator/bin/runtime/navigator.mjs ...), 只读 git 命令, 用户已授权的测试命令. 装依赖, 构建, 运行业务脚本都属于实现, 请发布工单交给执行会话.";
+  return context.isCommitStep && COMMIT_STEP_GIT_PATTERN.test(trimmed)
+    ? `守卫不放行这种写法. ${COMMIT_COMMAND_FORMS}`
+    : ORCHESTRATOR_COMMAND_REASON;
 }
 
 /**

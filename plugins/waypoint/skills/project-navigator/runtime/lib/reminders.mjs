@@ -1,8 +1,10 @@
 /**
  * @file hook 注入给会话的提醒文字: 编排会话每次收到消息与上下文压缩后的位置与禁令,
- * 执行会话的身份与对齐状态.
+ * 提交步骤中放行的提交写法, 执行会话的身份与对齐状态.
  */
 
+import { COMMIT_COMMAND_FORMS } from "./guard-commands.mjs";
+import { COMMIT_STEP_STATUSES } from "./guard.mjs";
 import {
   EXECUTOR_GUIDE_FILE,
   PROJECT_COMMAND_PATH,
@@ -21,7 +23,7 @@ const ORCHESTRATOR_RULES = Object.freeze([
 ]);
 
 /**
- * 生成编排会话的提醒: 当前位置与三条禁令.
+ * 生成编排会话的提醒: 当前位置与三条禁令; 处于提交步骤时, 另附放行的提交写法.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
@@ -32,9 +34,11 @@ export function orchestratorReminder(state, spec) {
   const position = spec.format.progressKeys
     .map((key, index) => `${key} ${values[index]}`)
     .join(", ");
+  const isCommitStep = COMMIT_STEP_STATUSES.includes(state.order?.status ?? "");
   return [
     `[project-navigator] 你是编排会话. ${position}.`,
     `禁令: ${ORCHESTRATOR_RULES.map((rule, index) => `${index + 1}. ${rule}`).join("; ")}.`,
+    ...(isCommitStep ? [COMMIT_COMMAND_FORMS] : []),
   ].join("\n");
 }
 

@@ -1,8 +1,8 @@
 /**
  * @file 运行期登记信息的读写, 位于 Git 公共目录下的 `navigator/`.
  *
- * 这里存放不入库, 也不应随回退丢失的信息: 执行会话登记, 自检请求与心跳.
- * Git 目录不受 `reset`, `checkout`, `clean` 影响.
+ * 这里存放不入库, 也不应随回退丢失的信息: 执行会话登记, 自检请求与心跳,
+ * 编排会话最近收到的用户消息. Git 目录不受 `reset`, `checkout`, `clean` 影响.
  */
 
 import {
@@ -14,7 +14,17 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { PROBE_HEARTBEAT_FILE, registryDirectory } from "./paths.mjs";
+import {
+  PROBE_HEARTBEAT_FILE,
+  PROMPT_HISTORY_FILE,
+  registryDirectory,
+} from "./paths.mjs";
+
+/**
+ * 保留的用户消息条数. 用户粘贴测试输出之后, 编排会话通常在一两轮之内写入记录.
+ * @type {number}
+ */
+const PROMPT_HISTORY_LIMIT = 20;
 
 /**
  * 执行会话登记文件所在的子目录名.
@@ -125,6 +135,52 @@ export function readProbeState(worktreeRoot) {
     request: readJsonIfExists(path.join(directory, PROBE_REQUEST_FILE)),
     heartbeat: readJsonIfExists(path.join(directory, PROBE_HEARTBEAT_FILE)),
   };
+}
+
+/**
+ * 记录编排会话收到的一条用户消息, 只保留最近的若干条.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @param {string} text 用户消息原文.
+ * @param {string} now 当前时间, ISO 格式.
+ * @returns {void}
+ */
+export function appendPrompt(worktreeRoot, text, now) {
+  const directory = registryDirectory(worktreeRoot);
+  const history = [
+    ...readPromptHistory(worktreeRoot),
+    { receivedAt: now, text },
+  ].slice(-PROMPT_HISTORY_LIMIT);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    path.join(directory, PROMPT_HISTORY_FILE),
+    `${JSON.stringify(history, null, 2)}\n`,
+    "utf8",
+  );
+}
+
+/**
+ * 读取编排会话最近收到的用户消息原文, 按收到的先后排列.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @returns {string[]} 消息原文.
+ */
+export function readRecentPrompts(worktreeRoot) {
+  return readPromptHistory(worktreeRoot).map((entry) => entry.text);
+}
+
+/**
+ * 读取用户消息记录.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @returns {{receivedAt: string, text: string}[]} 记录; 不存在时为空.
+ */
+function readPromptHistory(worktreeRoot) {
+  return (
+    readJsonIfExists(
+      path.join(registryDirectory(worktreeRoot), PROMPT_HISTORY_FILE),
+    ) ?? []
+  );
 }
 
 /**

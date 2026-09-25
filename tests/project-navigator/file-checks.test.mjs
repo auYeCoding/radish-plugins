@@ -214,6 +214,37 @@ test("文件: 只追加记录的条目标题必须符合格式", () => {
   );
 });
 
+test("文件: 用户测试的每个条目以一个输出代码块结尾", () => {
+  const base = filledFile("user-tests");
+  const withEntries = (...entries) =>
+    base.replace(/```text/u, `${entries.join("\n")}\n\`\`\`text`);
+  const entry = (number, body) =>
+    `## 测试 ${number}: 注册第一步\n\n- 测试命令: \`python main.py\`\n- 对应判据: 判据 2\n\n${body}\n`;
+  const output = "```output\nHTTP/2 200\n```";
+  assert.deepEqual(
+    check(
+      "user-tests",
+      withEntries(entry("0001", output), entry("0002", output)),
+    ),
+    [],
+  );
+  const missing = check("user-tests", withEntries(entry("0001", "")));
+  assert.ok(
+    missing.some((problem) => problem.includes("output")),
+    missing.join("\n"),
+  );
+  const twice = check(
+    "user-tests",
+    withEntries(entry("0001", `${output}\n\n${output}`)),
+  );
+  assert.ok(twice.some((problem) => problem.includes("恰好有一个")));
+  const code = check(
+    "user-tests",
+    withEntries(entry("0001", "```js\nconsole.log(1)\n```")),
+  );
+  assert.ok(code.some((problem) => problem.includes("不能贴代码")));
+});
+
 test("文件: 头脑风暴的收尾节只能在条目之后", () => {
   const base = filledFile("brainstorm");
   const closing =

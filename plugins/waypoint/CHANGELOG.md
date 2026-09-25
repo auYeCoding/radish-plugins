@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: evidence tools for reviews. When a criterion can be confirmed only through an MCP tool, such as a traffic capture for a flow driven by a server-side state machine, you can authorize read-only MCP tools by their full names in "测试授权" (test authorization), and the new `tools set` command registers them for the project. The reviewer subagent loads and calls only registered tools, at the location the executor writes in the receipt's new "取证记录" (evidence record) key; the orchestrator still cannot call any MCP tool.
+- `project-navigator`: a user test record, `user-tests.md`, in the work order folder. When you choose to run a test yourself, paste the complete output as a message; the orchestrator writes it unchanged, the hook checks it word for word against your recent messages, and the reviewer subagent judges the criteria from that output.
+
+### Fixed
+
+- `project-navigator`: choosing to run a test yourself in "测试授权" no longer fails the work order by design. The result used to go only into the review record, which the reviewer subagent never saw, so the criterion was always unverified.
+- `project-navigator`: during the commit step, denied commands now state the allowed commit forms (`git add -- <paths>`, `git commit -F -` with the message on standard input through heredoc or a PowerShell pipe, and `git push` without force options), and the orchestrator's reminder shows them too. Before, a denied `-m` commit gave a generic reason, and the orchestrator handed the commit to you as if it had no permission.
+- `project-navigator`: when changes outside the receipt are found during the commit step, the orchestrator lists them and asks in text instead of excluding them silently.
+
+### Changed
+
+- `project-navigator`: the reviewer subagent no longer lists its tools. It inherits the session's tools so it can reach MCP evidence tools, the guard's allow list decides what it may call, and `disallowedTools` removes the write tools.
+
 ## [0.3.1] - 2026-09-24
 
 ### Fixed

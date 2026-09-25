@@ -327,6 +327,11 @@ function filesDocument({ spec }) {
       ...(fileSpec.entryKeys === undefined
         ? []
         : [`- 条目键名: ${fileSpec.entryKeys.join(", ")}`]),
+      ...(fileSpec.entryBlock === undefined
+        ? []
+        : [
+            `- 条目代码块: 键值行之后恰好一个语言标记为 \`${fileSpec.entryBlock}\` 的代码块, 原样放输出; 输出含三个反引号时, 围栏改用更多反引号`,
+          ]),
       ...(fileSpec.closingSections === undefined
         ? []
         : [

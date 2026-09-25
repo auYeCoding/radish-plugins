@@ -299,7 +299,10 @@
       "id": "test-auth",
       "role": "orchestrator",
       "sections": [
-        { "title": "测试内容", "keys": ["测试命令", "外部影响", "所需条件"] }
+        {
+          "title": "测试内容",
+          "keys": ["测试命令", "取证工具", "外部影响", "所需条件"]
+        }
       ],
       "optionSets": [
         {
@@ -598,7 +601,10 @@
           { "title": "开工核对" },
           { "title": "判据自检" },
           { "title": "改动清单" },
-          { "title": "测试记录", "keys": ["测试命令", "测试结果", "测试改动"] },
+          {
+            "title": "测试记录",
+            "keys": ["测试命令", "测试结果", "测试改动", "取证记录"]
+          },
           { "title": "运行方式", "keys": ["启动命令", "验证步骤"] },
           {
             "title": "偏差记录",
@@ -659,6 +665,14 @@
         { "title": "人工验收", "keys": ["验收步骤", "用户结论"] },
         { "title": "提交方式", "keys": ["用户选择"] }
       ]
+    },
+    "user-tests": {
+      "pattern": ".navigator/orders/*/user-tests.md",
+      "title": "用户测试",
+      "sections": [],
+      "entryPattern": "^测试 \\d{4}: .+$",
+      "entryKeys": ["测试命令", "对应判据"],
+      "entryBlock": "output"
     },
     "brief": {
       "pattern": ".navigator/plan/brief.md",

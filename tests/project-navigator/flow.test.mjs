@@ -44,6 +44,12 @@ const FILLER = "已填写的内容";
 const CODE_CHECK_COMMAND = "npm run lint";
 
 /**
+ * 测试用的取证工具.
+ * @type {string}
+ */
+const EVIDENCE_TOOL = "mcp__Reqable__capture_live_filter";
+
+/**
  * 推进路线草稿.
  * @type {Readonly<Record<string, unknown>>}
  */
@@ -450,6 +456,81 @@ projectTest(
     writeReview(folder, project, "通过");
     assert.equal(project(["reply", "review", "--option", "1"]).status, 0);
     assert.equal(project(["order", "set", "accepted"]).status, 0);
+  },
+);
+
+projectTest(
+  "流程: 取证工具登记后验收子代理可以调用, 用户测试输出逐字核对",
+  (context) => {
+    const { root, project, hook } = context;
+    const invalid = writeDraft(root, "tools.json", {
+      tools: ["mcp__Reqable__*"],
+    });
+    assert.equal(project(["tools", "set", "--from", invalid]).status, 1);
+    const draft = writeDraft(root, "tools.json", { tools: [EVIDENCE_TOOL] });
+    const registered = project(["tools", "set", "--from", draft]);
+    assert.equal(registered.status, 0, registered.stdout);
+    assert.match(
+      registered.stdout,
+      new RegExp(`取证工具: ${EVIDENCE_TOOL}`, "u"),
+    );
+
+    const folder = issueFirstOrder(context);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    const brief = project(["review-brief"]).stdout;
+    assert.match(brief, new RegExp(`已授权取证工具: ${EVIDENCE_TOOL}`, "u"));
+    assert.match(brief, /用户测试记录: .+user-tests\.md/u);
+    const reviewerCall = (toolName) =>
+      hook({
+        session_id: ORCHESTRATOR,
+        agent_id: "agent-reviewer",
+        agent_type: "waypoint:navigator-reviewer",
+        hook_event_name: "PreToolUse",
+        tool_name: toolName,
+        tool_input: {},
+      }).output;
+    assert.equal(reviewerCall(EVIDENCE_TOOL), undefined);
+    assert.equal(
+      reviewerCall("mcp__Reqable__capture_live_clear").hookSpecificOutput
+        .permissionDecision,
+      "deny",
+    );
+
+    hook({
+      session_id: ORCHESTRATOR,
+      hook_event_name: "UserPromptSubmit",
+      prompt: "运行结果:\nHTTP/2 200\nx-mid: aZ3f",
+    });
+    const userTests = (output) =>
+      fill(project(["template", "user-tests"]).stdout).replace(
+        /```text/u,
+        `## 测试 0001: 注册第一步\n\n- 测试命令: \`python main.py\`\n- 对应判据: 判据 2\n\n\`\`\`output\n${output}\n\`\`\`\n\n\`\`\`text`,
+      );
+    const writeUserTests = (output) =>
+      hook({
+        session_id: ORCHESTRATOR,
+        hook_event_name: "PreToolUse",
+        tool_name: "Write",
+        tool_input: {
+          file_path: path.join(folder, "user-tests.md"),
+          content: userTests(output),
+        },
+      }).output;
+    assert.equal(writeUserTests("HTTP/2 200\nx-mid: aZ3f"), undefined);
+    assert.match(
+      writeUserTests("HTTP/2 200\nx-mid: 已获取").hookSpecificOutput
+        .permissionDecisionReason,
+      /逐字/u,
+    );
+
+    writeReview(folder, project, "通过");
+    assert.equal(project(["order", "set", "accepted"]).status, 0);
+    const reminder = hook({
+      session_id: ORCHESTRATOR,
+      hook_event_name: "UserPromptSubmit",
+      prompt: "A",
+    }).output.hookSpecificOutput.additionalContext;
+    assert.match(reminder, /git commit -F -/u);
   },
 );
 

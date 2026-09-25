@@ -4,8 +4,8 @@
  *
  * - 工具调用前: 按会话身份判定放行或拒绝; 探测写入时留下自检心跳.
  * - 工具调用后: 状态目录被写入后拍快照; 读取当前工单文件的会话登记为执行会话.
- * - 用户发消息时: 编排会话注入位置与禁令; 识别启动提示词并登记执行会话;
- *   识别用户对开工对齐的选择.
+ * - 用户发消息时: 编排会话注入位置与禁令, 并记下消息原文供核对用户测试输出;
+ *   识别启动提示词并登记执行会话; 识别用户对开工对齐的选择.
  * - 会话开始时 (含上下文压缩后): 注入身份与位置提醒.
  * - 回复结束时: 校验编排会话与执行会话的回复版式, 不合格时打回一次; 拍快照.
  *
@@ -36,7 +36,9 @@ import {
 } from "./lib/paths.mjs";
 import { headCommit } from "./lib/repo.mjs";
 import {
+  appendPrompt,
   readExecutorRecord,
+  readRecentPrompts,
   writeExecutorRecord,
   writeProbeHeartbeat,
 } from "./lib/registry.mjs";
@@ -197,6 +199,7 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
     context: {
       orderStatus: state.order?.status,
       authorizedTests: testCommands,
+      evidenceTools: state.evidenceTools,
       ...executorGuardState(record, state),
       reviewBrief:
         state.order === null
@@ -205,11 +208,13 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
               projectRoot,
               order: state.order,
               testCommands,
+              evidenceTools: state.evidenceTools,
               criteriaTable: criteriaTableSpec(spec),
             }),
       researchFrame: RESEARCH_FRAME,
     },
     readFile: (relativePath) => readProjectFile(projectRoot, relativePath),
+    readRecentPrompts: () => readRecentPrompts(projectRoot),
     spec,
   });
   if (decision.isProbe === true) {
@@ -274,8 +279,8 @@ function handlePostToolUse({
 }
 
 /**
- * 处理用户发消息事件. 编排会话注入位置与禁令; 执行会话记录用户对开工对齐的
- * 选择; 启动提示词把会话登记为执行会话.
+ * 处理用户发消息事件. 编排会话注入位置与禁令, 并记下消息原文; 执行会话记录
+ * 用户对开工对齐的选择; 启动提示词把会话登记为执行会话.
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
@@ -283,6 +288,7 @@ function handlePostToolUse({
 function handleUserPrompt({ input, projectRoot, state, role, sessionId, now }) {
   const prompt = String(input.prompt ?? "");
   if (role === "orchestrator") {
+    appendPrompt(projectRoot, prompt, now);
     return contextOutput(
       "UserPromptSubmit",
       orchestratorReminder(state, loadSpec()),

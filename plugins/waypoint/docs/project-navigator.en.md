@@ -90,13 +90,13 @@ Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks a
 
 ## Roles
 
-| Role                 | Who                                                 | What it does                                                                                             |
-| -------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Orchestrator session | The session that invokes the skill                  | Plans, records, writes work orders, organizes reviews, runs checkups; writes only under `.navigator/`    |
-| Executor session     | A new session where you paste the launch prompt     | Researches, selects, codes, and tests for one work order, then writes a receipt; never commits or pushes |
-| Reviewer subagent    | Dispatched by the orchestrator with a fresh context | Checks each criterion, runs only the tests you authorized, reports conclusions with evidence; read-only  |
-| Researcher subagent  | Dispatched by the orchestrator during framing       | Researches the problem domain: similar products, users, industry practice, constraints; read-only        |
-| You                  | The only decision maker                             | Every decision, test authorization, hands-on acceptance, and how to commit                               |
+| Role                 | Who                                                 | What it does                                                                                              |
+| -------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Orchestrator session | The session that invokes the skill                  | Plans, records, writes work orders, organizes reviews, runs checkups; writes only under `.navigator/`     |
+| Executor session     | A new session where you paste the launch prompt     | Researches, selects, codes, and tests for one work order, then writes a receipt; never commits or pushes  |
+| Reviewer subagent    | Dispatched by the orchestrator with a fresh context | Checks each criterion using only the tests and evidence tools you authorized, reports evidence; read-only |
+| Researcher subagent  | Dispatched by the orchestrator during framing       | Researches the problem domain: similar products, users, industry practice, constraints; read-only         |
+| You                  | The only decision maker                             | Every decision, test authorization, hands-on acceptance, and how to commit                                |
 
 The project's hooks enforce these boundaries. For example, the orchestrator is blocked from writing business code, and an executor is blocked from editing files before you approve its plan. Each denial explains why.
 
@@ -121,14 +121,23 @@ A requirement change can come in at any stage and returns to the same position a
 3. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
    - A. Document report: the executor writes the receipt file, and you tell the orchestrator it is done.
    - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open.
-4. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree.
-5. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit.
+4. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree; see [Test authorization and evidence tools](#test-authorization-and-evidence-tools) below.
+5. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit. If there are changes outside the receipt (for example, editor project files), the orchestrator lists them and asks whether to include them.
 
 Work orders run strictly one at a time. If the same slice fails review twice in a row, the orchestrator suggests splitting it smaller.
 
 Every work order that changes code carries a fixed criterion, "代码检查通过" (code checks pass). The check commands are chosen during selection, using each language's established check tools with function length and complexity rules enabled, and they do not check `.navigator/` or `.claude/`. If the checks fail, the work order cannot pass review.
 
 A selection receipt lists its source evidence in a table: capability, repository, version, path, lines, and note. The reviewer subagent runs the `evidence` command, which fetches those lines from the original repository at that version, and checks them one by one without relying on the executor's copy. When a selection order fails, the orchestrator opens a new selection order to correct it.
+
+### Test authorization and evidence tools
+
+Some criteria can be confirmed only through an external tool or a real environment, for example a flow driven by a server-side state machine that can only be compared against captured traffic. When a receipt contains such tests, the orchestrator first replies with "测试授权" (test authorization), and you choose:
+
+- **A. Authorize.** Registered test commands are run by the reviewer subagent itself. MCP tools (for example, the query tools of the Reqable capture tool) are registered by their full names as evidence tools, and the reviewer subagent uses the same tool to look again at the location given in the receipt's "取证记录" (evidence record). Only the reviewer subagent can call evidence tools, never the orchestrator, and the registration applies to later work orders too. Authorize read-only tools only; do not register tools that send requests or clear records.
+- **B. Run it yourself.** Run the command, or look in the tool yourself, and paste the complete output as one message. The orchestrator writes the output unchanged into `user-tests.md` in the work order folder, the hook checks that it matches your pasted text word for word, and the reviewer subagent judges the criteria from that output. Hooks cannot see the output of commands run with `!`, so copy and paste it.
+
+Either way, the reviewer subagent gives the verdict, and any unverified criterion still fails the work order.
 
 ## What replies look like
 
@@ -186,6 +195,7 @@ You only need to reply with an option letter, adding details after it when neede
 └── orders/0007-export-csv/
     ├── order.md        Work order
     ├── receipt.md      Receipt
+    ├── user-tests.md   Output of tests you ran yourself (only when you choose to run them)
     └── review.md       Review record
 ```
 
@@ -232,6 +242,14 @@ No. The hooks block the orchestrator from writing business code. When code needs
 
 No. Installing dependencies, building, and running business scripts are implementation work and are blocked as well.
 
+**A criterion can be confirmed only with an MCP tool such as a traffic capture. How is it reviewed?**
+
+The executor writes the tool and where to look in the receipt's "取证记录" (evidence record). Choose A in "测试授权" and register the read-only query tools as evidence tools, and the reviewer subagent looks for itself; choose B, and you look and paste the result. Do not clear the records in the tool before the review ends.
+
+**I chose to commit only, but the orchestrator says it has no permission to commit?**
+
+In the commit step, the hooks allow only a few fixed forms: `git add -- <paths...>`, `git commit -F -` with the message on standard input, and `git push` without force options. `-m` and `-F <file>` are denied, and the denial gives the allowed forms, so the orchestrator switches to one of them; you do not need to commit by hand.
+
 **Can several work orders run in parallel?**
 
 No. Work orders run strictly one at a time, so each one has a well-defined base commit and review result.
@@ -249,3 +267,5 @@ Run `/waypoint:project-navigator uninstall`. The hooks and allow rules are remov
 - File edits made through shell commands are checked only roughly, and the hooks do not restrict what you do in your own editor.
 - Message reports require the orchestrator and executor sessions to be open at the same time on the same machine.
 - Source evidence supports only public git repositories; a dependency without a public repository is marked unverified, and you decide whether to accept that risk.
+- Evidence tools see the external tool's records as they are at review time. If the records were cleared before the review, or the tool is not running, the affected criteria are marked unverified.
+- The last 20 messages the orchestrator received are kept on your machine in `.git/navigator/prompts.json` to check the test output you paste. They are not committed.

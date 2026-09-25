@@ -13,6 +13,7 @@
  * - 记录: risk, decision, change
  * - 对账: snapshots, restore <提交>, adopt
  * - 体检与规范: check [文件...], standards --from <草稿>, codecheck set --from <草稿>
+ * - 取证工具: tools set --from <草稿>
  *
  * enter 由技能加载时的 `!` 命令调用, 任何情况下都以退出码 0 结束, 错误写进输出,
  * 否则 Claude Code 会中止整个技能调用. 其余命令出错时以退出码 1 结束.
@@ -34,6 +35,7 @@ import { runSnapshot } from "./commands/snapshot.mjs";
 import { runStage } from "./commands/stage.mjs";
 import { runStandards } from "./commands/standards.mjs";
 import { runTemplate } from "./commands/template.mjs";
+import { runTools } from "./commands/tools.mjs";
 import { runUninstall } from "./commands/uninstall.mjs";
 import { EVIDENCE_COMMAND_NAME } from "./lib/source-evidence.mjs";
 
@@ -82,6 +84,7 @@ const WORKFLOW_COMMANDS = Object.freeze({
   check: runCheck,
   standards: runStandards,
   codecheck: runCodeCheck,
+  tools: runTools,
   template: runTemplate,
 });
 
