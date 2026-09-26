@@ -15,6 +15,7 @@ import {
   EVIDENCE_COLUMNS,
   EVIDENCE_SECTION,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/source-evidence.mjs";
+import { ORDER_SOURCE } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/order-excerpt.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { displayWidth } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
 
@@ -124,6 +125,29 @@ test("规格: 证据表与判据核对表和代码中的常量一致", () => {
     criteria?.choices?.[VERDICT_COLUMN],
     Object.values(VERDICTS),
   );
+});
+
+test("规格: 摘录工单内容的回复节在工单文件中有同名节, 键值节与普通节不混用", () => {
+  const orderSections = SPEC.files.order.sections;
+  const excerpts = Object.values(SPEC.replies).flatMap((reply) =>
+    reply.sections.filter((section) => section.source === ORDER_SOURCE),
+  );
+  assert.ok(excerpts.length > 0);
+  for (const section of excerpts) {
+    const source = orderSections.find((entry) => entry.title === section.title);
+    assert.ok(source !== undefined, `工单文件中没有 "${section.title}" 一节`);
+    assert.equal(
+      section.keys === undefined,
+      source.keys === undefined,
+      `"${section.title}" 在回复与工单文件中应同为键值节或同为普通节`,
+    );
+    if (section.keys !== undefined) {
+      assert.ok(
+        section.keys.some((key) => source.keys.includes(key)),
+        `"${section.title}" 至少要摘录一个工单中的键`,
+      );
+    }
+  }
 });
 
 for (const [type, reply] of Object.entries(SPEC.replies)) {

@@ -165,6 +165,20 @@ export const PROBE_HEARTBEAT_FILE = "probe.json";
 export const PROMPT_HISTORY_FILE = "prompts.json";
 
 /**
+ * 编排会话登记在运行期登记目录中的文件名: 当前编排会话与曾经的编排会话.
+ * 会话身份属于本机的运行环境, 不随 `git reset` 与 `checkout` 回退.
+ * @type {string}
+ */
+export const ORCHESTRATOR_REGISTRY_FILE = "orchestrator.json";
+
+/**
+ * 工单审阅记录在运行期登记目录中的文件名: 用户在 "工单审阅" 中对哪张工单的
+ * 哪一版内容作出了选择.
+ * @type {string}
+ */
+export const ORDER_APPROVAL_FILE = "order-approval.json";
+
+/**
  * 运行期登记信息在 Git 目录中的子目录名. 不入库, 也不受回退影响.
  * @type {string}
  */

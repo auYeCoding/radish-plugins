@@ -13,8 +13,11 @@ import {
   isAlignmentConfirmed,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/executors.mjs";
 import { nextAction } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/guidance.mjs";
+import { isChoiceSelected } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/option-answer.mjs";
+import { APPROVAL_STATUSES } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/order-approval.mjs";
 import {
-  claimSession,
+  claimOrchestrator,
+  identifyRole,
   isOrchestratorSession,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/sessions.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
@@ -54,6 +57,12 @@ const NOW = "2026-09-23T00:00:00.000Z";
 const LAST_STAGE = 6;
 
 /**
+ * 模板规格.
+ * @type {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TemplateSpec}
+ */
+const SPEC = loadSpec();
+
+/**
  * 测试用的提交哈希.
  * @type {Readonly<Record<string, string>>}
  */
@@ -68,11 +77,7 @@ const COMMITS = Object.freeze({
  * @returns {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs").NavigatorState} 状态.
  */
 function stateWithRoadmap() {
-  const initial = createInitialState({
-    skillVersion: "0.1.0",
-    sessionId: "orchestrator-1",
-    now: NOW,
-  });
+  const initial = createInitialState({ skillVersion: "0.1.0", now: NOW });
   return applyRoadmap(enterStage(initial, 5, LAST_STAGE), {
     milestones: [
       {
@@ -159,6 +164,24 @@ test("工单: 每次发布轮次加一, 不允许跳过状态", () => {
   assert.throws(
     () => setOrderStatus(issued, "committed", COMMITS.next),
     WorkflowError,
+  );
+});
+
+test("工单: 已发布的工单可以撤回修改, 重新发布时轮次加一", () => {
+  const issued = stateWithIssuedOrder();
+  const withdrawn = setOrderStatus(issued, "drafting", COMMITS.base);
+  assert.equal(withdrawn.order.status, "drafting");
+  const reissued = setOrderStatus(withdrawn, "issued", COMMITS.base);
+  assert.equal(reissued.order.round, 2);
+  assert.throws(
+    () =>
+      setOrderStatus(
+        setOrderStatus(issued, "reviewing", COMMITS.base),
+        "drafting",
+        COMMITS.base,
+      ),
+    WorkflowError,
+    "验收中的工单不能撤回",
   );
 });
 
@@ -297,12 +320,45 @@ test("记录: 风险, 决策与体检编号各自连续", () => {
 });
 
 test("会话: 接管编排时原编排会话记入曾经的编排会话", () => {
-  const state = stateWithRoadmap();
-  const taken = claimSession(state, "orchestrator-2", NOW);
-  assert.equal(taken.session.id, "orchestrator-2");
+  const first = claimOrchestrator(
+    { current: undefined, former: [] },
+    "orchestrator-1",
+    NOW,
+  );
+  const taken = claimOrchestrator(first, "orchestrator-2", NOW);
+  assert.equal(taken.current?.id, "orchestrator-2");
+  assert.deepEqual(taken.former, ["orchestrator-1"]);
   assert.ok(isOrchestratorSession(taken, "orchestrator-1"));
   assert.ok(!isOrchestratorSession(taken, "executor-1"));
-  assert.equal(claimSession(taken, "orchestrator-2", NOW), taken);
+  assert.equal(claimOrchestrator(taken, "orchestrator-2", NOW), taken);
+  const reclaimed = claimOrchestrator(taken, "orchestrator-1", NOW);
+  assert.deepEqual(
+    reclaimed.former,
+    ["orchestrator-2"],
+    "重新接管的会话不再列为曾经的编排会话",
+  );
+});
+
+test("会话: 身份按编排登记与执行登记判断, 被接管的会话单独成一类", () => {
+  const orchestrators = {
+    current: { id: "orchestrator-2", claimedAt: NOW },
+    former: ["orchestrator-1"],
+  };
+  const executorRecord = {
+    sessionId: "executor-1",
+    order: "0001",
+    folder: "0001-export-csv",
+    registeredAt: NOW,
+    isAligned: false,
+    isAwaitingAlignment: false,
+  };
+  const role = (sessionId, record) =>
+    identifyRole({ orchestrators, executorRecord: record, sessionId });
+  assert.equal(role("orchestrator-2", undefined), "orchestrator");
+  assert.equal(role("orchestrator-1", undefined), "superseded");
+  assert.equal(role("executor-1", executorRecord), "executor");
+  assert.equal(role("stranger", undefined), "other");
+  assert.equal(role("", undefined), "other");
 });
 
 test("执行: 只有当前已发布的工单能被启动提示词登记", () => {
@@ -331,7 +387,7 @@ test("执行: 对齐只对本轮发布有效", () => {
     isAwaitingAlignment: true,
   };
   assert.equal(executorGuardState(record, issued).isAligned, false);
-  const aligned = applyAlignmentAnswer(record, issued, "A");
+  const aligned = applyAlignmentAnswer(record, issued, "A", SPEC);
   assert.equal(executorGuardState(aligned, issued).isAligned, true);
   const reissued = setOrderStatus(
     setOrderStatus(issued, "blocked", COMMITS.base),
@@ -341,17 +397,31 @@ test("执行: 对齐只对本轮发布有效", () => {
   assert.equal(executorGuardState(aligned, reissued).isAligned, false);
   const reviewing = setOrderStatus(issued, "reviewing", COMMITS.base);
   assert.equal(executorGuardState(aligned, reviewing).isOrderActive, false);
-  const described = applyAlignmentAnswer(record, issued, "B. 判据 2 看不懂");
+  const described = applyAlignmentAnswer(
+    record,
+    issued,
+    "B. 判据 2 看不懂",
+    SPEC,
+  );
   assert.equal(described.isAligned, false);
   assert.equal(described.isAwaitingAlignment, false);
 });
 
 test("执行: 识别用户选择 A", () => {
-  assert.ok(isAlignmentConfirmed("A"));
-  assert.ok(isAlignmentConfirmed(" a. "));
-  assert.ok(isAlignmentConfirmed("继续执行"));
-  assert.ok(!isAlignmentConfirmed("Also"));
-  assert.ok(!isAlignmentConfirmed("B"));
+  assert.ok(isAlignmentConfirmed("A", SPEC));
+  assert.ok(isAlignmentConfirmed(" a. ", SPEC));
+  assert.ok(isAlignmentConfirmed("继续执行", SPEC));
+  assert.ok(!isAlignmentConfirmed("Also", SPEC));
+  assert.ok(!isAlignmentConfirmed("B", SPEC));
+});
+
+test("选项: 按规格中的选项文字识别用户的选择", () => {
+  const optionSet = SPEC.replies["工单审阅"].optionSets[0];
+  assert.ok(isChoiceSelected("A", optionSet, 0));
+  assert.ok(isChoiceSelected("内容无误, 发布吧", optionSet, 0));
+  assert.ok(!isChoiceSelected("B 判据 3 要改", optionSet, 0));
+  assert.ok(isChoiceSelected("b", optionSet, 1));
+  assert.ok(!isChoiceSelected("A", optionSet, 5), "不存在的选项不算选中");
 });
 
 test("下一动作: 按对账结果与工单状态给出", () => {
@@ -369,11 +439,7 @@ test("下一动作: 按对账结果与工单状态给出", () => {
     restoreTarget: undefined,
     spec: loadSpec(),
   };
-  const fresh = createInitialState({
-    skillVersion: "0.1.0",
-    sessionId: "s",
-    now: NOW,
-  });
+  const fresh = createInitialState({ skillVersion: "0.1.0", now: NOW });
   assert.match(
     nextAction({ ...base, state: fresh }),
     /回复 "首次接入" \(reply entry\)/u,
@@ -390,6 +456,42 @@ test("下一动作: 按对账结果与工单状态给出", () => {
   assert.match(
     nextAction({ ...base, state: issued, hasReceipt: true }),
     /已有回执/u,
+  );
+  const drafting = createOrder(stateWithRoadmap(), {
+    kind: "implementation",
+    slug: "export-csv",
+    slice: undefined,
+    baseCommit: COMMITS.base,
+  });
+  assert.match(
+    nextAction({ ...base, state: drafting }),
+    /回复 "工单审阅" \(reply approve\), 请用户审阅; 用户选 A 后运行 order set issued/u,
+  );
+  assert.match(
+    nextAction({
+      ...base,
+      state: drafting,
+      orderApproval: APPROVAL_STATUSES.awaiting,
+    }),
+    /等用户在 "工单审阅" 中选择/u,
+  );
+  assert.match(
+    nextAction({
+      ...base,
+      state: drafting,
+      orderApproval: APPROVAL_STATUSES.approved,
+    }),
+    /已经用户审阅: 运行 order set issued, 再回复 "工单发布"/u,
+  );
+  const blocked = setOrderStatus(issued, "blocked", COMMITS.base);
+  assert.match(nextAction({ ...base, state: blocked }), /受阻处理.+工单审阅/u);
+  assert.match(
+    nextAction({
+      ...base,
+      state: blocked,
+      orderApproval: APPROVAL_STATUSES.approved,
+    }),
+    /修改已经用户审阅: 运行 order set issued/u,
   );
   assert.match(
     nextAction({

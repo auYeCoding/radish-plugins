@@ -7,12 +7,19 @@
  * - order tests --from <草稿>, 草稿格式 {"commands": ["npm test"]}
  */
 
-import { existsSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { issueBlocker } from "../lib/code-checks.mjs";
 import { replyStep } from "../lib/guidance.mjs";
 import { formatNumber } from "../lib/numbering.mjs";
+import {
+  APPROVAL_REPLY_TYPE,
+  APPROVAL_STATUSES,
+  consumeApproval,
+  readApprovalStatus,
+  readOrderText,
+} from "../lib/order-approval.mjs";
 import { orderFilePath, projectRelativePath } from "../lib/paths.mjs";
 import { COMMIT_SKILL } from "../lib/guard.mjs";
 import { headCommit, listUncommittedPaths } from "../lib/repo.mjs";
@@ -32,6 +39,18 @@ import {
   resultLines,
   saveState,
 } from "./support.mjs";
+
+/**
+ * 发布状态.
+ * @type {string}
+ */
+const ISSUED_STATUS = "issued";
+
+/**
+ * 发布工单的回复类型.
+ * @type {string}
+ */
+const ISSUE_REPLY_TYPE = "工单发布";
 
 /**
  * 同一切片连续验收不通过达到这个次数时, 提示重新拆分切片.
@@ -120,9 +139,9 @@ function createNewOrder(context, values, now) {
 }
 
 /**
- * 转换当前工单状态. 发布前核对代码检查判据; 通过验收前核对验收记录的判据结论;
- * 受阻后重新发布时, 先把旧回执改名归档, 避免被当成新回执; 验收不通过时,
- * 按工单类型与同一切片连续不通过的次数提示下一动作.
+ * 转换当前工单状态. 发布前核对代码检查判据与用户审阅; 通过验收前核对验收记录的
+ * 判据结论; 重新发布时, 先把旧回执改名归档, 避免被当成新回执, 发布后用掉审阅
+ * 记录; 验收不通过时, 按工单类型与同一切片连续不通过的次数提示下一动作.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {string | undefined} status 目标状态.
@@ -134,7 +153,8 @@ function changeStatus(context, status, now) {
     throw new WorkflowError("order set 缺少目标状态.");
   }
   const order = context.state.order;
-  if (status === "issued") {
+  const isIssuing = status === ISSUED_STATUS;
+  if (isIssuing) {
     assertIssuable(context);
   }
   if (status === "accepted" && order?.status === "reviewing") {
@@ -149,13 +169,18 @@ function changeStatus(context, status, now) {
     headCommit(context.projectRoot),
   );
   const archived =
-    order?.status === "blocked" && status === "issued"
+    isIssuing && order !== null
       ? archiveReceipt(context.projectRoot, order.folder)
       : undefined;
-  const state = saveState(context, next, now);
+  const state = saveState(context, next, now, {
+    writtenPaths: archived === undefined ? [] : [archived.from, archived.to],
+  });
+  if (isIssuing) {
+    consumeApproval(context.projectRoot);
+  }
   const lines = resultLines(state);
   if (archived !== undefined) {
-    lines.push(`- 旧回执已归档: ${archived}`);
+    lines.push(`- 旧回执已归档: ${archived.to}`);
   }
   if (status === "rejected" && order !== null) {
     lines.push(rejectionAction(context.spec, state, order));
@@ -184,7 +209,8 @@ function assertAcceptable(context) {
 }
 
 /**
- * 核对当前工单能否发布: 会改动代码的工单必须带代码检查判据.
+ * 核对当前工单能否发布: 会改动代码的工单必须带代码检查判据; 用户必须已在
+ * "工单审阅" 中认可当前的工单内容.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @returns {void}
@@ -195,17 +221,23 @@ function assertIssuable(context) {
   if (order === null) {
     return;
   }
-  const orderFile = path.join(
-    context.projectRoot,
-    orderFilePath(order.folder, "order"),
-  );
   const blocker = issueBlocker(
     context.state,
-    existsSync(orderFile) ? readFileSync(orderFile, "utf8") : undefined,
+    readOrderText(context.projectRoot, order),
   );
   if (blocker !== undefined) {
     throw new WorkflowError(blocker);
   }
+  const approval = readApprovalStatus(context.projectRoot, order);
+  if (approval === APPROVAL_STATUSES.approved) {
+    return;
+  }
+  const { spec } = context;
+  throw new WorkflowError(
+    approval === APPROVAL_STATUSES.awaiting
+      ? `工单 ${order.id} 正在等用户审阅: 用户在 "${APPROVAL_REPLY_TYPE}" 中选 A 之后才能发布.`
+      : `工单 ${order.id} 还没有经用户审阅, 或审阅之后内容有改动: 先${replyStep(spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后再运行 order set issued, 然后${replyStep(spec, ISSUE_REPLY_TYPE)}.`,
+  );
 }
 
 /**
@@ -233,10 +265,11 @@ function assertCommitted(context) {
  *
  * @param {string} projectRoot 项目根目录.
  * @param {string} folder 工单文件夹名.
- * @returns {string | undefined} 归档后的项目相对路径; 没有回执时为 undefined.
+ * @returns {{from: string, to: string} | undefined} 归档前后的项目相对路径; 没有回执时为 undefined.
  */
 function archiveReceipt(projectRoot, folder) {
-  const receipt = path.join(projectRoot, orderFilePath(folder, "receipt"));
+  const from = orderFilePath(folder, "receipt");
+  const receipt = path.join(projectRoot, from);
   if (!existsSync(receipt)) {
     return undefined;
   }
@@ -248,7 +281,7 @@ function archiveReceipt(projectRoot, folder) {
     round += 1;
   }
   renameSync(receipt, archivedName(round));
-  return projectRelativePath(projectRoot, archivedName(round));
+  return { from, to: projectRelativePath(projectRoot, archivedName(round)) };
 }
 
 /**

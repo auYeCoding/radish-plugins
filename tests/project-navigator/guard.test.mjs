@@ -115,7 +115,7 @@ const BASE_CONTEXT = Object.freeze({
 /**
  * @typedef {object} GuardCase 决策表中的一行.
  * @property {string} name 用例名.
- * @property {"orchestrator" | "executor" | "other"} role 会话身份.
+ * @property {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/sessions.mjs").SessionRole} role 会话身份.
  * @property {boolean} [isSubagent] 是否来自子代理.
  * @property {string} [agentType] 子代理类型.
  * @property {string} tool 工具名.
@@ -756,6 +756,93 @@ const EXECUTOR_CASES = Object.freeze([
     input: { command: "rm .navigator/state.json" },
     expected: "deny",
   },
+  {
+    name: "执行会话取回执骨架",
+    role: "executor",
+    tool: "Bash",
+    input: {
+      command: "node .navigator/bin/runtime/navigator.mjs template receipt",
+    },
+    expected: "allow",
+  },
+  {
+    name: "执行会话自查一条源码证据",
+    role: "executor",
+    tool: "PowerShell",
+    input: {
+      command:
+        "node .navigator/bin/runtime/navigator.mjs evidence check https://github.com/a/b v1 src/a.py 1-3",
+    },
+    expected: "allow",
+  },
+  {
+    name: "执行会话把工单转为验收中",
+    role: "executor",
+    tool: "Bash",
+    input: {
+      command: "node .navigator/bin/runtime/navigator.mjs order set reviewing",
+    },
+    expected: "deny",
+    reason: /执行会话只能运行只读的插件命令.+order 会改变编排状态/u,
+  },
+  {
+    name: "执行会话在复合命令中改编排状态",
+    role: "executor",
+    tool: "Bash",
+    input: {
+      command:
+        "cd .navigator/bin/runtime && node navigator.mjs status && node navigator.mjs stage 5",
+    },
+    expected: "deny",
+  },
+  {
+    name: "执行会话用带引号的绝对路径接管编排",
+    role: "executor",
+    tool: "PowerShell",
+    input: {
+      command:
+        '& node "C:\\My Project\\.navigator\\bin\\runtime\\navigator.mjs" enter --session x',
+    },
+    expected: "deny",
+  },
+]);
+
+/**
+ * 被接管的原编排会话的用例.
+ * @type {readonly GuardCase[]}
+ */
+const SUPERSEDED_CASES = Object.freeze([
+  {
+    name: "被接管的会话写编排记录",
+    role: "superseded",
+    tool: "Write",
+    target: ".navigator/plan/brief.md",
+    expected: "deny",
+    reason: /已不是编排会话.+重新调用 \/waypoint:project-navigator/u,
+  },
+  {
+    name: "被接管的会话写草稿",
+    role: "superseded",
+    tool: "Write",
+    target: ".navigator/drafts/change.json",
+    expected: "deny",
+    reason: /已不是编排会话/u,
+  },
+  {
+    name: "被接管的会话改编排状态",
+    role: "superseded",
+    tool: "Bash",
+    input: { command: "node .navigator/bin/runtime/navigator.mjs change add" },
+    expected: "deny",
+    reason: /已不是编排会话.+change/u,
+  },
+  {
+    name: "被接管的会话查看状态",
+    role: "superseded",
+    tool: "Bash",
+    input: { command: "node .navigator/bin/runtime/navigator.mjs status" },
+    expected: "allow",
+  },
 ]);
 
 /**
@@ -776,6 +863,41 @@ const OTHER_CASES = Object.freeze([
     tool: "Write",
     target: ".navigator/orders/0001-x/order.md",
     expected: "deny",
+    reason: /只有编排会话能写.+调用 \/waypoint:project-navigator.+启动提示词/u,
+  },
+  {
+    name: "其它会话提交工单",
+    role: "other",
+    tool: "Bash",
+    input: {
+      command: "node .navigator/bin/runtime/navigator.mjs order set committed",
+    },
+    expected: "deny",
+    reason: /只有编排会话能运行插件命令 order/u,
+  },
+  {
+    name: "其它会话初始化并接管编排",
+    role: "other",
+    tool: "Bash",
+    input: {
+      command:
+        'node "C:/Users/x/.claude/plugins/cache/waypoint/skills/project-navigator/runtime/navigator.mjs" init --session y',
+    },
+    expected: "deny",
+  },
+  {
+    name: "其它会话查看快照列表",
+    role: "other",
+    tool: "Bash",
+    input: { command: "node .navigator/bin/runtime/navigator.mjs snapshots" },
+    expected: "allow",
+  },
+  {
+    name: "其它会话搜索提到脚本名的文件",
+    role: "other",
+    tool: "Bash",
+    input: { command: "grep -rn navigator.mjs README.md docs" },
+    expected: "allow",
   },
   {
     name: "其它会话改项目配置",
@@ -853,6 +975,7 @@ for (const testCase of [
   ...ORCHESTRATOR_CASES,
   ...SUBAGENT_CASES,
   ...EXECUTOR_CASES,
+  ...SUPERSEDED_CASES,
   ...OTHER_CASES,
 ]) {
   test(`守卫: ${testCase.role} ${testCase.name}`, () => {

@@ -42,7 +42,16 @@ export const RECONCILE_LABELS = Object.freeze({
  */
 
 /**
- * 对账: 先比较提交历史; 历史一致时, 再比较状态目录与最近的快照.
+ * 提交历史比较之后, 还要比较状态目录与最近快照的结果: 历史一致, 仓库尚无提交,
+ * 以及发现自己的提交. 自己的提交会被自动纳入, 纳入之前必须确认状态目录没有被
+ * 回退或手工改动; 例如 `git reset --hard` 回到自己的提交, 丢掉未入库的记录时,
+ * 提交历史看起来正常, 只有快照能发现记录被回退.
+ * @type {readonly string[]}
+ */
+const SNAPSHOT_CHECKED_KINDS = Object.freeze(["consistent", "none", "own"]);
+
+/**
+ * 对账: 先比较提交历史; 历史一致或只有自己的提交时, 再比较状态目录与最近的快照.
  *
  * @param {string} worktreeRoot 工作区根目录.
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
@@ -51,7 +60,7 @@ export const RECONCILE_LABELS = Object.freeze({
 export function reconcile(worktreeRoot, state) {
   const head = headCommit(worktreeRoot);
   const result = compareHistory(worktreeRoot, state.lastCommit, head);
-  if (result.kind !== "consistent" && result.kind !== "none") {
+  if (!SNAPSHOT_CHECKED_KINDS.includes(result.kind)) {
     return result;
   }
   const files = changedSinceLatestSnapshot(worktreeRoot) ?? [];

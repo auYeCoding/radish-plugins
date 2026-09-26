@@ -278,6 +278,31 @@
         }
       ]
     },
+    "工单审阅": {
+      "id": "approve",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "工单概况",
+          "keys": ["文件路径", "任务目标", "完成标志", "计划要求"],
+          "source": "order"
+        },
+        {
+          "title": "工作范围",
+          "keys": ["要做的事", "不做的事"],
+          "source": "order"
+        },
+        { "title": "前提假设", "source": "order" },
+        { "title": "执行守则", "source": "order" },
+        { "title": "验收判据", "source": "order" }
+      ],
+      "optionSets": [
+        {
+          "title": "是否发布",
+          "choices": ["内容无误, 发布工单.", "需要修改, 请提需求."]
+        }
+      ]
+    },
     "工单发布": {
       "id": "order",
       "role": "orchestrator",

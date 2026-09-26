@@ -16,6 +16,11 @@ import {
   orderFilePath,
   relativePathsEqual,
 } from "./paths.mjs";
+import {
+  OTHER_SESSION_GUIDE,
+  RECLAIM_GUIDE,
+  SUPERSEDED_NOTICE,
+} from "./session-notices.mjs";
 import { USER_TESTS_FILE_KIND, checkUserOutputs } from "./user-tests.mjs";
 
 /**
@@ -74,11 +79,21 @@ export function decideProjectWrite(request) {
       return decideExecutorWrite(request);
     default:
       return isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)
-        ? deny(
-            ".navigator/ 下是编排记录, 只有编排会话能写; 执行工单请先在新会话中粘贴工单的启动提示词.",
-          )
+        ? deny(nonOrchestratorRecordReason(request.role))
         : allow();
   }
+}
+
+/**
+ * 生成被接管的原编排会话或其它会话写编排记录时的拒绝理由.
+ *
+ * @param {import("./sessions.mjs").SessionRole} role 会话身份.
+ * @returns {string} 拒绝理由.
+ */
+function nonOrchestratorRecordReason(role) {
+  return role === "superseded"
+    ? `${SUPERSEDED_NOTICE}, 不能再写 .navigator/ 下的编排记录. ${RECLAIM_GUIDE}.`
+    : `.navigator/ 下是编排记录, 只有编排会话能写. ${OTHER_SESSION_GUIDE}.`;
 }
 
 /**
@@ -122,7 +137,7 @@ function decideExecutorWrite(request) {
   const { relativePath, context } = request;
   if (!context.isOrderActive) {
     return deny(
-      "本会话绑定的工单已不在执行中 (已提交, 已作废, 验收中或受阻待修改), 不能再改动文件. 请回到编排会话确认下一步.",
+      "本会话绑定的工单已不在执行中 (已提交, 已作废, 验收中, 受阻待修改或被撤回修改), 不能再改动文件. 请回到编排会话确认下一步; 工单重新发布后, 先重新开工对齐.",
     );
   }
   if (isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)) {

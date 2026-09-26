@@ -21,6 +21,7 @@ import { SPEC_FILE } from "./paths.mjs";
  * @property {string[]} [keys] 键值行的键名, 按顺序; 省略时节内容不固定.
  * @property {TableSpec} [table] 节中必须有的表格; 与 keys 不同时使用.
  * @property {boolean} [allowLaunchPrompt] 是否允许放启动提示词代码块.
+ * @property {string} [source] 内容来源; 为 "order" 时正文摘录自当前工单文件的同名节, 不由编排会话撰写.
  */
 
 /**

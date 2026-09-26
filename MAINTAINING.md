@@ -152,14 +152,14 @@
 
 仓库迁移或改名时, 以下位置需要逐一替换. 可以用编辑器全局搜索确认没有遗漏.
 
-| 名称                                 | 出现位置                                                                                                                                                                                             |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 仓库地址 `auYeCoding/radish-plugins` | 两份根 README (徽章与链接), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `plugin.json` 的 `homepage` 与 `repository`, `.github/ISSUE_TEMPLATE/` 下的文件, PR 模板                               |
-| 用户名 `auYeCoding`                  | `marketplace.json` 的 `owner`, `plugin.json` 的 `author`, `.github/CODEOWNERS`, `LICENSE`                                                                                                            |
-| 市场名 `radish-plugins`              | `marketplace.json` 的 `name`, README 中的安装, 更新与卸载命令, `CONTRIBUTING.md` 的本地测试, 横幅源文件                                                                                              |
-| 插件名 `waypoint`                    | `marketplace.json`, `plugin.json`, README 的插件表, 命令与版本徽章地址, `CONTRIBUTING.md` 的示例, issue 模板的示例, 横幅源文件, `project-navigator` 守卫中的子代理与技能名 (`runtime/lib/guard.mjs`) |
-| 状态目录名 `.navigator`              | `project-navigator` 的 `runtime/lib/paths.mjs`, 放行规则 (`runtime/lib/settings.mjs`), 参考文件与文档                                                                                                |
-| 行为准则联系邮箱                     | `CODE_OF_CONDUCT.md`                                                                                                                                                                                 |
+| 名称                                 | 出现位置                                                                                                                                                                                                                                                       |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 仓库地址 `auYeCoding/radish-plugins` | 两份根 README (徽章与链接), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `plugin.json` 的 `homepage` 与 `repository`, `.github/ISSUE_TEMPLATE/` 下的文件, PR 模板                                                                                         |
+| 用户名 `auYeCoding`                  | `marketplace.json` 的 `owner`, `plugin.json` 的 `author`, `.github/CODEOWNERS`, `LICENSE`                                                                                                                                                                      |
+| 市场名 `radish-plugins`              | `marketplace.json` 的 `name`, README 中的安装, 更新与卸载命令, `CONTRIBUTING.md` 的本地测试, 横幅源文件                                                                                                                                                        |
+| 插件名 `waypoint`                    | `marketplace.json`, `plugin.json`, README 的插件表, 命令与版本徽章地址, `CONTRIBUTING.md` 的示例, issue 模板的示例, 横幅源文件, `project-navigator` 守卫中的子代理与技能名 (`runtime/lib/guard.mjs`), 提示文字中的技能命令 (`runtime/lib/session-notices.mjs`) |
+| 状态目录名 `.navigator`              | `project-navigator` 的 `runtime/lib/paths.mjs`, 放行规则 (`runtime/lib/settings.mjs`), 参考文件与文档                                                                                                                                                          |
+| 行为准则联系邮箱                     | `CODE_OF_CONDUCT.md`                                                                                                                                                                                                                                           |
 
 ## 本地开发与测试
 

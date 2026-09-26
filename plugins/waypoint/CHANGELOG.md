@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: a work order is reviewed before it is issued. After writing the work order, the orchestrator replies with the new "工单审阅" (work order review), quoting the overview, scope, premises, rules, and every acceptance criterion straight from the work order file; the hook checks the quote against the file. The work order can be issued only after you choose A, and only with the exact content you approved: editing it afterwards, or reissuing it after it was blocked, needs another review. Before, "工单发布" (work order issued) showed only the path and the number of criteria, next to the launch prompt.
+- `project-navigator`: an issued work order can be withdrawn for changes. Choosing B in "工单发布" or "等待回执" (awaiting receipt) now withdraws the work order with `order set drafting`; after the change is reviewed and issued again, the round increases, the old receipt is archived, and the executor has to align again. Before, the work order was edited in place while an executor might already be working from the old version.
+
+### Fixed
+
+- `project-navigator`: rolling back `.navigator/` with git no longer downgrades the running orchestrator session. The orchestrator is now registered on your machine in `.git/navigator/orchestrator.json` instead of in `state.json`, so `git reset` or `git checkout` cannot change who orchestrates. Before, a rollback brought an older session back into `state.json`; the running orchestrator could no longer write records, was told to paste a launch prompt, and could still change the state through commands. Projects initialized with an earlier version should run `init` again to upgrade; the existing registration is migrated.
+- `project-navigator`: a rollback or manual edit of the records is always reported. Snapshots now take in only the files written by the plugin or by sessions under the hooks, instead of the whole state directory at the end of every reply and command, and reconciliation also compares the snapshot when it finds the plugin's own commit. Commands that change the state refuse while the records differ from the snapshot. Before, `git reset --hard` to the last commit was absorbed into the next snapshot and `status` reported "一致" (consistent).
+- `project-navigator`: executor sessions and other sessions can run only the read-only plugin commands (`status`, `reply`, `template`, `evidence`, `snapshots`). Before, any session could change the orchestration state through the allow-listed commands, for example an executor accepting its own work order.
+- `project-navigator`: a session whose orchestration was taken over is told so when you send it a message, and its denials say how to take orchestration back instead of asking it to paste a launch prompt.
+
 ## [0.5.0] - 2026-09-25
 
 ### Added

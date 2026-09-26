@@ -19,6 +19,7 @@ import { readState } from "../lib/state.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import { adoptCommit } from "../lib/workflow-orders.mjs";
 import {
+  SNAPSHOT_MODES,
   openProject,
   openProjectForRecovery,
   resultLines,
@@ -62,9 +63,10 @@ export function runSnapshot({ command, positionals, cwd, now }) {
 }
 
 /**
- * 恢复状态目录. 恢复前先为当前内容拍一个快照, 便于反悔; 编排会话登记,
- * 初始化信息与技能版本保持恢复前的值, 因为它们描述的是当前环境.
- * 当前状态文件损坏时不保留这些值, 以恢复出的为准.
+ * 恢复状态目录. 恢复前先为当前内容拍一个快照, 便于反悔; 初始化信息与技能版本
+ * 保持恢复前的值, 因为它们描述的是当前环境 (编排会话登记本来就不在状态目录中).
+ * 当前状态文件损坏时不保留这些值, 以恢复出的为准. 恢复后按恢复出的内容拍完整
+ * 快照, 作为之后对账的依据.
  *
  * @param {ReturnType<typeof openProjectForRecovery>} recovery 为恢复打开的项目.
  * @param {string | undefined} commit 快照提交或普通提交.
@@ -86,11 +88,7 @@ function restore(recovery, commit, now) {
   const environment =
     state === undefined
       ? {}
-      : {
-          session: state.session,
-          init: state.init,
-          skillVersion: state.skillVersion,
-        };
+      : { init: state.init, skillVersion: state.skillVersion };
   const saved = saveState(
     { projectRoot, state: restored, spec },
     {
@@ -100,12 +98,13 @@ function restore(recovery, commit, now) {
       lastAction: `从 ${shortHash(commit)} 恢复记录`,
     },
     now,
+    { snapshot: SNAPSHOT_MODES.full },
   );
   return [...resultLines(saved), `- 恢复文件: ${count}`];
 }
 
 /**
- * 纳入当前 HEAD 与状态目录的当前内容, 并拍摄新快照.
+ * 纳入当前 HEAD 与状态目录的当前内容, 并按当前内容拍摄完整快照.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {string} now 当前时间.
@@ -125,6 +124,7 @@ function adopt(context, now) {
         pendingAnomaly: undefined,
       },
       now,
+      { snapshot: SNAPSHOT_MODES.full },
     ),
   );
 }
