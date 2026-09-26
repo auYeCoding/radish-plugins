@@ -107,7 +107,7 @@ const AGENT_TOOLS = Object.freeze(["Agent", "Task"]);
 const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
 
 /**
- * @typedef {"orchestrator" | "executor" | "other"} SessionRole 会话身份.
+ * @typedef {import("./sessions.mjs").SessionRole} SessionRole 会话身份.
  */
 
 /**
@@ -160,10 +160,7 @@ export function decideToolUse(input) {
   }
   if (SHELL_TOOLS.includes(input.toolName)) {
     return toDecision(
-      checkOtherCommand(
-        String(input.toolInput.command ?? ""),
-        input.role === "executor",
-      ),
+      checkOtherCommand(String(input.toolInput.command ?? ""), input.role),
     );
   }
   return allow();

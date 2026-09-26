@@ -18,15 +18,15 @@
 
 在用户项目中, 技能会用到以下位置:
 
-| 位置                           | 内容                                                                                              | 是否入库 |
-| ------------------------------ | ------------------------------------------------------------------------------------------------- | -------- |
-| `.navigator/`                  | 状态文件, 记录文件, 执行手册, 运行脚本与参考文件的副本 (`bin/`)                                   | 入库     |
-| `.navigator/drafts/`           | 编排会话传给命令的 JSON 草稿                                                                      | 不入库   |
-| `.claude/settings.json`        | 防护 hook 与放行规则                                                                              | 入库     |
-| `.claude/settings.local.json`  | 放行规则的本机副本, 由 `.git/info/exclude` 排除                                                   | 不入库   |
-| `.claude/rules/engineering.md` | 项目规范, 项目内所有会话自动加载                                                                  | 入库     |
-| `.git/navigator/`              | 执行会话登记, 自检请求与心跳, 源码证据缓存 (`evidence/`), 编排会话最近的用户消息 (`prompts.json`) | 不入库   |
-| `refs/navigator/snapshots`     | 状态目录的快照, 不进入分支历史                                                                    | 不入库   |
+| 位置                           | 内容                                                                                                                                                                        | 是否入库 |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `.navigator/`                  | 状态文件, 记录文件, 执行手册, 运行脚本与参考文件的副本 (`bin/`)                                                                                                             | 入库     |
+| `.navigator/drafts/`           | 编排会话传给命令的 JSON 草稿                                                                                                                                                | 不入库   |
+| `.claude/settings.json`        | 防护 hook 与放行规则                                                                                                                                                        | 入库     |
+| `.claude/settings.local.json`  | 放行规则的本机副本, 由 `.git/info/exclude` 排除                                                                                                                             | 不入库   |
+| `.claude/rules/engineering.md` | 项目规范, 项目内所有会话自动加载                                                                                                                                            | 入库     |
+| `.git/navigator/`              | 编排会话登记 (`orchestrator.json`), 执行会话登记, 工单审阅记录 (`order-approval.json`), 自检请求与心跳, 源码证据缓存 (`evidence/`), 编排会话最近的用户消息 (`prompts.json`) | 不入库   |
+| `refs/navigator/snapshots`     | 状态目录的快照, 不进入分支历史                                                                                                                                              | 不入库   |
 
 ## 设计决策
 
@@ -35,6 +35,9 @@
 ### 会话与边界
 
 - **编排与执行分会话, 验收用子代理.** 规划与实现各自保持干净的上下文, 验收不受编排会话的倾向影响. 改掉的后果: 编排会话会开始写代码, 规划与实现重新混在一起.
+- **编排会话的身份登记在 `.git/navigator/orchestrator.json`, 不写进状态文件.** 身份描述的是本机正在运行的会话, 不是项目历史. 以前登记在 `state.json` 中, 实例: `git reset --hard` 回到上一次提交, `state.json` 中的会话回到更早的会话, 在线编排会话被悄悄降级为其它会话, 写草稿被拒, 拒绝理由却让它去粘贴启动提示词; 同一会话运行插件命令却能改状态. `restore` 早已把会话当作环境信息保留, 放进运行期登记目录与这一定位一致. 旧状态文件中的会话字段在读取时迁移 (只读), `init` 升级时写入登记并从状态文件中移除. 改掉的后果: 回退或恢复记录会改变会话身份.
+- **被接管的原编排会话单独成一类身份 (`superseded`).** 权限与其它会话相同, 但拒绝理由与提醒写明 "编排已由另一个会话接管" 与重新接管的办法, 收到消息与会话开始时都注入提醒. 改掉的后果: 原编排会话不知道自己被接管, 拒绝理由把它当成执行会话.
+- **插件命令按访问级别放行, 访问级别表只有 `lib/command-access.mjs` 一处.** 改变编排状态或会接管编排的命令只有编排会话能运行; 执行会话与其它会话只能运行只读命令, 执行手册中的清单由生成脚本从同一张表生成. 判定放在守卫中: 命令行脚本无法可靠地知道调用它的会话 (Bash 环境中的 `CLAUDE_CODE_SESSION_ID` 没有写进官方文档), hook 输入中的 `session_id` 是文档化的. 守卫按命令文字识别 `node ... navigator.mjs <命令>`, 复合命令与带引号的路径也能识别. 改掉的后果: 任何会话都能用放行规则中的命令改动编排状态, 例如执行会话自己把工单转为已通过.
 - **编排会话的工具按白名单放行, 默认拒绝.** 新出现的工具 (例如 Monitor, Workflow, MCP 写工具) 不能绕过限制. 改掉的后果: 每个新工具都是一个旁路.
 - **委派提示词由脚本生成, 守卫核对.** 验收提示词逐字核对, 调研提示词核对开头的固定框架. 改掉的后果: 编排会话可以在提示词中加入倾向性说明.
 - **编排会话不用提问框.** 提问框出现时, 同一条回复中位于它之前的文字可能不会显示. 改掉的后果: 用户看不到选项所依据的内容.
@@ -60,6 +63,7 @@
 ### 状态与记录
 
 - **`state.json` 是状态的唯一来源, hook 不写它.** 写入比较版本号, 先写临时文件再改名. 改掉的后果: 并发写入互相覆盖, 或写出半个文件.
+- **运行期登记目录中的文件一律原子写入** (`lib/atomic-file.mjs`, 与状态文件共用). hook 每次事件都读编排登记与执行登记. 改掉的后果: 读到写了一半的登记时, 编排会话的工具调用被当成守卫出错拦下.
 - **`spec/templates.json` 是回复, 记录文件与写作规则的唯一来源.** Stop 校验, 写入校验, 骨架生成, 体检与参考文档都从规格读取. 改掉的后果: 文档与校验逐渐不一致.
 - **回复与记录文件先取骨架再填写, "当前进展" 由脚本计算.** 模型容易数错进度或漏写节. 改掉的后果: 回复被打回的次数大幅增加.
 - **规则在填写时给出, 回复结束时的校验只做兜底.** `reply` 在骨架之前输出填写要求, 由规格生成, 与校验用同一份阈值与词表. 执行会话的回复只校验版式, 所以只给版式与人类总结两条. 改掉的后果: 模型写回复时看不到规则, 打回次数增加.
@@ -71,6 +75,9 @@
 ### 对账与快照
 
 - **快照存在隐藏引用中, 按原始字节存入 (`hash-object --no-filters`).** 不进分支历史, 不受 `core.autocrlf` 与 `.gitattributes` 影响, 恢复后逐字节一致. 改掉的后果: Windows 上恢复出的文件换行符改变.
+- **快照只增量并入受控的写入, 回复结束时不整体拍摄.** 工具调用后事件只把本次写入的文件并入上一个快照; 插件命令只并入自己写的状态文件, 视图文件与归档的回执; 只有初始化自检, `adopt` 与 `restore` 按当前内容整体拍摄, 这些时刻用户已确认当前内容. 引用更新时核对旧值, 并发时重试. 以前每次回复结束都整体拍摄, 每条命令也整体拍摄, 实例: 用户 `git reset` 回退了记录, 编排会话的下一条命令把回退后的内容拍进快照, 对账从此报 "一致". 改掉的后果: 回退与手工改动在下一次写入时被悄悄并入快照, 对账失去依据.
+- **对账遇到 "自己的提交" 时也比对快照.** 自己的提交会被自动纳入; `git reset --hard` 回到自己的提交, 丢掉之后未入库的记录时, 提交历史看起来正常, 只有快照能发现. 改掉的后果: 回退被当成正常的提交收尾.
+- **改变编排状态的命令先核对快照** (`openProject`): 状态目录在最近的快照之后被改动过时拒绝, 列出改动的文件, 要求先运行 `status` 按验收异常处理. 这一步不比较提交历史: 提交步骤中补交的第二个提交在历史上看是陌生提交, 而记录本身没有被改动. 改掉的后果: 命令在被回退的记录上继续推进, 例如把已回退的工单状态改掉.
 - **快照提交使用固定身份 `project-navigator`.** 用户机器没有配置 Git 用户名与邮箱时, `git commit-tree` 会失败, 快照就悄悄拍不上. 改掉的后果: 在这类机器 (包括 CI) 上对账失去依据.
 - **导航提交中入库的 `lastCommit` 等于其父提交.** 对账凭这一点认出自己的提交, 不需要额外标记; `init` 因此记录当时的 HEAD. 改掉的后果: 编排提交都被当成陌生提交.
 - **对账异常未处理时, 暂停快照与大部分命令.** 否则下一个快照会把异常内容当成正常内容保存. 改掉的后果: 异常只提示一次, 之后悄悄消失.
@@ -80,6 +87,8 @@
 - **启动提示词由脚本生成, hook 以首行 "执行工单 NNNN" 登记执行会话**, 读取当前工单文件作兜底; 当前或曾经的编排会话一律不登记. 改掉的后果: 执行会话无法被识别, 或编排会话被误登记为执行会话.
 - **工单已发布而回执未写入时, 回复 "等待回执".** 编排会话的每条回复都必须带回复类型, 用户在 "工单发布" 中选 A 后, 编排会话无事可做也要回复. 以前这个状态没有回复类型, 模型只能重发 "工单发布", 用户每次选 A 都回到原处; 恢复进度与升级之后也会落到这个状态. 回执是否写入以 `status` 输出为准, 守卫不放行 `ls`. 改掉的后果: 发布工单之后编排会话反复重发 "工单发布".
 - **工单每次发布时 "发布轮次" 加一, 对齐只对本轮有效.** 受阻后重新发布的工单内容已经改变, 需要重新确认计划. 改掉的后果: 执行会话按旧计划继续写代码.
+- **工单发布之前经用户审阅, 认可与工单内容绑定.** "工单审阅" 的概况, 工作范围, 前提假设, 执行守则与验收判据由 `reply approve` 从工单文件原样摘录 (规格中标 `"source": "order"`), 回复结束时核对与文件一致, 摘录部分不按回复的写作规则打回. hook 在回复结束时记下工单内容的摘要, 在用户回答时记下选择, `order set issued` 只接受摘要与当前文件一致的认可, 发布时用掉. 以前 "工单发布" 只显示路径与判据数量, 启动提示词就在同一条回复里, 用户来不及看工单内容. 改掉的后果: 用户看到的内容与发布的内容可能不同, 或工单不经用户过目就交给执行会话.
+- **已发布的工单可以撤回为起草中 (`order set drafting`).** "工单发布" 与 "等待回执" 的选项 B 是修改工单; 以前原地修改, 发布轮次不变, 已开工的执行会话仍按旧计划工作. 撤回期间执行会话的写入被拒绝, 重新发布时轮次加一, 旧回执归档. 改掉的后果: 修改后的工单不经审阅, 执行会话也不重新对齐.
 - **提交统一经过 `waypoint:commit-message`, 守卫只在提交步骤放行 `git add`, `git commit -F -` 与不带强制参数的 `git push`.** 提交消息规则只有一份. 改掉的后果: 出现两套提交消息规则.
 - **提交步骤中的拒绝理由写出放行的提交写法, 编排会话的位置提醒也附上这段写法.** 技能规则要求 "按拒绝理由调整, 不换写法重试". 实例: 编排会话的 `&&` 复合命令被拒, 理由提到 "重定向", 模型以为 heredoc 也不行, 改用 `-m`; `-m` 又被拒, 通用理由没有提到提交写法, 模型就转交用户手动提交. 写法说明只有 `COMMIT_COMMAND_FORMS` 一处. 改掉的后果: 编排会话在提交步骤声称无权提交.
 - **开工对齐必须写 "模块划分" (新增模块, 改动模块, 入口改动).** 代码结构在动手之前定下, 用户选 A 之前能看到; 回复结束时校验这一节存在. 改掉的后果: 结构问题要到验收时才发现, 返工成本高.
@@ -102,6 +111,7 @@
 | ------------------------ | ------------------------------------------------------------- |
 | `runtime/navigator.mjs`  | 命令行入口, 解析参数并分发; `enter` 任何情况下以退出码 0 结束 |
 | `runtime/hook.mjs`       | 五种 hook 事件的统一入口                                      |
+| `commands/handlers.mjs`  | 命令名到处理函数的映射, 与访问级别表一一对应                  |
 | `commands/init.mjs`      | 初始化, 升级与自检                                            |
 | `commands/uninstall.mjs` | 移除 hook 与放行规则                                          |
 | `commands/enter.mjs`     | `enter` 与 `status`: 环境检查, 对账, 会话登记, 下一动作       |
@@ -122,18 +132,18 @@
 
 `runtime/lib/` 中的模块:
 
-| 分组       | 文件                                                                                                                                 |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 路径与状态 | `paths.mjs`, `state.mjs`, `numbering.mjs`, `validation.mjs`, `workflow-error.mjs`, `tracked-paths.mjs`                               |
-| 规格与版式 | `spec.mjs`, `markdown.mjs`, `layout.mjs`, `reply-checks.mjs`, `file-checks.mjs`, `edits.mjs`, `writing-checks.mjs`, `text-units.mjs` |
-| 生成       | `render.mjs`, `render-plan.mjs`, `table.mjs`, `briefs.mjs`, `reminders.mjs`, `guidance.mjs`, `reply-guide.mjs`, `writing-rules.mjs`  |
-| 守卫       | `guard.mjs`, `guard-paths.mjs`, `guard-commands.mjs`                                                                                 |
-| 会话       | `sessions.mjs`, `executors.mjs`, `registry.mjs`                                                                                      |
-| 工作流     | `workflow-orders.mjs`, `workflow-plan.mjs`, `workflow-records.mjs`, `code-checks.mjs`, `review-record.mjs`                           |
-| 验收取证   | `evidence-tools.mjs` (登记取证工具), `user-tests.mjs` (核对用户测试输出与用户消息逐字一致)                                           |
-| 源码证据   | `source-evidence.mjs` (证据表与核对输出), `source-fetch.mjs` (用 git 从第三方仓库取文件)                                             |
-| 仓库与快照 | `repo.mjs`, `snapshots.mjs`, `reconcile.mjs`                                                                                         |
-| 环境与配置 | `environment.mjs`, `version.mjs`, `settings.mjs`                                                                                     |
+| 分组       | 文件                                                                                                                                                                               |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 路径与状态 | `paths.mjs`, `state.mjs`, `atomic-file.mjs`, `numbering.mjs`, `validation.mjs`, `workflow-error.mjs`, `tracked-paths.mjs`                                                          |
+| 规格与版式 | `spec.mjs`, `markdown.mjs`, `layout.mjs`, `reply-checks.mjs`, `file-checks.mjs`, `edits.mjs`, `writing-checks.mjs`, `text-units.mjs`, `order-excerpt.mjs` (回复中摘录工单内容的节) |
+| 生成       | `render.mjs`, `render-plan.mjs`, `table.mjs`, `briefs.mjs`, `reminders.mjs`, `guidance.mjs`, `reply-guide.mjs`, `writing-rules.mjs`                                                |
+| 守卫       | `guard.mjs`, `guard-paths.mjs`, `guard-commands.mjs`, `command-access.mjs` (插件命令的访问级别)                                                                                    |
+| 会话       | `sessions.mjs` (编排登记与身份判断), `executors.mjs`, `registry.mjs`, `session-notices.mjs` (按身份的提示文字), `option-answer.mjs` (识别用户选的选项)                             |
+| 工作流     | `workflow-orders.mjs`, `workflow-plan.mjs`, `workflow-records.mjs`, `code-checks.mjs`, `review-record.mjs`, `order-approval.mjs` (工单审阅)                                        |
+| 验收取证   | `evidence-tools.mjs` (登记取证工具), `user-tests.mjs` (核对用户测试输出与用户消息逐字一致)                                                                                         |
+| 源码证据   | `source-evidence.mjs` (证据表与核对输出), `source-fetch.mjs` (用 git 从第三方仓库取文件)                                                                                           |
+| 仓库与快照 | `repo.mjs`, `snapshots.mjs`, `reconcile.mjs`                                                                                                                                       |
+| 环境与配置 | `environment.mjs`, `version.mjs`, `settings.mjs`                                                                                                                                   |
 
 仓库中的其它部分:
 
@@ -143,62 +153,68 @@
 
 ## 排查手册
 
-| 症状                                                                      | 根因                                                                                                 | 相关文件                                                           | 验证方法                                                                      |
-| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------- |
-| 调用技能时直接中止, 提示权限检查失败                                      | `allowed-tools` 被删除或改写                                                                         | `SKILL.md`                                                         | 默认权限模式下调用一次                                                        |
-| 自检未通过                                                                | 当前会话没有加载新的 hook, 或 hook 被全局设置禁用                                                    | `commands/init.mjs`, `lib/settings.mjs`                            | 重启会话后再自检; 用标准输入驱动 `hook.mjs` 看输出                            |
-| 插件命令弹出权限确认                                                      | 命令写法与放行规则不一致, 或本机配置缺失                                                             | `lib/settings.mjs`, `lib/guard-commands.mjs`                       | 检查 `.claude/settings.local.json` 中的规则与命令原文                         |
-| 回复反复被打回                                                            | 回复没有按骨架填写, 或规格与参考文件不一致                                                           | `lib/reply-checks.mjs`, `spec/templates.json`                      | `reply` 取骨架后填写再校验; 运行 `npm test`                                   |
-| 粘贴启动提示词后, 执行会话仍被当成其它会话                                | 首行被改动, 工单不是已发布状态, 或该会话曾是编排会话                                                 | `lib/executors.mjs`, `lib/briefs.mjs`                              | 查看 `.git/navigator/sessions/<会话编号>.json`                                |
-| 发布工单后编排会话反复重发 "工单发布", 或回复因标题不是允许的类型被打回   | 工单已发布而回执未写入时没有对应的回复类型; 0.4.0 及之前的版本没有 "等待回执"                        | `lib/guidance.mjs`, `spec/templates.json`                          | `status` 的下一动作应为回复 "等待回执"                                        |
-| 执行会话写证据文件被拒绝                                                  | 没有写在本工单文件夹的 `artifacts/` 下, 开工对齐还没完成, 或用命令行写入                             | `lib/guard-paths.mjs`, `lib/guard-commands.mjs`                    | 用标准输入驱动 `hook.mjs`, 看拒绝理由                                         |
-| 用户选了 A, 执行会话仍不能写业务文件                                      | 开工对齐没有通过版式校验, 或工单重新发布后轮次改变                                                   | `runtime/hook.mjs`, `lib/executors.mjs`                            | 查看登记文件的 `isAwaitingAlignment` 与 `alignedRound`                        |
-| 每次调用都报记录文件与快照不符                                            | 快照之后有程序改写了 `.navigator/`, 而回复结束时的快照没有运行                                       | `runtime/hook.mjs`, `lib/snapshots.mjs`                            | `git log refs/navigator/snapshots` 查看最近快照                               |
-| 命令都报对账异常尚未处理                                                  | `state.json` 中有 `pendingAnomaly`                                                                   | `commands/support.mjs`, `commands/enter.mjs`                       | 按验收异常流程运行 `adopt` 或 `restore`                                       |
-| 实现工单发布被拒, 提到代码检查                                            | 项目未登记检查命令, 或工单的验收判据不含检查判据原文                                                 | `lib/code-checks.mjs`, `commands/order.mjs`                        | 查看 `state.json` 的 `codeChecks`; 重新取 `template order`                    |
-| 升级插件后项目中的行为没变                                                | `plugin.json` 的版本没有提升, 项目副本不会提示升级                                                   | `lib/version.mjs`                                                  | 比较 `.navigator/bin/runtime-version.json` 与插件版本                         |
-| init 输出 "设置结果: 未执行", 或进入时要求回复 "运行受阻", 并列出忽略规则 | 项目的忽略规则忽略了 `.navigator/` 本身, `.claude/` 下的配置, 或其中必须入库的文件                   | `commands/init.mjs`, `commands/enter.mjs`, `lib/tracked-paths.mjs` | `git check-ignore -v --no-index <路径>`                                       |
-| `order set committed` 被拒, 列出没有入库的文件                            | 提交步骤漏选了 `.navigator/` 或插件管理的配置中的文件                                                | `commands/order.mjs`                                               | `git status -- .navigator .claude/settings.json .claude/rules/engineering.md` |
-| clone 之后 hook 报错, 找不到 `.navigator/bin/` 下的模块                   | 0.3.1 之前的版本没有重新纳入被项目规则忽略的运行脚本, 这些文件从未入库                               | `commands/init.mjs`                                                | 在原机器上用 0.3.1 以上版本运行 init 升级, 提交 `.navigator/bin/`             |
-| 派验收子代理被拒绝                                                        | 提示词不是 `review-brief` 的输出原文                                                                 | `lib/guard.mjs`                                                    | 重新运行 `review-brief`, 原样粘贴                                             |
-| `evidence` 报取不到版本或文件                                             | 版本与仓库的 tag 写法不同, 路径写成了安装后的包内路径, 仓库需要账号, 或网络不通                      | `lib/source-fetch.mjs`                                             | 用 `evidence check` 单条重试, 看输出中 git 的原始错误                         |
-| `order set accepted` 或 `reply review --option 1` 被拒                    | `review.md` 的判据核对中有结论不是 "通过", 或缺少表格                                                | `lib/review-record.mjs`                                            | 查看 `review.md` 的判据核对表                                                 |
-| 提交步骤中编排会话称无权提交, 转交用户手动提交                            | 用了 `-m` 或 `-F <文件>`, 或把复合命令的拒绝理解为不能用 heredoc; 0.4.0 之前的拒绝理由不给放行的写法 | `lib/guard-commands.mjs`, `lib/reminders.mjs`                      | 用标准输入驱动 `hook.mjs`, 看提交步骤的拒绝理由是否列出放行的写法             |
-| 验收子代理调用 MCP 工具被拒                                               | 工具没有登记, 或名称与登记的不一致                                                                   | `lib/evidence-tools.mjs`, `lib/guard.mjs`                          | 查看 `state.json` 的 `evidenceTools`                                          |
-| 写 `user-tests.md` 被拒, 提示逐字一致                                     | 输出被改写, 用户用 `!` 运行后没有粘贴, 或粘贴的消息已不在最近 20 条中                                | `lib/user-tests.mjs`, `lib/registry.mjs`                           | 查看 `.git/navigator/prompts.json`                                            |
+| 症状                                                                      | 根因                                                                                                      | 相关文件                                                           | 验证方法                                                                            |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| 调用技能时直接中止, 提示权限检查失败                                      | `allowed-tools` 被删除或改写                                                                              | `SKILL.md`                                                         | 默认权限模式下调用一次                                                              |
+| 自检未通过                                                                | 当前会话没有加载新的 hook, 或 hook 被全局设置禁用                                                         | `commands/init.mjs`, `lib/settings.mjs`                            | 重启会话后再自检; 用标准输入驱动 `hook.mjs` 看输出                                  |
+| 插件命令弹出权限确认                                                      | 命令写法与放行规则不一致, 或本机配置缺失                                                                  | `lib/settings.mjs`, `lib/guard-commands.mjs`                       | 检查 `.claude/settings.local.json` 中的规则与命令原文                               |
+| 回复反复被打回                                                            | 回复没有按骨架填写, 或规格与参考文件不一致                                                                | `lib/reply-checks.mjs`, `spec/templates.json`                      | `reply` 取骨架后填写再校验; 运行 `npm test`                                         |
+| 粘贴启动提示词后, 执行会话仍被当成其它会话                                | 首行被改动, 工单不是已发布状态, 或该会话曾是编排会话                                                      | `lib/executors.mjs`, `lib/briefs.mjs`                              | 查看 `.git/navigator/sessions/<会话编号>.json`                                      |
+| 发布工单后编排会话反复重发 "工单发布", 或回复因标题不是允许的类型被打回   | 工单已发布而回执未写入时没有对应的回复类型; 0.4.0 及之前的版本没有 "等待回执"                             | `lib/guidance.mjs`, `spec/templates.json`                          | `status` 的下一动作应为回复 "等待回执"                                              |
+| 执行会话写证据文件被拒绝                                                  | 没有写在本工单文件夹的 `artifacts/` 下, 开工对齐还没完成, 或用命令行写入                                  | `lib/guard-paths.mjs`, `lib/guard-commands.mjs`                    | 用标准输入驱动 `hook.mjs`, 看拒绝理由                                               |
+| 用户选了 A, 执行会话仍不能写业务文件                                      | 开工对齐没有通过版式校验, 或工单重新发布后轮次改变                                                        | `runtime/hook.mjs`, `lib/executors.mjs`                            | 查看登记文件的 `isAwaitingAlignment` 与 `alignedRound`                              |
+| 每次调用都报记录文件与快照不符                                            | 有程序不经过 hook 改写了 `.navigator/` (例如 `git reset`, 脚本, 编辑器), 或写入后的工具调用后事件没有运行 | `runtime/hook.mjs`, `lib/snapshots.mjs`                            | `git log refs/navigator/snapshots` 查看最近快照; `git diff-tree` 比较快照与当前内容 |
+| 改变状态的命令被拒, 说状态目录在最近的快照之后被改动过                    | 记录被 git 回退或被手工修改; 对账异常尚未由用户处理                                                       | `commands/support.mjs`, `lib/reconcile.mjs`                        | 运行 `status`, 按下一动作回复 "验收异常"                                            |
+| 编排会话写记录或运行命令被拒, 理由说本会话已不是编排会话                  | 另一个会话调用技能接管了编排                                                                              | `lib/sessions.mjs`, `lib/session-notices.mjs`                      | 查看 `.git/navigator/orchestrator.json` 的 `current` 与 `former`                    |
+| 执行会话或其它会话运行插件命令被拒                                        | 命令不在只读命令之列, 只有编排会话能运行                                                                  | `lib/command-access.mjs`, `lib/guard-commands.mjs`                 | 用标准输入驱动 `hook.mjs`, 看拒绝理由                                               |
+| `order set issued` 被拒, 提到审阅                                         | 用户没有在 "工单审阅" 中选 A, 认可之后改过工单文件, 或认可已在上次发布时用掉                              | `lib/order-approval.mjs`, `commands/order.mjs`                     | 查看 `.git/navigator/order-approval.json` 的工单编号, 摘要与状态                    |
+| "工单审阅" 被打回, 说必须与工单文件一致                                   | 编排会话改写或转述了摘录的节, 或取骨架之后又改了工单文件                                                  | `lib/order-excerpt.mjs`                                            | 重新运行 `reply approve`, 原样填写                                                  |
+| 命令都报对账异常尚未处理                                                  | `state.json` 中有 `pendingAnomaly`                                                                        | `commands/support.mjs`, `commands/enter.mjs`                       | 按验收异常流程运行 `adopt` 或 `restore`                                             |
+| 实现工单发布被拒, 提到代码检查                                            | 项目未登记检查命令, 或工单的验收判据不含检查判据原文                                                      | `lib/code-checks.mjs`, `commands/order.mjs`                        | 查看 `state.json` 的 `codeChecks`; 重新取 `template order`                          |
+| 升级插件后项目中的行为没变                                                | `plugin.json` 的版本没有提升, 项目副本不会提示升级                                                        | `lib/version.mjs`                                                  | 比较 `.navigator/bin/runtime-version.json` 与插件版本                               |
+| init 输出 "设置结果: 未执行", 或进入时要求回复 "运行受阻", 并列出忽略规则 | 项目的忽略规则忽略了 `.navigator/` 本身, `.claude/` 下的配置, 或其中必须入库的文件                        | `commands/init.mjs`, `commands/enter.mjs`, `lib/tracked-paths.mjs` | `git check-ignore -v --no-index <路径>`                                             |
+| `order set committed` 被拒, 列出没有入库的文件                            | 提交步骤漏选了 `.navigator/` 或插件管理的配置中的文件                                                     | `commands/order.mjs`                                               | `git status -- .navigator .claude/settings.json .claude/rules/engineering.md`       |
+| clone 之后 hook 报错, 找不到 `.navigator/bin/` 下的模块                   | 0.3.1 之前的版本没有重新纳入被项目规则忽略的运行脚本, 这些文件从未入库                                    | `commands/init.mjs`                                                | 在原机器上用 0.3.1 以上版本运行 init 升级, 提交 `.navigator/bin/`                   |
+| 派验收子代理被拒绝                                                        | 提示词不是 `review-brief` 的输出原文                                                                      | `lib/guard.mjs`                                                    | 重新运行 `review-brief`, 原样粘贴                                                   |
+| `evidence` 报取不到版本或文件                                             | 版本与仓库的 tag 写法不同, 路径写成了安装后的包内路径, 仓库需要账号, 或网络不通                           | `lib/source-fetch.mjs`                                             | 用 `evidence check` 单条重试, 看输出中 git 的原始错误                               |
+| `order set accepted` 或 `reply review --option 1` 被拒                    | `review.md` 的判据核对中有结论不是 "通过", 或缺少表格                                                     | `lib/review-record.mjs`                                            | 查看 `review.md` 的判据核对表                                                       |
+| 提交步骤中编排会话称无权提交, 转交用户手动提交                            | 用了 `-m` 或 `-F <文件>`, 或把复合命令的拒绝理解为不能用 heredoc; 0.4.0 之前的拒绝理由不给放行的写法      | `lib/guard-commands.mjs`, `lib/reminders.mjs`                      | 用标准输入驱动 `hook.mjs`, 看提交步骤的拒绝理由是否列出放行的写法                   |
+| 验收子代理调用 MCP 工具被拒                                               | 工具没有登记, 或名称与登记的不一致                                                                        | `lib/evidence-tools.mjs`, `lib/guard.mjs`                          | 查看 `state.json` 的 `evidenceTools`                                                |
+| 写 `user-tests.md` 被拒, 提示逐字一致                                     | 输出被改写, 用户用 `!` 运行后没有粘贴, 或粘贴的消息已不在最近 20 条中                                     | `lib/user-tests.mjs`, `lib/registry.mjs`                           | 查看 `.git/navigator/prompts.json`                                                  |
 
 ## 修改流程
 
-| 改了什么                     | 还要做                                                                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `spec/templates.json`        | `npm run gen:docs`, `npm test`; 检查手写参考文件中引用的节名与选项组号                                                   |
-| 回复类型中选项组的顺序       | 代码中引用了组号: `lib/guidance.mjs`, `commands/order.mjs`, `commands/enter.mjs`, `commands/reply.mjs`, 以及手写参考文件 |
-| 证据表或判据核对表的列与取值 | `lib/source-evidence.mjs` 与 `lib/review-record.mjs` 中的常量; `spec.test.mjs` 核对两边一致                              |
-| `scripts/navigator-docs/`    | `npm run gen:docs`                                                                                                       |
-| `shared/punctuation.md`      | `npm run gen:docs`: 执行手册与 `writing.md` 内嵌了标点规则                                                               |
-| `runtime/`                   | `npm test`; 发版时提升 `plugin.json` 的版本, 已初始化的项目才会提示运行 `init` 升级                                      |
-| 状态文件的结构               | 提升 `STATE_SCHEMA_VERSION`, 在 `normalizeState` 中为旧状态补齐字段                                                      |
-| `SKILL.md`                   | `npm test` 中的篇幅检查; 用 `claude -p` 冒烟                                                                             |
-| 子代理的名称                 | `lib/guard.mjs` 的 `SUBAGENT_TYPES` 与 `SKILL.md`                                                                        |
-| 插件名 `waypoint`            | `SUBAGENT_TYPES`, `COMMIT_SKILL`, 文档中的 `/waypoint:` 命令                                                             |
+| 改了什么                     | 还要做                                                                                                                                                    |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec/templates.json`        | `npm run gen:docs`, `npm test`; 检查手写参考文件中引用的节名与选项组号                                                                                    |
+| 回复类型中选项组的顺序       | 代码中引用了组号: `lib/guidance.mjs`, `commands/order.mjs`, `commands/enter.mjs`, `commands/reply.mjs`, 以及手写参考文件                                  |
+| 证据表或判据核对表的列与取值 | `lib/source-evidence.mjs` 与 `lib/review-record.mjs` 中的常量; `spec.test.mjs` 核对两边一致                                                               |
+| `scripts/navigator-docs/`    | `npm run gen:docs`                                                                                                                                        |
+| `shared/punctuation.md`      | `npm run gen:docs`: 执行手册与 `writing.md` 内嵌了标点规则                                                                                                |
+| `runtime/`                   | `npm test`; 发版时提升 `plugin.json` 的版本, 已初始化的项目才会提示运行 `init` 升级                                                                       |
+| 状态文件的结构               | 提升 `STATE_SCHEMA_VERSION`, 在 `normalizeState` 中为旧状态补齐字段或移除已迁出的字段                                                                     |
+| 新增或改名插件命令           | 在 `lib/command-access.mjs` 登记访问级别, 在 `commands/handlers.mjs` 登记处理函数; `cli.test.mjs` 核对两边一致; `npm run gen:docs` (执行手册列出只读命令) |
+| `SKILL.md`                   | `npm test` 中的篇幅检查; 用 `claude -p` 冒烟                                                                                                              |
+| 子代理的名称                 | `lib/guard.mjs` 的 `SUBAGENT_TYPES` 与 `SKILL.md`                                                                                                         |
+| 插件名 `waypoint`            | `SUBAGENT_TYPES`, `COMMIT_SKILL`, `lib/session-notices.mjs` 的 `SKILL_COMMAND`, 文档中的 `/waypoint:` 命令                                                |
 
 ## 测试
 
 - `npm test` 运行 `tests/project-navigator/` 中的全部测试:
 
-| 文件                            | 覆盖内容                                                                                                                                  |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `spec.test.mjs`                 | 标题与键名为 4 个汉字, 编号唯一, 同组选项宽度一致                                                                                         |
-| `reply-checks.test.mjs`         | 每种回复每组选项的填写样例合格, 常见违规被指出                                                                                            |
-| `file-checks.test.mjs`          | 每种记录文件的骨架合格, 条目与收尾节, 条目的输出代码块, 表格节, 编辑后重建全文                                                            |
-| `evidence.test.mjs`             | 证据表的读取与写法校验, 从本机临时仓库按版本取行, 单条自查命令                                                                            |
-| `writing-checks.test.mjs`       | 每条写作规则一个命中例与一个不命中例                                                                                                      |
-| `guard.test.mjs`                | 身份, 工具, 路径或命令, 状态组成的决策表, 含提交步骤的拒绝理由, 取证工具, 用户测试输出的核对                                              |
-| `workflow.test.mjs`             | 工单状态, 路线, 记录, 会话接管, 执行对齐, 下一动作                                                                                        |
-| `snapshots.test.mjs`            | 临时仓库中的快照去重, 逐字节恢复, 对账的各种情形                                                                                          |
-| `settings.test.mjs`             | 配置合并幂等, 卸载只删除自己的条目                                                                                                        |
-| `cli.test.mjs`, `flow.test.mjs` | 用项目内的命令行与 hook 走完初始化与进入 (含忽略规则检查), 工单往返, 验收结论把关, 取证工具与用户测试, 提交收尾的入库检查, 异常处理与体检 |
-| `docs.test.mjs`                 | 生成文档与规格同步, `SKILL.md` 篇幅上限                                                                                                   |
+| 文件                            | 覆盖内容                                                                                                                                                                                                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `spec.test.mjs`                 | 标题与键名为 4 个汉字, 编号唯一, 同组选项宽度一致                                                                                                                                                                             |
+| `reply-checks.test.mjs`         | 每种回复每组选项的填写样例合格, 常见违规被指出                                                                                                                                                                                |
+| `file-checks.test.mjs`          | 每种记录文件的骨架合格, 条目与收尾节, 条目的输出代码块, 表格节, 编辑后重建全文                                                                                                                                                |
+| `evidence.test.mjs`             | 证据表的读取与写法校验, 从本机临时仓库按版本取行, 单条自查命令                                                                                                                                                                |
+| `writing-checks.test.mjs`       | 每条写作规则一个命中例与一个不命中例                                                                                                                                                                                          |
+| `guard.test.mjs`                | 身份 (含被接管的会话), 工具, 路径或命令, 状态组成的决策表, 含插件命令的访问级别, 提交步骤的拒绝理由, 取证工具, 用户测试输出的核对                                                                                             |
+| `workflow.test.mjs`             | 工单状态 (含撤回), 路线, 记录, 编排接管与身份判断, 执行对齐, 选项识别, 下一动作 (含工单审阅)                                                                                                                                  |
+| `snapshots.test.mjs`            | 临时仓库中的快照去重, 逐字节恢复, 增量快照, 对账的各种情形 (含回到自己的提交而丢掉记录)                                                                                                                                       |
+| `settings.test.mjs`             | 配置合并幂等, 卸载只删除自己的条目                                                                                                                                                                                            |
+| `cli.test.mjs`, `flow.test.mjs` | 用项目内的命令行与 hook 走完初始化与进入 (含忽略规则检查, 旧会话登记的迁移), 命令与访问级别表一致, 工单审阅与撤回, 工单往返, 验收结论把关, 取证工具与用户测试, 提交收尾的入库检查, git 回退记录后的身份与对账, 异常处理与体检 |
+| `docs.test.mjs`                 | 生成文档与规格同步, `SKILL.md` 篇幅上限                                                                                                                                                                                       |
 
 - `npm run gen:docs -- --check` 单独检查生成文档是否同步. CI 运行以上两项.
 
@@ -238,6 +254,10 @@
 - 用户用 `!` 运行的命令不触发 UserPromptSubmit: 会话记录中只有 `bash-input` 与 `bash-stdout`, 没有 hook 注入.
 - 交互界面中粘贴的大段文字 (输入框显示为占位符), UserPromptSubmit 的 `prompt` 收到的是原文, 外面包一层 `<pasted_content>` 标签, 换行保留. 用户测试输出的逐字核对依赖这一点.
 
+命令行中的会话编号 (Claude Code 2.1.283, 2026-09-26):
+
+- Bash 工具运行的命令在环境变量 `CLAUDE_CODE_SESSION_ID` 中带有会话编号, 与 hook 输入的 `session_id` 相同, 但官方文档没有记载. 插件命令因此不据此判断调用方, 访问级别由守卫按 hook 输入判断.
+
 尚待交互实测: bypass 模式下退出计划模式是否弹框, Agent Team 成员的会话身份, 跨会话消息开启的新回合是否触发 UserPromptSubmit. 设计已不依赖前两项的结果; Agent Team 在编排会话中默认禁用.
 
 ## 发版前手动测试
@@ -248,9 +268,11 @@
 
 1. 未初始化时回复 "初始设置"; 选 A 后完成自检, 选 B 不做任何修改.
 2. 接受工作区信任对话框之前与之后, 插件命令都不弹权限确认.
-3. 新会话恢复进度, 原编排会话不能再写记录.
+3. 新会话恢复进度, 原编排会话不能再写记录; 原编排会话收到消息时得到 "已不是编排会话" 的提醒, 重新调用技能后接管回来.
 4. 上下文压缩后, 编排会话收到位置提醒.
 5. 卸载后 hook 与放行规则被移除, 记录保留.
+6. 用 0.5.0 初始化的项目升级后, 原编排会话仍是编排会话, `state.json` 中不再有会话字段.
+7. 执行会话与普通会话运行 `order set` 等插件命令被拒, 运行 `status` 与 `template` 放行.
 
 ### 立项与选型
 
@@ -263,30 +285,33 @@
 ### 工单往返
 
 1. 工单往返各做一次文档汇报与消息汇报.
-2. "工单发布" 选 A 后回复 "等待回执"; 回执未写入时选 A 再次回复 "等待回执"; 写入后选 A 进入测试授权或验收.
-3. 执行会话对齐后用 Write 写 `artifacts/` 下的证据文件成功, 对齐前被拒; 项目忽略该文件类型时仍能入库; 验收子代理按回执引用的路径读取.
-4. 执行受阻后修改工单重新发布, 执行会话需要重新开工对齐.
-5. 执行会话在用户选 A 之前写业务文件被拒绝, 提交被拒绝; 开工对齐中有 "模块划分", 缺少时被打回.
-6. 需要外部影响的测试先回复 "测试授权".
-7. 验收子代理交回结论与证据, 它尝试写文件时被拒绝.
-8. 验收通过与不通过各一次; 同一切片连续两次不通过时建议重新拆分; 判据核对中有未验证时, `reply review --option 1` 与 `order set accepted` 被拒.
-9. 三种提交方式都经过 `commit-message`, 提交后对账为一致; 纳入范围之外的改动用文字询问.
-10. 提交步骤中用 `-m` 被拒时, 拒绝理由列出放行的写法, 编排会话改用 heredoc 或 PowerShell 管道完成提交, 不转交用户.
-11. 回执 "取证记录" 用到未登记的 MCP 工具时回复 "测试授权"; 选 A 后 `tools set` 登记, 验收子代理能调用该工具, 调用未登记的 MCP 工具被拒.
-12. "测试授权" 选 B: 用户粘贴输出后写入 `user-tests.md` 成功, 改写输出被拒; 验收子代理按输出判定.
+2. 写完工单先回复 "工单审阅", 各节与工单文件一致; 选 B 后修改再审阅; 选 A 后才能发布; 认可之后改工单文件, 发布被拒.
+3. "工单发布" 选 B 时撤回工单, 修改后重新审阅发布, 执行会话需要重新开工对齐.
+4. "工单发布" 选 A 后回复 "等待回执"; 回执未写入时选 A 再次回复 "等待回执"; 写入后选 A 进入测试授权或验收.
+5. 执行会话对齐后用 Write 写 `artifacts/` 下的证据文件成功, 对齐前被拒; 项目忽略该文件类型时仍能入库; 验收子代理按回执引用的路径读取.
+6. 执行受阻后修改工单重新发布, 执行会话需要重新开工对齐.
+7. 执行会话在用户选 A 之前写业务文件被拒绝, 提交被拒绝; 开工对齐中有 "模块划分", 缺少时被打回.
+8. 需要外部影响的测试先回复 "测试授权".
+9. 验收子代理交回结论与证据, 它尝试写文件时被拒绝.
+10. 验收通过与不通过各一次; 同一切片连续两次不通过时建议重新拆分; 判据核对中有未验证时, `reply review --option 1` 与 `order set accepted` 被拒.
+11. 三种提交方式都经过 `commit-message`, 提交后对账为一致; 纳入范围之外的改动用文字询问.
+12. 提交步骤中用 `-m` 被拒时, 拒绝理由列出放行的写法, 编排会话改用 heredoc 或 PowerShell 管道完成提交, 不转交用户.
+13. 回执 "取证记录" 用到未登记的 MCP 工具时回复 "测试授权"; 选 A 后 `tools set` 登记, 验收子代理能调用该工具, 调用未登记的 MCP 工具被拒.
+14. "测试授权" 选 B: 用户粘贴输出后写入 `user-tests.md` 成功, 改写输出被拒; 验收子代理按输出判定.
 
 ### 变更, 复查与异常
 
 1. 需求变更, 里程复查 (含自动体检), 手动体检.
 2. `git reset` 回退, squash 合并, 手工修改记录文件后, 都能进入对应的验收异常.
-3. 编排会话写代码, 装依赖, 使用提问框都被拒绝.
-4. 回复版式违规被打回一次, 第二次放行.
+3. 编排会话工作中途, 用户 `git reset --hard` 回到上一次提交丢掉记录: 编排会话保持身份, 改变状态的命令被拒, `status` 报记录与快照不符, 恢复快照后继续.
+4. 编排会话写代码, 装依赖, 使用提问框都被拒绝.
+5. 回复版式违规被打回一次, 第二次放行.
 
 ## 已知限制
 
 - 写作规则中的语义部分 (自造简称, 比喻, 指代不明) 只能靠提示词, 体检与禁用词表, 脚本检查是近似的.
 - 打回时不合格的回复仍留在屏幕上.
-- 命令行中的写入只能按命令文字粗查, 例如用脚本语言写文件无法识别.
+- 命令行中的写入只能按命令文字粗查, 例如用脚本语言写文件无法识别. 其它会话运行插件命令也按命令文字识别, 用其它方式调用运行脚本 (例如在脚本中导入模块) 无法识别; 这类改动写入状态目录后, 由快照与对账发现.
 - hook 不限制用户本人的操作; 用户手工改记录文件由对账发现.
 - 每次工具调用多启动一次 Node.js, 本机实测约 70 毫秒, 只发生在已初始化的项目中.
 - 取证工具查看的是外部工具中验收时的记录; 记录被清空或工具没有运行时, 相关判据只能判为未验证. 取证工具是否只读由用户在授权时判断, 守卫只按工具名放行.

@@ -4,9 +4,10 @@
  * 状态流转:
  * drafting (起草) → issued (已发布) → reviewing (验收中) → accepted (已通过)
  * → committing (提交中) → committed (已提交).
- * issued 可转为 blocked (受阻), blocked 修改后重新 issued; 验收不通过为 rejected;
- * 任何未结束的工单都可以 voided (作废). committed, rejected, voided 是结束状态,
- * 结束的工单移入历史, 当前工单清空.
+ * issued 可转为 blocked (受阻), blocked 修改后重新 issued; issued 也可撤回为
+ * drafting, 修改后经用户审阅重新发布; 验收不通过为 rejected; 任何未结束的工单
+ * 都可以 voided (作废). committed, rejected, voided 是结束状态, 结束的工单
+ * 移入历史, 当前工单清空.
  */
 
 import { allocateNumber } from "./numbering.mjs";
@@ -18,7 +19,7 @@ import { WorkflowError } from "./workflow-error.mjs";
  */
 export const ORDER_TRANSITIONS = Object.freeze({
   drafting: ["issued", "voided"],
-  issued: ["reviewing", "blocked", "voided"],
+  issued: ["reviewing", "blocked", "drafting", "voided"],
   blocked: ["issued", "voided"],
   reviewing: ["accepted", "rejected"],
   accepted: ["committing", "committed"],
@@ -110,7 +111,8 @@ export function createOrder(state, { kind, slug, slice, baseCommit }) {
 }
 
 /**
- * 转换当前工单的状态; 每次发布时发布轮次加一, 执行会话需要就新一轮重新对齐;
+ * 转换当前工单的状态; 每次发布 (含受阻或撤回后重新发布) 时发布轮次加一,
+ * 执行会话需要就新一轮重新对齐;
  * 进入结束状态时移入历史, 提交时记录最近提交.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.

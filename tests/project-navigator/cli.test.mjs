@@ -8,12 +8,18 @@ import {
   existsSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 
+import { COMMAND_HANDLERS } from "../../plugins/waypoint/skills/project-navigator/runtime/commands/handlers.mjs";
+import {
+  COMMAND_ACCESS,
+  isOrchestratorOnly,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/command-access.mjs";
 import {
   PLUGIN_COMMAND,
   PROBE_FILE,
@@ -167,6 +173,24 @@ test("命令行: 初始化, 自检, 登记与卸载的完整流程", () => {
       "deny",
       "被接管的旧会话不能再写编排记录",
     );
+    assert.match(
+      blocked.output.hookSpecificOutput.permissionDecisionReason,
+      /已不是编排会话/u,
+    );
+    const reminded = runHook(
+      path.join(root, PROJECT_HOOK),
+      {
+        session_id: SESSION_ID,
+        hook_event_name: "UserPromptSubmit",
+        prompt: "继续",
+      },
+      root,
+    );
+    assert.match(
+      reminded.output.hookSpecificOutput.additionalContext,
+      /已不是编排会话.+接管时间/u,
+      "被接管的旧会话收到消息时得到提醒",
+    );
 
     const uninstall = runCommand(
       path.join(root, PROJECT_COMMAND),
@@ -186,6 +210,62 @@ test("命令行: 初始化, 自检, 登记与卸载的完整流程", () => {
       existsSync(path.join(root, ".navigator", "state.json")),
       "卸载保留记录",
     );
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 升级时把旧状态文件中的会话登记迁移到运行期登记目录", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    initializeProject(root, SESSION_ID);
+    const stateFile = path.join(root, ".navigator", "state.json");
+    const registryFile = path.join(
+      root,
+      ".git",
+      "navigator",
+      "orchestrator.json",
+    );
+    writeFileSync(
+      stateFile,
+      JSON.stringify({
+        ...JSON.parse(readFileSync(stateFile, "utf8")),
+        schema: 2,
+        session: { id: "legacy", claimedAt: "2026-09-25T00:00:00.000Z" },
+        formerSessions: ["older"],
+      }),
+      "utf8",
+    );
+    rmSync(registryFile);
+    const writeBrief = (sessionId) =>
+      runHook(
+        path.join(root, PROJECT_HOOK),
+        {
+          session_id: sessionId,
+          hook_event_name: "PreToolUse",
+          tool_name: "Write",
+          tool_input: {
+            file_path: path.join(root, ".navigator", "plan", "notes.md"),
+            content: "x",
+          },
+        },
+        root,
+      ).output?.hookSpecificOutput?.permissionDecisionReason ?? "";
+    assert.equal(
+      writeBrief("legacy"),
+      "",
+      "旧登记中的编排会话仍是编排会话, 可以写记录",
+    );
+    assert.match(writeBrief("older"), /已不是编排会话/u);
+    runCommand(PLUGIN_COMMAND, ["init", "--session", "session-new"], root);
+    const registry = JSON.parse(readFileSync(registryFile, "utf8"));
+    assert.equal(registry.current.id, "session-new");
+    assert.deepEqual(registry.former.sort(), ["legacy", "older"]);
+    const state = JSON.parse(readFileSync(stateFile, "utf8"));
+    assert.equal(state.session, undefined, "状态文件不再记录会话");
+    assert.equal(state.formerSessions, undefined);
+    assert.equal(state.schema, 3);
   } finally {
     repository.cleanup();
   }
@@ -407,6 +487,19 @@ test("命令行: 未知命令与未知回复类型以退出码 1 结束", () => 
     );
   } finally {
     repository.cleanup();
+  }
+});
+
+test("命令行: 每条命令都登记了访问级别, 访问级别表中没有多余的命令", () => {
+  assert.deepEqual(
+    Object.keys(COMMAND_HANDLERS).sort(),
+    Object.keys(COMMAND_ACCESS).sort(),
+  );
+  for (const name of ["status", "reply", "template", "evidence", "snapshots"]) {
+    assert.equal(isOrchestratorOnly(name), false, `${name} 所有会话都能运行`);
+  }
+  for (const name of ["init", "enter", "order", "restore", "adopt"]) {
+    assert.equal(isOrchestratorOnly(name), true, `${name} 只有编排会话能运行`);
   }
 });
 

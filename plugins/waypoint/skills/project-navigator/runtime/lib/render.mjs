@@ -79,6 +79,7 @@ const LAUNCH_PROMPT_INTRO =
  * @param {import("./state.mjs").NavigatorState | undefined} options.state 状态.
  * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
  * @param {string} [options.launchPrompt] 启动提示词; 提供时填入允许放启动提示词的节.
+ * @param {Readonly<Record<string, string[]>>} [options.bodies] 节标题到完整正文的映射, 用于摘录其它文件内容的节.
  * @returns {string} 骨架文本, 以换行结尾.
  * @throws {Error} 回复类型或选项组不存在时.
  */
@@ -88,6 +89,7 @@ export function renderReplySkeleton({
   state,
   spec,
   launchPrompt,
+  bodies = {},
 }) {
   const reply = findReply(spec, type);
   if (reply === undefined) {
@@ -103,7 +105,9 @@ export function renderReplySkeleton({
     ...renderProgressSection(state, spec),
     ...reply.sections.flatMap((section) => [
       "",
-      ...renderSection(section, spec, launchPrompt),
+      ...(Object.hasOwn(bodies, section.title)
+        ? [`## ${section.title}`, "", ...bodies[section.title]]
+        : renderSection(section, spec, launchPrompt)),
     ]),
     "",
     ...renderOptionBlock(optionSet),

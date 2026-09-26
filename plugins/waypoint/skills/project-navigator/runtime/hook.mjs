@@ -3,11 +3,18 @@
  * `node <本文件>` 调用, 从标准输入读取事件 JSON.
  *
  * - 工具调用前: 按会话身份判定放行或拒绝; 探测写入时留下自检心跳.
- * - 工具调用后: 状态目录被写入后拍快照; 读取当前工单文件的会话登记为执行会话.
- * - 用户发消息时: 编排会话注入位置与禁令, 并记下消息原文供核对用户测试输出;
- *   识别启动提示词并登记执行会话; 识别用户对开工对齐的选择.
+ * - 工具调用后: 状态目录中的文件被写入后, 把这个文件并入快照; 读取当前工单文件的
+ *   会话登记为执行会话.
+ * - 用户发消息时: 编排会话注入位置与禁令, 记下消息原文供核对用户测试输出, 并记下
+ *   用户对工单审阅的选择; 被接管的原编排会话注入身份提醒; 识别启动提示词并登记
+ *   执行会话; 识别用户对开工对齐的选择.
  * - 会话开始时 (含上下文压缩后): 注入身份与位置提醒.
- * - 回复结束时: 校验编排会话与执行会话的回复版式, 不合格时打回一次; 拍快照.
+ * - 回复结束时: 校验编排会话与执行会话的回复版式, 不合格时打回一次; 编排会话回复
+ *   工单审阅后开始等待用户选择.
+ *
+ * 会话身份以运行期登记目录中的编排会话登记为准, 不读状态文件, 回退记录不会改变
+ * 身份. 快照只在写入时增量更新, 回复结束时不整体拍摄, 以免把其它程序对记录的改动
+ * (例如 `git reset`) 悄悄并入快照.
  *
  * 失败策略: 编排会话的工具调用守卫出错时拦截 (宁可停下也不放过越权操作);
  * 其它会话与其它事件出错时放行, 避免脚本故障卡住与编排无关的工作.
@@ -29,6 +36,17 @@ import {
 } from "./lib/executors.mjs";
 import { WRITE_TOOLS, decideToolUse } from "./lib/guard.mjs";
 import {
+  APPROVAL_REPLY_TYPE,
+  applyApprovalAnswer,
+  markAwaitingApproval,
+  readOrderText,
+} from "./lib/order-approval.mjs";
+import {
+  blankOrderExcerpt,
+  checkOrderExcerpt,
+  hasOrderExcerpt,
+} from "./lib/order-excerpt.mjs";
+import {
   NAVIGATOR_DIRECTORY,
   findWorktreeRoot,
   isUnderDirectory,
@@ -49,8 +67,9 @@ import {
 } from "./lib/reminders.mjs";
 import { checkReply, locateReply } from "./lib/reply-checks.mjs";
 import { criteriaTableSpec } from "./lib/review-record.mjs";
-import { identifyRole } from "./lib/sessions.mjs";
-import { takeSnapshot } from "./lib/snapshots.mjs";
+import { supersededReminder } from "./lib/session-notices.mjs";
+import { identifyRole, readOrchestrators } from "./lib/sessions.mjs";
+import { recordSnapshotChanges } from "./lib/snapshots.mjs";
 import { findReply, loadSpec } from "./lib/spec.mjs";
 import { INIT_UNINSTALLED, readState } from "./lib/state.mjs";
 import { checkWriting, formatFinding } from "./lib/writing-checks.mjs";
@@ -86,7 +105,8 @@ const READ_TOOL = "Read";
  * @property {Record<string, any>} input hook 输入.
  * @property {string} projectRoot 项目根目录.
  * @property {import("./lib/state.mjs").NavigatorState} state 当前状态.
- * @property {import("./lib/guard.mjs").SessionRole} role 会话身份.
+ * @property {import("./lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
+ * @property {import("./lib/sessions.mjs").SessionRole} role 会话身份.
  * @property {string} sessionId 会话编号.
  * @property {string} now 当前时间, ISO 格式.
  */
@@ -111,12 +131,19 @@ function main() {
     return;
   }
   const sessionId = String(input.session_id ?? "");
-  const role = identifyRole({ state, sessionId, worktreeRoot: projectRoot });
+  let role = "other";
   try {
+    const orchestrators = readOrchestrators(projectRoot);
+    role = identifyRole({
+      orchestrators,
+      executorRecord: readExecutorRecord(projectRoot, sessionId),
+      sessionId,
+    });
     const output = handleEvent({
       input,
       projectRoot,
       state,
+      orchestrators,
       role,
       sessionId,
       now: new Date().toISOString(),
@@ -226,8 +253,9 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
 }
 
 /**
- * 处理工具调用后事件: 状态目录被写入后拍快照; 其它会话读取当前工单文件时,
- * 登记为执行会话 (启动提示词没有被识别时的兜底).
+ * 处理工具调用后事件: 状态目录中的文件被写入后, 把这个文件并入快照 (对账异常
+ * 尚未处理时不拍); 其它会话读取当前工单文件时, 登记为执行会话 (启动提示词没有
+ * 被识别时的兜底).
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
@@ -250,25 +278,24 @@ function handlePostToolUse({
     const relative = projectRelativePath(projectRoot, filePath);
     if (
       relative !== undefined &&
-      isUnderDirectory(relative, NAVIGATOR_DIRECTORY)
+      isUnderDirectory(relative, NAVIGATOR_DIRECTORY) &&
+      state.pendingAnomaly === undefined
     ) {
-      snapshotUnlessAnomaly(projectRoot, state, now);
+      recordSnapshotChanges(projectRoot, {
+        paths: [relative],
+        now,
+        head: headCommit(projectRoot),
+      });
     }
     return undefined;
   }
-  if (toolName !== READ_TOOL || role === "executor") {
+  if (toolName !== READ_TOOL || role !== "other") {
     return undefined;
   }
   const order = orderReadBy(state, projectRoot, filePath);
   if (
     order === undefined ||
-    !registerExecutor({
-      state,
-      worktreeRoot: projectRoot,
-      sessionId,
-      order,
-      now,
-    })
+    !registerExecutor({ worktreeRoot: projectRoot, sessionId, order, now })
   ) {
     return undefined;
   }
@@ -279,19 +306,33 @@ function handlePostToolUse({
 }
 
 /**
- * 处理用户发消息事件. 编排会话注入位置与禁令, 并记下消息原文; 执行会话记录
- * 用户对开工对齐的选择; 启动提示词把会话登记为执行会话.
+ * 处理用户发消息事件. 编排会话注入位置与禁令, 记下消息原文与对工单审阅的选择;
+ * 被接管的原编排会话注入身份提醒; 执行会话记录用户对开工对齐的选择;
+ * 启动提示词把会话登记为执行会话.
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
  */
-function handleUserPrompt({ input, projectRoot, state, role, sessionId, now }) {
+function handleUserPrompt({
+  input,
+  projectRoot,
+  state,
+  orchestrators,
+  role,
+  sessionId,
+  now,
+}) {
   const prompt = String(input.prompt ?? "");
+  const spec = loadSpec();
   if (role === "orchestrator") {
     appendPrompt(projectRoot, prompt, now);
+    applyApprovalAnswer({ projectRoot, order: state.order, prompt, spec, now });
+    return contextOutput("UserPromptSubmit", orchestratorReminder(state, spec));
+  }
+  if (role === "superseded") {
     return contextOutput(
       "UserPromptSubmit",
-      orchestratorReminder(state, loadSpec()),
+      supersededReminder(orchestrators.current?.claimedAt),
     );
   }
   const launched = findLaunchedOrder(state, prompt);
@@ -304,7 +345,6 @@ function handleUserPrompt({ input, projectRoot, state, role, sessionId, now }) {
   if (
     launched.order !== undefined &&
     registerExecutor({
-      state,
       worktreeRoot: projectRoot,
       sessionId,
       order: launched.order,
@@ -323,7 +363,7 @@ function handleUserPrompt({ input, projectRoot, state, role, sessionId, now }) {
   if (record === undefined || !record.isAwaitingAlignment) {
     return undefined;
   }
-  const answered = applyAlignmentAnswer(record, state, prompt);
+  const answered = applyAlignmentAnswer(record, state, prompt, spec);
   writeExecutorRecord(projectRoot, answered);
   return contextOutput("UserPromptSubmit", executorReminder(answered));
 }
@@ -334,24 +374,37 @@ function handleUserPrompt({ input, projectRoot, state, role, sessionId, now }) {
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
  */
-function handleSessionStart({ projectRoot, state, role, sessionId }) {
-  if (role === "orchestrator") {
-    return contextOutput(
-      "SessionStart",
-      orchestratorResumeReminder(state, loadSpec()),
-    );
+function handleSessionStart({
+  projectRoot,
+  state,
+  orchestrators,
+  role,
+  sessionId,
+}) {
+  switch (role) {
+    case "orchestrator":
+      return contextOutput(
+        "SessionStart",
+        orchestratorResumeReminder(state, loadSpec()),
+      );
+    case "superseded":
+      return contextOutput(
+        "SessionStart",
+        supersededReminder(orchestrators.current?.claimedAt),
+      );
+    case "executor": {
+      const record = readExecutorRecord(projectRoot, sessionId);
+      return record === undefined
+        ? undefined
+        : contextOutput("SessionStart", executorReminder(record));
+    }
+    default:
+      return undefined;
   }
-  if (role === "executor") {
-    const record = readExecutorRecord(projectRoot, sessionId);
-    return record === undefined
-      ? undefined
-      : contextOutput("SessionStart", executorReminder(record));
-  }
-  return undefined;
 }
 
 /**
- * 处理回复结束事件: 校验回复版式, 不合格时打回一次; 然后拍快照.
+ * 处理回复结束事件: 校验回复版式, 不合格时打回一次.
  *
  * `stop_hook_active` 为 true 表示本轮已被打回过, 此时直接放行, 避免循环;
  * 有后台任务时回复是等待中的中间回复, 不做校验.
@@ -360,8 +413,8 @@ function handleSessionStart({ projectRoot, state, role, sessionId }) {
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
  */
 function handleStop(event) {
-  const { input, projectRoot, state, role, now } = event;
-  if (role === "other") {
+  const { input, role } = event;
+  if (role !== "orchestrator" && role !== "executor") {
     return undefined;
   }
   const text =
@@ -374,11 +427,8 @@ function handleStop(event) {
     text !== "" && input.stop_hook_active !== true && !hasBackgroundTasks;
   const problems =
     role === "orchestrator"
-      ? shouldCheck
-        ? orchestratorReplyProblems(text, state)
-        : []
+      ? orchestratorReplyProblems(event, text, shouldCheck)
       : executorReplyProblems(event, text, shouldCheck);
-  snapshotUnlessAnomaly(projectRoot, state, now);
   if (problems.length === 0) {
     return undefined;
   }
@@ -392,23 +442,70 @@ function handleStop(event) {
 }
 
 /**
- * 校验编排会话的回复: 版式与问题级别的写作规则. 正在提交时不校验.
+ * 校验编排会话的回复: 版式, 摘录工单内容的节与工单文件一致, 问题级别的写作规则
+ * (摘录的工单内容不查). 正在提交时不校验. 工单审阅合格, 或本轮不校验 (已被打回
+ * 过一次) 时, 开始等待用户对工单审阅的选择.
  *
+ * @param {HookEvent} event hook 调用上下文.
  * @param {string} text 回复全文.
- * @param {import("./lib/state.mjs").NavigatorState} state 当前状态.
+ * @param {boolean} shouldCheck 本轮是否校验版式.
  * @returns {string[]} 问题列表.
  */
-function orchestratorReplyProblems(text, state) {
+function orchestratorReplyProblems(
+  { projectRoot, state, now },
+  text,
+  shouldCheck,
+) {
   if (state.order?.status === COMMITTING_STATUS) {
     return [];
   }
   const spec = loadSpec();
+  const title = locateReply(text).heading?.text;
+  const reply = title === undefined ? undefined : findReply(spec, title);
+  const problems = shouldCheck
+    ? orchestratorLayoutProblems({ text, reply, spec, projectRoot, state })
+    : [];
+  if (
+    problems.length === 0 &&
+    title === APPROVAL_REPLY_TYPE &&
+    state.order !== null
+  ) {
+    markAwaitingApproval(projectRoot, state.order, now);
+  }
+  return problems;
+}
+
+/**
+ * 列出编排会话回复的版式与写作问题.
+ *
+ * @param {object} options 参数.
+ * @param {string} options.text 回复全文.
+ * @param {import("./lib/spec.mjs").ReplySpec | undefined} options.reply 回复类型的规格; 标题不是回复类型时为 undefined.
+ * @param {import("./lib/spec.mjs").TemplateSpec} options.spec 模板规格.
+ * @param {string} options.projectRoot 项目根目录.
+ * @param {import("./lib/state.mjs").NavigatorState} options.state 当前状态.
+ * @returns {string[]} 问题列表.
+ */
+function orchestratorLayoutProblems({ text, reply, spec, projectRoot, state }) {
   const layout = checkReply({ text, spec, state, role: "orchestrator" });
-  const writing = checkWriting({ text, spec, maxLines: undefined })
+  const excerpt = reply !== undefined && hasOrderExcerpt(reply);
+  const orderText =
+    excerpt && state.order !== null
+      ? readOrderText(projectRoot, state.order)
+      : undefined;
+  const excerptProblems =
+    orderText === undefined
+      ? []
+      : checkOrderExcerpt({ text, reply, orderText });
+  const writing = checkWriting({
+    text: excerpt ? blankOrderExcerpt(text, reply) : text,
+    spec,
+    maxLines: undefined,
+  })
     .filter((finding) => finding.severity === "problem")
     .slice(0, MAX_WRITING_PROBLEMS)
     .map(formatFinding);
-  return [...layout, ...writing];
+  return [...layout, ...excerptProblems, ...writing];
 }
 
 /**
@@ -446,20 +543,6 @@ function executorReplyProblems(
     });
   }
   return problems;
-}
-
-/**
- * 拍快照; 对账异常尚未处理时不拍, 以免新快照掩盖异常.
- *
- * @param {string} projectRoot 项目根目录.
- * @param {import("./lib/state.mjs").NavigatorState} state 当前状态.
- * @param {string} now 当前时间.
- * @returns {void}
- */
-function snapshotUnlessAnomaly(projectRoot, state, now) {
-  if (state.pendingAnomaly === undefined) {
-    takeSnapshot(projectRoot, { now, head: headCommit(projectRoot) });
-  }
 }
 
 /**

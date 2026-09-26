@@ -41,11 +41,7 @@ const COMMANDS = Object.freeze(["ruff check .", "ruff format --check ."]);
  * @returns {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs").NavigatorState} 状态.
  */
 function stateWithOrder(kind, commands) {
-  const initial = createInitialState({
-    skillVersion: "0.1.0",
-    sessionId: "s",
-    now: NOW,
-  });
+  const initial = createInitialState({ skillVersion: "0.1.0", now: NOW });
   const registered =
     commands === undefined
       ? initial

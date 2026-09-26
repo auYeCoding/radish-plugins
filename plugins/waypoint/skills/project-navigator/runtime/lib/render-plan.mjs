@@ -17,6 +17,13 @@ import {
 } from "./workflow-records.mjs";
 
 /**
+ * 由状态生成的视图文件, 相对于项目根目录. 每次保存状态都重新生成或删除,
+ * 保存后的快照要一并更新这些文件.
+ * @type {readonly string[]}
+ */
+export const PLAN_VIEW_FILES = Object.freeze([ROADMAP_FILE, RISKS_FILE]);
+
+/**
  * 严重程度与状态的取值说明, 写在风险清单末尾.
  * @type {readonly string[]}
  */

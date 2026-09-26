@@ -4,7 +4,8 @@
  * 用法: node scripts/gen-navigator-docs.mjs [--check]
  *
  * 回复类型, 记录文件与写作规则的唯一来源是 `spec/templates.json`; 标点规则的唯一
- * 来源是 `shared/punctuation.md`. 本脚本把它们写进技能的参考文档与执行手册,
+ * 来源是 `shared/punctuation.md`; 插件命令的访问级别的唯一来源是
+ * `runtime/lib/command-access.mjs`. 本脚本把它们写进技能的参考文档与执行手册,
  * 手写的说明文字放在 `scripts/navigator-docs/` 中, 以占位行标出生成内容的位置.
  * 生成结果经过 prettier 格式化; `--check` 只比较不写入, 有差异时以退出码 1 结束.
  */
@@ -15,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import * as prettier from "prettier";
 
+import { SHARED_COMMANDS } from "../plugins/waypoint/skills/project-navigator/runtime/lib/command-access.mjs";
 import {
   OPTION_LETTERS,
   renderOptionBlock,
@@ -126,6 +128,7 @@ const GENERATORS = Object.freeze({
   "writing-rules": ({ spec }) => writingRulesTable(spec),
   "unit-rule": () => [UNIT_RULE],
   "writing-words": ({ spec }) => writingWords(spec),
+  "shared-commands": () => sharedCommandList(),
 });
 
 /**
@@ -413,6 +416,15 @@ function writingRulesTable(spec) {
       descriptions[key] ?? "",
     ]),
   );
+}
+
+/**
+ * 生成所有会话都可以运行的插件命令清单, 作为上一行列表项的子列表.
+ *
+ * @returns {string[]} 各行.
+ */
+function sharedCommandList() {
+  return SHARED_COMMANDS.map((name) => `  - \`${name}\``);
 }
 
 /**

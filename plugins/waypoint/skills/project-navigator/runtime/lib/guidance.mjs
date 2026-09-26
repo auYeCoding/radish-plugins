@@ -5,7 +5,26 @@
  * 运行哪条命令. "运行 X" 指运行项目中的插件命令 `node <命令路径> X`.
  */
 
+import { APPROVAL_REPLY_TYPE, APPROVAL_STATUSES } from "./order-approval.mjs";
 import { shortHash } from "./repo.mjs";
+
+/**
+ * 发布工单的回复类型.
+ * @type {string}
+ */
+const ISSUE_REPLY_TYPE = "工单发布";
+
+/**
+ * 审阅状态: 用户已认可当前内容.
+ * @type {string}
+ */
+const APPROVED = APPROVAL_STATUSES.approved;
+
+/**
+ * 审阅状态: 正在等用户选择.
+ * @type {string}
+ */
+const AWAITING = APPROVAL_STATUSES.awaiting;
 
 /**
  * 恢复命令在后续说明中的占位写法, 生成时替换为具体命令.
@@ -51,6 +70,7 @@ export const ANOMALY_GUIDES = Object.freeze({
  * @property {import("./state.mjs").NavigatorState} state 当前状态.
  * @property {import("./reconcile.mjs").ReconcileResult} reconciliation 对账结果.
  * @property {boolean} hasReceipt 当前工单的回执文件是否存在.
+ * @property {string} [orderApproval] 当前工单的审阅状态, 取值见 order-approval.mjs 的 APPROVAL_STATUSES; 没有工单时省略.
  * @property {boolean} isNewSession 本会话是否刚刚接管编排.
  * @property {string | undefined} restoreTarget 恢复记录时建议使用的提交.
  * @property {import("./spec.mjs").TemplateSpec} spec 模板规格, 用于写出回复类型的编号.
@@ -94,7 +114,10 @@ export function nextAction(input) {
   }
   return state.order === null
     ? `继续阶段 ${state.stage} 的步骤 ${state.step}`
-    : orderAction(spec, state.order, input.hasReceipt);
+    : orderAction(spec, state.order, {
+        hasReceipt: input.hasReceipt,
+        orderApproval: input.orderApproval,
+      });
 }
 
 /**
@@ -118,19 +141,21 @@ function anomalyAction(spec, guide, restoreTarget) {
  *
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @param {{id: string, status: string}} order 当前工单.
- * @param {boolean} hasReceipt 回执文件是否存在.
+ * @param {{hasReceipt: boolean, orderApproval: string | undefined}} facts 回执文件是否存在, 工单的审阅状态.
  * @returns {string} 下一动作.
  */
-function orderAction(spec, order, hasReceipt) {
+function orderAction(spec, order, { hasReceipt, orderApproval }) {
   switch (order.status) {
     case "drafting":
-      return `写完工单 ${order.id} 的 order.md, 运行 order set issued, 再${replyStep(spec, "工单发布")}`;
+      return draftingAction(spec, order, orderApproval);
     case "issued":
       return hasReceipt
         ? `工单 ${order.id} 已有回执: 读回执; 执行受阻时运行 order set blocked 再${replyStep(spec, "受阻处理")}; 执行完成时, 测试或取证工具需要授权就${replyStep(spec, "测试授权")}, 否则运行 order set reviewing 并派验收子代理`
         : `等待工单 ${order.id} 的回执: ${replyStep(spec, "等待回执")}; 执行会话发来消息时, 把内容写入回执文件后再运行 status; 回执是否写入以 status 输出为准`;
     case "blocked":
-      return `工单 ${order.id} 受阻: ${replyStep(spec, "受阻处理")}`;
+      return orderApproval === APPROVED
+        ? `工单 ${order.id} 的修改已经用户审阅: 运行 order set issued, 再${replyStep(spec, ISSUE_REPLY_TYPE)}`
+        : `工单 ${order.id} 受阻: ${replyStep(spec, "受阻处理")}; 用户选择后修改工单, 再${replyStep(spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后运行 order set issued`;
     case "reviewing":
       return `工单 ${order.id} 验收中: 用 review-brief 的输出派验收子代理, 结论写入 review.md, 再${replyStep(spec, "验收报告")}`;
     case "accepted":
@@ -139,5 +164,25 @@ function orderAction(spec, order, hasReceipt) {
       return `工单 ${order.id} 正在提交: 确认提交完成后运行 order set committed`;
     default:
       return `工单 ${order.id} 处于未知状态 ${order.status}`;
+  }
+}
+
+/**
+ * 起草中的工单的下一动作: 先请用户审阅, 用户认可当前内容后才发布.
+ *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {{id: string}} order 当前工单.
+ * @param {string | undefined} orderApproval 工单的审阅状态.
+ * @returns {string} 下一动作.
+ */
+function draftingAction(spec, order, orderApproval) {
+  const issue = `运行 order set issued, 再${replyStep(spec, ISSUE_REPLY_TYPE)}`;
+  switch (orderApproval) {
+    case APPROVED:
+      return `工单 ${order.id} 已经用户审阅: ${issue}`;
+    case AWAITING:
+      return `等用户在 "${APPROVAL_REPLY_TYPE}" 中选择: 选 A 后${issue}; 用户要修改时, 改好工单文件后再${replyStep(spec, APPROVAL_REPLY_TYPE)}`;
+    default:
+      return `写完工单 ${order.id} 的 order.md, ${replyStep(spec, APPROVAL_REPLY_TYPE)}, 请用户审阅; 用户选 A 后${issue}`;
   }
 }

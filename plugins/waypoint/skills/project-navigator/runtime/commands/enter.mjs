@@ -3,7 +3,8 @@
  * 输出当前状态与下一动作.
  *
  * enter 由技能加载时的 `!` 命令调用, 输出会原样注入技能内容, 因此必须始终以
- * 退出码 0 结束, 且输出中只含由状态决定的内容. status 只查询, 不写任何文件.
+ * 退出码 0 结束, 且输出中只含由状态决定的内容. 调用技能的会话由 enter 接管编排.
+ * status 只查询, 不写任何文件.
  */
 
 import { existsSync } from "node:fs";
@@ -28,7 +29,11 @@ import {
   readGitBlob,
   shortHash,
 } from "../lib/repo.mjs";
-import { claimSession } from "../lib/sessions.mjs";
+import { readApprovalStatus } from "../lib/order-approval.mjs";
+import {
+  claimOrchestratorSession,
+  readOrchestrators,
+} from "../lib/sessions.mjs";
 import { hasAllNavigatorHooks, readSettingsFile } from "../lib/settings.mjs";
 import { listSnapshots } from "../lib/snapshots.mjs";
 import { loadSpec } from "../lib/spec.mjs";
@@ -39,7 +44,7 @@ import {
 } from "../lib/tracked-paths.mjs";
 import { compareVersions, runtimeVersion } from "../lib/version.mjs";
 import { adoptCommit } from "../lib/workflow-orders.mjs";
-import { readStateIfValid, saveState } from "./support.mjs";
+import { SNAPSHOT_MODES, readStateIfValid, saveState } from "./support.mjs";
 
 /**
  * 寻找可恢复快照时最多查看的快照数.
@@ -89,6 +94,12 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
       `- 下一动作: ${replyStep(spec, "运行受阻")}, 说明状态文件损坏; 用户同意后运行 snapshots 查看快照, 再运行 restore <快照>`,
     ];
   }
+  const claim = claimIfActive({
+    projectRoot,
+    state,
+    sessionId: shouldClaim ? sessionId : undefined,
+    now,
+  });
   const isHookInstalled = hasAllNavigatorHooks(
     readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE),
   );
@@ -114,6 +125,7 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
       projectRoot,
       state,
       sessionId,
+      isNewSession: claim.isNewSession,
       shouldClaim,
       now,
       spec,
@@ -122,12 +134,36 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
 }
 
 /**
- * 对账, 按需登记会话与纳入自己的提交, 然后描述记录情况与下一动作.
+ * 调用技能的会话接管编排. 放在其它检查之前: 升级与自检等后续步骤要由这个会话
+ * 运行编排命令, 守卫按登记判断身份. 项目尚未初始化或已卸载时不登记.
+ *
+ * @param {object} options 参数.
+ * @param {string} options.projectRoot 项目根目录.
+ * @param {import("../lib/state.mjs").NavigatorState | undefined} options.state 状态.
+ * @param {string | undefined} options.sessionId 要接管编排的会话; 只查询时为 undefined.
+ * @param {string} options.now 当前时间.
+ * @returns {{isNewSession: boolean}} 本会话是否刚刚接管编排.
+ */
+function claimIfActive({ projectRoot, state, sessionId, now }) {
+  if (
+    sessionId === undefined ||
+    state === undefined ||
+    state.init.status === INIT_UNINSTALLED
+  ) {
+    return { isNewSession: false };
+  }
+  const { previous } = claimOrchestratorSession(projectRoot, sessionId, now);
+  return { isNewSession: previous !== sessionId };
+}
+
+/**
+ * 对账, 按需纳入自己的提交与标记对账异常, 然后描述记录情况与下一动作.
  *
  * @param {object} options 参数.
  * @param {string} options.projectRoot 项目根目录.
  * @param {import("../lib/state.mjs").NavigatorState} options.state 进入前的状态.
- * @param {string | undefined} options.sessionId 调用技能的会话.
+ * @param {string | undefined} options.sessionId 调用方的会话编号.
+ * @param {boolean} options.isNewSession 本会话是否刚刚接管编排.
  * @param {boolean} options.shouldClaim 是否写入状态.
  * @param {string} options.now 当前时间.
  * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
@@ -137,19 +173,17 @@ function describeProgress({
   projectRoot,
   state,
   sessionId,
+  isNewSession,
   shouldClaim,
   now,
   spec,
 }) {
   const reconciliation = reconcile(projectRoot, state);
   const isAnomaly = Object.hasOwn(ANOMALY_GUIDES, reconciliation.kind);
-  const isNewSession =
-    sessionId !== undefined && state.session?.id !== sessionId;
   const current = shouldClaim
     ? persistEntry({
         context: { projectRoot, state, spec },
         reconciliation,
-        sessionId,
         isAnomaly,
         now,
       })
@@ -163,7 +197,7 @@ function describeProgress({
     : undefined;
   const isAdopted = shouldClaim && reconciliation.kind === "own";
   return [
-    `- 会话登记: ${describeSession(current, sessionId)}`,
+    `- 会话登记: ${describeSession(readOrchestrators(projectRoot), sessionId)}`,
     "",
     ...renderProgressSection(current, spec),
     "",
@@ -186,6 +220,8 @@ function describeProgress({
       state: current,
       reconciliation,
       hasReceipt,
+      orderApproval:
+        order === null ? undefined : readApprovalStatus(projectRoot, order),
       isNewSession: shouldClaim && isNewSession,
       restoreTarget,
       spec,
@@ -194,18 +230,17 @@ function describeProgress({
 }
 
 /**
- * 写入进入时的状态变化: 纳入自己的提交, 标记或清除对账异常, 登记编排会话.
+ * 写入进入时的状态变化: 纳入自己的提交, 标记或清除对账异常.
  * 对账异常时不拍快照, 以免新快照掩盖异常.
  *
  * @param {object} options 参数.
  * @param {import("./support.mjs").ProjectContext} options.context 项目上下文.
  * @param {import("../lib/reconcile.mjs").ReconcileResult} options.reconciliation 对账结果.
- * @param {string | undefined} options.sessionId 调用技能的会话.
  * @param {boolean} options.isAnomaly 对账是否异常.
  * @param {string} options.now 当前时间.
  * @returns {import("../lib/state.mjs").NavigatorState} 写入后的状态; 没有变化时为原状态.
  */
-function persistEntry({ context, reconciliation, sessionId, isAnomaly, now }) {
+function persistEntry({ context, reconciliation, isAnomaly, now }) {
   const { state } = context;
   const adopted =
     reconciliation.kind === "own" && reconciliation.head !== undefined
@@ -220,11 +255,11 @@ function persistEntry({ context, reconciliation, sessionId, isAnomaly, now }) {
     adopted.pendingAnomaly === anomaly
       ? adopted
       : { ...adopted, pendingAnomaly: anomaly };
-  const claimed =
-    sessionId === undefined ? flagged : claimSession(flagged, sessionId, now);
-  return claimed === state
+  return flagged === state
     ? state
-    : saveState(context, claimed, now, { shouldSnapshot: !isAnomaly });
+    : saveState(context, flagged, now, {
+        snapshot: isAnomaly ? SNAPSHOT_MODES.none : SNAPSHOT_MODES.changes,
+      });
 }
 
 /**
@@ -254,18 +289,21 @@ function findRestoreTarget(projectRoot, reconciliation) {
  * 描述编排会话的登记情况. 调用方没有提供会话编号时 (例如在命令行中运行
  * status), 无法判断是不是本会话, 只报告是否已有登记.
  *
- * @param {import("../lib/state.mjs").NavigatorState} state 状态.
+ * @param {import("../lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
  * @param {string | undefined} sessionId 调用方的会话编号.
  * @returns {string} 描述.
  */
-function describeSession(state, sessionId) {
-  if (state.session?.id === undefined) {
+function describeSession(orchestrators, sessionId) {
+  if (orchestrators.current === undefined) {
     return "尚无编排会话";
   }
   if (sessionId === undefined) {
-    return "已有编排会话登记";
+    const time = orchestrators.current.claimedAt;
+    return time === ""
+      ? "已有编排会话登记"
+      : `已有编排会话登记, 接管时间 ${time}`;
   }
-  return state.session.id === sessionId
+  return orchestrators.current.id === sessionId
     ? "本会话是编排会话"
     : "本会话不是编排会话";
 }

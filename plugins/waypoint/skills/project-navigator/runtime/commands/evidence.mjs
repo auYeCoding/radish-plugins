@@ -9,11 +9,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { EVIDENCE_COMMAND_NAME } from "../lib/command-access.mjs";
 import { evidenceCacheDirectory, orderFilePath } from "../lib/paths.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import {
   EVIDENCE_CHECK_ACTION,
-  EVIDENCE_COMMAND_NAME,
   formatEvidence,
   readEvidenceRows,
   verifyEvidenceRows,

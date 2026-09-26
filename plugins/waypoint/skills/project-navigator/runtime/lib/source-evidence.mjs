@@ -6,17 +6,12 @@
  * 不依赖执行会话手中的副本. 取源码的细节在 source-fetch.mjs 中.
  */
 
+import { EVIDENCE_COMMAND_NAME } from "./command-access.mjs";
 import { readSectionTable, splitSections } from "./layout.mjs";
 import { parseMarkdown } from "./markdown.mjs";
 import { PROJECT_COMMAND_PATH } from "./paths.mjs";
 import { fetchVersion, readSourceLines } from "./source-fetch.mjs";
 import { WorkflowError } from "./workflow-error.mjs";
-
-/**
- * evidence 命令的名称.
- * @type {string}
- */
-export const EVIDENCE_COMMAND_NAME = "evidence";
 
 /**
  * 核对当前工单回执中全部证据的完整命令; 验收子代理原样运行.

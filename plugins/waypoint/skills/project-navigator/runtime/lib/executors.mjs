@@ -6,13 +6,14 @@
  */
 
 import { LAUNCH_PROMPT_PATTERN } from "./briefs.mjs";
+import { isChoiceSelected } from "./option-answer.mjs";
 import {
   orderFilePath,
   projectRelativePath,
   relativePathsEqual,
 } from "./paths.mjs";
 import { writeExecutorRecord } from "./registry.mjs";
-import { isOrchestratorSession } from "./sessions.mjs";
+import { isOrchestratorSession, readOrchestrators } from "./sessions.mjs";
 
 /**
  * 执行会话请求用户确认计划时使用的回复类型.
@@ -27,10 +28,10 @@ export const ALIGNMENT_REPLY_TYPE = "开工对齐";
 const EXECUTABLE_STATUS = "issued";
 
 /**
- * 用户在开工对齐中选择 A 的写法: 单独的字母 A, 或 "继续执行".
- * @type {RegExp}
+ * 开工对齐中表示 "继续执行" 的选项位置: 第 1 组第 1 项.
+ * @type {Readonly<{optionSet: number, choice: number}>}
  */
-const ALIGNMENT_CONFIRM_PATTERN = /^[Aa](?:[\s.,:;)]|$)|^继续执行/u;
+const ALIGNMENT_CONFIRM_CHOICE = Object.freeze({ optionSet: 0, choice: 0 });
 
 /**
  * 从用户消息中找出要执行的工单.
@@ -84,21 +85,14 @@ export function orderReadBy(state, projectRoot, filePath) {
  * 把会话登记为某张工单的执行会话; 当前或曾经的编排会话不登记.
  *
  * @param {object} options 登记参数.
- * @param {import("./state.mjs").NavigatorState} options.state 当前状态.
  * @param {string} options.worktreeRoot 工作区根目录.
  * @param {string} options.sessionId 会话编号.
  * @param {{id: string, folder: string}} options.order 工单.
  * @param {string} options.now 当前时间, ISO 格式.
  * @returns {boolean} 完成登记时返回 true.
  */
-export function registerExecutor({
-  state,
-  worktreeRoot,
-  sessionId,
-  order,
-  now,
-}) {
-  if (isOrchestratorSession(state, sessionId)) {
+export function registerExecutor({ worktreeRoot, sessionId, order, now }) {
+  if (isOrchestratorSession(readOrchestrators(worktreeRoot), sessionId)) {
     return false;
   }
   writeExecutorRecord(worktreeRoot, {
@@ -141,10 +135,11 @@ export function executorGuardState(record, state) {
  * @param {import("./registry.mjs").ExecutorRecord} record 执行登记.
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
  * @param {string} prompt 用户消息.
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格, 用于识别选项.
  * @returns {import("./registry.mjs").ExecutorRecord} 新的执行登记.
  */
-export function applyAlignmentAnswer(record, state, prompt) {
-  if (!isAlignmentConfirmed(prompt) || state.order?.id !== record.order) {
+export function applyAlignmentAnswer(record, state, prompt, spec) {
+  if (!isAlignmentConfirmed(prompt, spec) || state.order?.id !== record.order) {
     return { ...record, isAwaitingAlignment: false };
   }
   return {
@@ -159,8 +154,15 @@ export function applyAlignmentAnswer(record, state, prompt) {
  * 判断用户消息是否为开工对齐中的 "A. 继续执行.".
  *
  * @param {string} prompt 用户消息.
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @returns {boolean} 是时返回 true.
  */
-export function isAlignmentConfirmed(prompt) {
-  return ALIGNMENT_CONFIRM_PATTERN.test(prompt.trim());
+export function isAlignmentConfirmed(prompt, spec) {
+  return isChoiceSelected(
+    prompt,
+    spec.replies[ALIGNMENT_REPLY_TYPE].optionSets[
+      ALIGNMENT_CONFIRM_CHOICE.optionSet
+    ],
+    ALIGNMENT_CONFIRM_CHOICE.choice,
+  );
 }

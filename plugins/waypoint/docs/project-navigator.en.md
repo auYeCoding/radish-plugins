@@ -39,7 +39,7 @@ The skill runs only when you invoke it explicitly. Plain-language requests never
 - `uninstall`: remove the guard hooks and keep every record.
 - Any other text: the initial requirement, for example `/waypoint:project-navigator 做一个团队周报汇总工具`.
 
-Invoking the skill from any new session takes over orchestration and resumes from the last position. The previous orchestrator session loses its orchestration rights.
+Invoking the skill from any new session takes over orchestration and resumes from the last position. The previous orchestrator session loses its orchestration rights and is told so the next time you send it a message; to continue orchestrating there, invoke the skill again in that session.
 
 ## Quick start
 
@@ -61,12 +61,13 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 ### Selection and the first work order
 
 1. "规范对照" (standards comparison) lists conflicting standards for you to decide one by one, and finally asks for the code comment language.
-2. Each selection question gets a work order, announced with "工单发布" (work order issued). Then:
+2. Each selection question gets a work order. Before issuing it, the skill replies with "工单审阅" (work order review), quoting the work order's goal, scope, premises, rules, and every acceptance criterion as written. Reply `A` if it is right, or `B` with the changes you want.
+3. After you reply `A`, the skill issues the work order and replies with "工单发布" (work order issued). Then:
    1. Open a new Claude Code session in the project root and paste the launch prompt from the "后续操作" (next steps) section of the reply.
    2. After reading the work order, the executor replies with "开工对齐" (alignment). Check its plan; it starts working only after you reply `A`.
    3. When done, the executor replies with "执行完成" (done). Reply `A` to have it write the receipt file, then go back to the orchestrator session and reply `A` in "等待回执" (awaiting receipt).
-3. The orchestrator sends the reviewer subagent to check the work and replies with "验收报告" (review report), listing steps for you to verify by hand. Reply `A` once everything checks out.
-4. In "确认提交" (confirm commit), choose to commit only, commit and push, or hand over to commit-message.
+4. The orchestrator sends the reviewer subagent to check the work and replies with "验收报告" (review report), listing steps for you to verify by hand. Reply `A` once everything checks out.
+5. In "确认提交" (confirm commit), choose to commit only, commit and push, or hand over to commit-message.
 
 The skeleton and every later slice move forward through the same work order round trip.
 
@@ -98,7 +99,7 @@ Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks a
 | Researcher subagent  | Dispatched by the orchestrator during framing       | Researches the problem domain: similar products, users, industry practice, constraints; read-only         |
 | You                  | The only decision maker                             | Every decision, test authorization, hands-on acceptance, and how to commit                                |
 
-The project's hooks enforce these boundaries. For example, the orchestrator is blocked from writing business code, and an executor is blocked from editing files before you approve its plan. Each denial explains why.
+The project's hooks enforce these boundaries. For example, the orchestrator is blocked from writing business code, and an executor is blocked from editing files before you approve its plan. Each denial explains why. Executor sessions and other sessions can run only the read-only plugin commands (show status, get skeletons, check source evidence, list backups); only the orchestrator can run commands that change the orchestration state.
 
 ## Stages
 
@@ -116,13 +117,14 @@ A requirement change can come in at any stage and returns to the same position a
 
 ## Round trip of a work order
 
-1. **Issue.** The orchestrator writes the work order and replies with "工单发布", which contains a launch prompt. After you choose A, the orchestrator replies with "等待回执" (awaiting receipt), showing where the work order and the receipt are, and waits for the executor to finish.
-2. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". Its "模块划分" (module plan) section lists the modules to create and change, and what changes in the entry file; read it before you choose A. It can edit business files only after you choose A.
-3. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
+1. **Approve.** The orchestrator writes the work order and replies with "工单审阅", quoting the work order's goal, scope, premises, rules, and every acceptance criterion. The quoted sections come straight from the work order file, and the hook checks that they match it. The work order can be issued only after you choose A; if it changes after that, or it is issued again after being blocked, you review it again.
+2. **Issue.** The orchestrator issues the work order and replies with "工单发布", which contains a launch prompt. After you choose A, the orchestrator replies with "等待回执" (awaiting receipt), showing where the work order and the receipt are, and waits for the executor to finish. To change the work order after it is issued, choose B: the orchestrator withdraws it, asks you to review the changes, and after it is issued again the executor has to align again.
+3. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". Its "模块划分" (module plan) section lists the modules to create and change, and what changes in the entry file; read it before you choose A. It can edit business files only after you choose A.
+4. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
    - A. Document report: the executor writes the receipt file; go back to the orchestrator and choose A in "等待回执". If the receipt is not there yet, the orchestrator replies with "等待回执" again and says the receipt was not found.
    - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open.
-4. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree; see [Test authorization and evidence tools](#test-authorization-and-evidence-tools) below.
-5. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit. If there are changes outside the receipt (for example, editor project files), the orchestrator lists them and asks whether to include them.
+5. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree; see [Test authorization and evidence tools](#test-authorization-and-evidence-tools) below.
+6. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit. If there are changes outside the receipt (for example, editor project files), the orchestrator lists them and asks whether to include them.
 
 Work orders run strictly one at a time. If the same slice fails review twice in a row, the orchestrator suggests splitting it smaller.
 
@@ -203,17 +205,18 @@ You only need to reply with an option letter, adding details after it when neede
 - `plan/roadmap.md` and `plan/risks.md` are generated from the state. Do not edit them by hand.
 - `.navigator/drafts/` holds drafts the orchestrator uses to pass Chinese text to the scripts, and is not committed.
 - `artifacts/` in a work order folder holds evidence files left by the executor, such as raw captures and reproduction scripts. The executor can write there only after you choose A; the files are committed with the work order whatever their type, and the reviewer subagent reads them by path. A script in it runs during review only after test authorization.
-- Whenever the records change, the scripts back up `.navigator/` to the hidden Git ref `refs/navigator/snapshots`. The ref is not part of any branch history, and neither `git reset` nor `git checkout` removes it.
+- Whenever the plugin or a session under the hooks writes a record, the scripts add the written file to the backup kept in the hidden Git ref `refs/navigator/snapshots`. The ref is not part of any branch history, and neither `git reset` nor `git checkout` removes it. The backup takes in only those writes, so changes to the records made by anything else are never absorbed silently and reconciliation can find them.
+- Which session is the orchestrator, and your choices in work order reviews, are registered on your machine in `.git/navigator/` and are not committed. Rolling back or restoring the records does not change a session's identity; on another machine, the first session that invokes the skill becomes the orchestrator.
 
 ## Rollbacks and anomalies
 
 On every invocation, the skill compares the recorded commit, the current commit, and the latest backup:
 
 - You rolled back a commit, switched branches, or committed outside the workflow: it replies with "验收异常", and you choose to align the records with the repository, adopt the new commits, or survey again.
-- You edited files under `.navigator/` by hand: you choose to keep the edits or restore the backup.
+- You edited files under `.navigator/` by hand, or rolled the records back with git (for example `git reset --hard` to the last commit, discarding records written after it): you choose to keep the current state or restore the backup.
 - After a squash merge, the records are unchanged, so the skill recognizes it and asks you to adopt it.
 
-Until the anomaly is resolved, the orchestrator pauses other operations, so a new backup cannot hide the anomaly.
+Until the anomaly is resolved, the orchestrator pauses other operations, so a new backup cannot hide the anomaly; commands that change the orchestration state are refused and list the changed files. Rolling back the records does not take the running orchestrator session's identity away, so it replies with "验收异常" as usual.
 
 ## Engineering standards
 
@@ -252,6 +255,14 @@ The executor writes the tool and where to look in the receipt's "取证记录" (
 
 In the commit step, the hooks allow only a few fixed forms: `git add -- <paths...>`, `git commit -F -` with the message on standard input, and `git push` without force options. `-m` and `-F <file>` are denied, and the denial gives the allowed forms, so the orchestrator switches to one of them; you do not need to commit by hand.
 
+**The work order is already issued. Can I still change it?**
+
+Yes. Choose B in "工单发布" or "等待回执" and describe the change. The orchestrator withdraws the work order, makes the change, and replies with "工单审阅" for you to confirm; after it is issued again, the executor has to align again, and the old receipt is archived automatically.
+
+**The previous orchestrator session says "本会话已不是编排会话" (this session is no longer the orchestrator). What now?**
+
+Another session invoked the skill and took over orchestration. Continue in that session, or invoke `/waypoint:project-navigator` again in the previous session to take orchestration back.
+
 **Can several work orders run in parallel?**
 
 No. Work orders run strictly one at a time, so each one has a well-defined base commit and review result.
@@ -266,7 +277,7 @@ Run `/waypoint:project-navigator uninstall`. The hooks and allow rules are remov
 - In an initialized project, every tool call starts Node.js once more, which took about 70 milliseconds in local measurements.
 - Writing requirements such as plain Chinese rely mainly on prompts and checkups. The script checks are approximations and can miss issues or flag false ones.
 - A reply with a format problem is sent back for one rewrite, but the faulty version stays on the screen.
-- File edits made through shell commands are checked only roughly, and the hooks do not restrict what you do in your own editor.
+- File edits made through shell commands, and the way other sessions run plugin commands, are checked only roughly from the command text, and the hooks do not restrict what you do in your own editor or terminal.
 - Message reports require the orchestrator and executor sessions to be open at the same time on the same machine.
 - Source evidence supports only public git repositories; a dependency without a public repository is marked unverified, and you decide whether to accept that risk.
 - Evidence tools see the external tool's records as they are at review time. If the records were cleared before the review, or the tool is not running, the affected criteria are marked unverified.

@@ -36,7 +36,7 @@ WayPoint 是一个提供实用工作流技能的 [Claude Code](https://code.clau
 ## 使用提示
 
 - 请停用其它生成提交消息的技能, 例如 `~/.claude/skills` 中的个人技能. 否则请求提交消息时, Claude 可能在两者之间任选其一.
-- 项目初始化 `project-navigator` 之后, 防护 hook 对该项目中的所有会话生效. 例如普通会话不能修改 `.navigator/` 下的记录; 不再需要时运行 `/waypoint:project-navigator uninstall`.
+- 项目初始化 `project-navigator` 之后, 防护 hook 对该项目中的所有会话生效. 例如普通会话不能修改 `.navigator/` 下的记录, 也不能运行改变编排状态的插件命令; 不再需要时运行 `/waypoint:project-navigator uninstall`.
 
 ## 安装
 

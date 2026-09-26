@@ -34,7 +34,10 @@ import {
   findIgnoredPaths,
   headCommit,
 } from "../lib/repo.mjs";
-import { claimSession } from "../lib/sessions.mjs";
+import {
+  claimOrchestratorSession,
+  ensureOrchestratorRecord,
+} from "../lib/sessions.mjs";
 import {
   mergeNavigatorHooks,
   mergeNavigatorPermissions,
@@ -134,10 +137,14 @@ function installNavigator(projectRoot, sessionId, now) {
   copyRuntime(projectRoot, version);
   copyExecutorGuide(projectRoot);
   seedGlossary(projectRoot);
-  const upgraded =
+  ensureOrchestratorRecord(projectRoot);
+  if (sessionId !== undefined) {
+    claimOrchestratorSession(projectRoot, sessionId, now);
+  }
+  const state =
     existing === undefined
       ? {
-          ...createInitialState({ skillVersion: version, sessionId, now }),
+          ...createInitialState({ skillVersion: version, now }),
           lastCommit: headCommit(projectRoot) ?? null,
         }
       : {
@@ -145,8 +152,6 @@ function installNavigator(projectRoot, sessionId, now) {
           skillVersion: version,
           init: { ...existing.init, status: INIT_PENDING },
         };
-  const state =
-    sessionId === undefined ? upgraded : claimSession(upgraded, sessionId, now);
   writeState(projectRoot, state, now);
   installSettings(projectRoot);
   writeProbeRequest(projectRoot, now);

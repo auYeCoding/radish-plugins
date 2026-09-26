@@ -4,10 +4,20 @@
  * 编排会话只允许三类命令: 插件自带的命令行脚本, 只读的 git 命令, 用户已授权的
  * 测试命令; 到了提交步骤, 再放行提交所需的 git 命令. 验收子代理另外可以运行
  * 核对源码证据的插件命令. 含有管道, 重定向, 命令串联等 shell 元字符的命令
- * 一律视为复合命令, 除非与已授权的测试命令逐字相同.
+ * 一律视为复合命令, 除非与已授权的测试命令逐字相同. 执行会话与其它会话只能
+ * 运行只读的插件命令, 改变编排状态的插件命令只有编排会话能运行.
  */
 
-import { EVIDENCE_COMMAND_NAME } from "./source-evidence.mjs";
+import {
+  EVIDENCE_COMMAND_NAME,
+  SHARED_COMMANDS,
+  isOrchestratorOnly,
+} from "./command-access.mjs";
+import {
+  OTHER_SESSION_GUIDE,
+  RECLAIM_GUIDE,
+  SUPERSEDED_NOTICE,
+} from "./session-notices.mjs";
 
 /**
  * 表示复合命令的 shell 元字符: 分号, 与, 或, 管道, 重定向, 命令替换, 换行.
@@ -21,6 +31,15 @@ const COMPOUND_PATTERN = /[;&|<>`\n\r]|\$\(/u;
  */
 const NAVIGATOR_COMMAND_PATTERN =
   /^node\s+(?:"[^"]*[\\/]runtime[\\/]navigator\.mjs"|[^"\s]*[\\/]runtime[\\/]navigator\.mjs)(\s|$)/u;
+
+/**
+ * 命令中出现的插件命令调用: 由 node 运行 `navigator.mjs`, 其后第一个词是命令名.
+ * 脚本路径可以带引号与空格. 不要求调用位于开头, 复合命令与先切换目录再运行的
+ * 写法也能找到; 只提到文件名而不运行它的命令 (例如搜索文件内容) 不算调用.
+ * @type {RegExp}
+ */
+const NAVIGATOR_INVOCATION_PATTERN =
+  /\bnode(?:\.exe)?["']?\s+(?:-\S+\s+)*(?:"[^"]*|'[^']*|[^\s"';&|]*)navigator\.mjs["']?\s+([^\s;&|<>`"']+)/giu;
 
 /**
  * 只读的 git 子命令.
@@ -209,15 +228,20 @@ function isEvidenceCommand(command) {
 }
 
 /**
- * 判定执行会话或其它会话的一条命令: 执行会话禁止提交与推送; 所有会话都禁止
+ * 判定编排会话主会话之外的会话 (执行会话, 被接管的原编排会话, 其它会话) 的
+ * 一条命令: 只能运行只读的插件命令; 执行会话禁止提交与推送; 所有会话都禁止
  * 用命令行改写编排记录与防护配置.
  *
  * @param {string} command 命令全文.
- * @param {boolean} isExecutor 是否为执行会话.
+ * @param {"executor" | "superseded" | "other"} role 会话身份.
  * @returns {string | undefined} 拒绝理由; 放行时为 undefined.
  */
-export function checkOtherCommand(command, isExecutor) {
-  if (isExecutor && COMMIT_OR_PUSH_PATTERN.test(command)) {
+export function checkOtherCommand(command, role) {
+  const restricted = findOrchestratorOnlyCommand(command);
+  if (restricted !== undefined) {
+    return orchestratorOnlyReason(restricted, role);
+  }
+  if (role === "executor" && COMMIT_OR_PUSH_PATTERN.test(command)) {
     return "执行会话不提交, 不推送: 验收通过后由用户统一提交.";
   }
   if (
@@ -227,6 +251,36 @@ export function checkOtherCommand(command, isExecutor) {
     return "不能用命令行改写 .navigator/ 下的编排记录或 .claude/ 下的防护配置.";
   }
   return undefined;
+}
+
+/**
+ * 找出命令中第一个只有编排会话能运行的插件命令.
+ *
+ * @param {string} command 命令全文.
+ * @returns {string | undefined} 命令名; 没有时为 undefined.
+ */
+function findOrchestratorOnlyCommand(command) {
+  return [...command.matchAll(NAVIGATOR_INVOCATION_PATTERN)]
+    .map((match) => match[1])
+    .find((name) => isOrchestratorOnly(name));
+}
+
+/**
+ * 生成非编排会话运行编排命令时的拒绝理由, 按会话身份写明正确做法.
+ *
+ * @param {string} name 插件命令名.
+ * @param {"executor" | "superseded" | "other"} role 会话身份.
+ * @returns {string} 拒绝理由.
+ */
+function orchestratorOnlyReason(name, role) {
+  switch (role) {
+    case "executor":
+      return `执行会话只能运行只读的插件命令 (${SHARED_COMMANDS.join(", ")}); ${name} 会改变编排状态, 由编排会话运行. 执行中的发现写进回执.`;
+    case "superseded":
+      return `${SUPERSEDED_NOTICE}, 不能运行插件命令 ${name}. ${RECLAIM_GUIDE}.`;
+    default:
+      return `只有编排会话能运行插件命令 ${name}. ${OTHER_SESSION_GUIDE}.`;
+  }
 }
 
 /**
