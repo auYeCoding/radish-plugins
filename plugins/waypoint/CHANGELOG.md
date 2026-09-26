@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-26
+
 ### Added
 
 - `project-navigator`: a work order is reviewed before it is issued. After writing the work order, the orchestrator replies with the new "工单审阅" (work order review), quoting the overview, scope, premises, rules, and every acceptance criterion straight from the work order file; the hook checks the quote against the file. The work order can be issued only after you choose A, and only with the exact content you approved: editing it afterwards, or reissuing it after it was blocked, needs another review. Before, "工单发布" (work order issued) showed only the path and the number of criteria, next to the launch prompt.
@@ -90,7 +92,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.5.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.6.0...HEAD
+[0.6.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.6.0
 [0.5.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.5.0
 [0.4.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.4.0
 [0.3.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.3.1
