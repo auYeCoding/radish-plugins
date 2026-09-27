@@ -10,6 +10,7 @@
  * 移入历史, 当前工单清空.
  */
 
+import { COMMITTING_ORDER_STATUS } from "./commit-step.mjs";
 import { allocateNumber } from "./numbering.mjs";
 import { WorkflowError } from "./workflow-error.mjs";
 
@@ -170,7 +171,7 @@ export function setOrderStatus(state, status, head) {
  */
 export function adoptCommit(state, head, action) {
   const adopted =
-    state.order?.status === "committing"
+    state.order?.status === COMMITTING_ORDER_STATUS
       ? setOrderStatus(state, "committed", head)
       : { ...state, lastCommit: head };
   return { ...adopted, lastAction: action };

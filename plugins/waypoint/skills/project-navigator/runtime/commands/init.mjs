@@ -27,6 +27,7 @@ import {
   SKILL_ROOT,
   navigatorPath,
 } from "../lib/paths.mjs";
+import { clearPendingWrites } from "../lib/pending-writes.mjs";
 import { readProbeState, writeProbeRequest } from "../lib/registry.mjs";
 import { renderGlossarySeed } from "../lib/render-plan.mjs";
 import {
@@ -221,6 +222,7 @@ function verifyProbe(projectRoot, now) {
     now,
   );
   takeSnapshot(projectRoot, { now, head: headCommit(projectRoot) });
+  clearPendingWrites(projectRoot);
   return ["- 自检结果: 通过, 防护已生效"];
 }
 

@@ -940,6 +940,61 @@ projectTest(
   },
 );
 
+projectTest(
+  "流程: 写入后被其它 hook 改写的记录文件, 对账仍然一致",
+  (context) => {
+    const { root, project, hook } = context;
+    const folder = issueFirstOrder(context);
+    const receipt = path.join(root, folder, "receipt.md");
+    const content = fill(project(["template", "receipt"]).stdout);
+    writeFileSync(receipt, content, "utf8");
+    hook({
+      session_id: EXECUTOR,
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: receipt },
+    });
+    writeFileSync(receipt, `${content}\n`, "utf8");
+    assert.equal(
+      hook({ session_id: EXECUTOR, hook_event_name: "Stop" }).status,
+      0,
+    );
+    assert.match(project(["status"]).stdout, /对账结果: 一致/u);
+
+    const review = path.join(root, folder, "review.md");
+    const reviewText = fill(project(["template", "review"]).stdout);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    writeFileSync(review, reviewText, "utf8");
+    hook({
+      session_id: ORCHESTRATOR,
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: review },
+    });
+    writeFileSync(review, `${reviewText}\n`, "utf8");
+    const rejected = project(["order", "set", "rejected"]);
+    assert.equal(rejected.status, 0, rejected.stdout);
+  },
+);
+
+projectTest(
+  "流程: 会话中途手动提交后, 改变状态的命令暂停, 纳入后继续",
+  (context) => {
+    const { root, project } = context;
+    assert.equal(project(["stage", "1"]).status, 0);
+    writeFileSync(path.join(root, "README.md"), "# 改动\n", "utf8");
+    commitPaths(root, ["README.md"], "docs: 手动提交");
+    const paused = project(["stage", "2"]);
+    assert.equal(paused.status, 1, "手动提交之后编排命令暂停");
+    assert.match(paused.stdout, /提交历史与记录不一致 \(陌生提交/u);
+    const status = project(["status"]).stdout;
+    assert.match(status, /对账结果: 陌生提交/u);
+    assert.match(status, /使用第 2 组选项/u);
+    assert.equal(project(["adopt"]).status, 0);
+    assert.equal(project(["stage", "2"]).status, 0);
+  },
+);
+
 projectTest("流程: 记录被改动时先处理验收异常, 其它命令暂停", (context) => {
   const { root, project } = context;
   const brief = path.join(root, ".navigator", "plan", "notes.md");

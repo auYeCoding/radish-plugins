@@ -4,7 +4,7 @@
  *
  * enter 由技能加载时的 `!` 命令调用, 输出会原样注入技能内容, 因此必须始终以
  * 退出码 0 结束, 且输出中只含由状态决定的内容. 调用技能的会话由 enter 接管编排.
- * status 只查询, 不写任何文件.
+ * status 只查询, 不写状态目录; 对账之前与 enter 一样, 先把待并入快照的写入并入快照.
  */
 
 import { existsSync } from "node:fs";
@@ -21,11 +21,13 @@ import {
   navigatorPath,
   orderFilePath,
 } from "../lib/paths.mjs";
+import { flushPendingWrites } from "../lib/pending-writes.mjs";
 import { RECONCILE_LABELS, reconcile } from "../lib/reconcile.mjs";
 import { renderProgressSection } from "../lib/render.mjs";
 import {
   countTrackedFiles,
   findIgnoredPaths,
+  headCommit,
   readGitBlob,
   shortHash,
 } from "../lib/repo.mjs";
@@ -178,6 +180,9 @@ function describeProgress({
   now,
   spec,
 }) {
+  if (state.pendingAnomaly === undefined) {
+    flushPendingWrites(projectRoot, { now, head: headCommit(projectRoot) });
+  }
   const reconciliation = reconcile(projectRoot, state);
   const isAnomaly = Object.hasOwn(ANOMALY_GUIDES, reconciliation.kind);
   const current = shouldClaim

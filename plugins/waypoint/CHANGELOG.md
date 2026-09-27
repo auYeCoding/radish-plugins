@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: a receipt or review record rewritten by a formatter hook no longer reports "状态目录与快照不符" (state directory does not match the snapshot). A write under `.navigator/` now only leaves a marker, and the file enters the snapshot once every hook of that tool call has finished: before a plugin command reconciles, and when you send a message, a session starts, or a reply ends. Before, the plugin snapshotted the file while your formatter was still rewriting it, so every work order stopped at "验收异常" (reconciliation anomaly) at least once.
+- `project-navigator`: a manual commit in the middle of orchestration is reported instead of being absorbed silently. Commands that change the state now also compare the commit history outside the commit step, and refuse while foreign commits, rollbacks, or divergence are unhandled; `status` then leads to "验收异常". Before, only a new session noticed such commits, and in the same session the next `order set committed` took them into the records without asking.
+
 ## [0.6.0] - 2026-09-26
 
 ### Added
