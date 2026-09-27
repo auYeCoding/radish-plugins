@@ -42,6 +42,12 @@ const EXECUTOR = "session-executor";
 const FILLER = "已填写的内容";
 
 /**
+ * 验收记录骨架中等用户选择后才写的键的预填值.
+ * @type {string}
+ */
+const DEFERRED_PRESET = "待用户确认";
+
+/**
  * 测试用的代码检查命令.
  * @type {string}
  */
@@ -124,18 +130,23 @@ function writeThroughHook({ root, hook }, sessionId, relativePath, content) {
 }
 
 /**
- * 按骨架写入验收记录, 判据核对只有一行, 结论为指定值.
+ * 按骨架写入验收记录, 判据核对只有一行, 结论为指定值. 默认也写下用户结论与
+ * 提交方式, 相当于用户已经作出选择.
  *
  * @param {FlowContext} context 测试上下文.
  * @param {string} folder 工单文件夹, 相对于项目根目录.
  * @param {string} verdict 判据结论.
+ * @param {{isDecided?: boolean}} [options] 是否写下用户的选择; 为 false 时保留骨架预填的值.
  * @returns {void}
  */
-function writeReview(context, folder, verdict) {
-  const text = fill(context.project(["template", "review"]).stdout).replace(
+function writeReview(context, folder, verdict, { isDecided = true } = {}) {
+  const skeleton = fill(context.project(["template", "review"]).stdout).replace(
     `| ${FILLER} | ${FILLER} | ${FILLER} |`,
     `| ${FILLER} | ${verdict} | ${FILLER} |`,
   );
+  const text = isDecided
+    ? skeleton.replaceAll(DEFERRED_PRESET, FILLER)
+    : skeleton;
   writeThroughHook(context, ORCHESTRATOR, `${folder}/review.md`, text);
 }
 
@@ -713,8 +724,12 @@ projectTest(
     assert.equal(manual.status, 1);
     assert.match(manual.stdout, /order set rejected/u);
     assert.equal(project(["reply", "review", "--option", "2"]).status, 0);
-    writeReview(context, folder, "通过");
+    writeReview(context, folder, "通过", { isDecided: false });
     assert.equal(project(["reply", "review", "--option", "1"]).status, 0);
+    const undecided = project(["order", "set", "accepted"]);
+    assert.equal(undecided.status, 1, "用户结论还是预填值时不能通过验收");
+    assert.match(undecided.stdout, /"用户结论" 还是 "待用户确认"/u);
+    writeReview(context, folder, "通过");
     assert.equal(project(["order", "set", "accepted"]).status, 0);
   },
 );
@@ -939,7 +954,7 @@ projectTest("流程: 提交后未记录时, 下次进入自动纳入自己的提
     root,
   ).stdout;
   assert.match(entered, /发现自己的提交, 已自动纳入/u);
-  assert.match(entered, /当前工单: 无/u);
+  assert.match(entered, /当前工单: 无 \(上一张 0001 已结束, committed\)/u);
 });
 
 projectTest(

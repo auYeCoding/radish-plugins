@@ -6,12 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `project-navigator`: the review record skeleton prefills "用户结论" (user verdict) and "提交方式" (commit choice) with "待用户确认" (awaiting the user), and `order set accepted` and `order set committing` refuse until the orchestrator writes down your choice. Before, the write check rejected the unfilled keys, so the orchestrator had to invent values before you had chosen.
+
 ### Added
 
 - `project-navigator`: stage commits. After initialization, and whenever a stage begins while the previous stage left uncommitted records, the orchestrator replies with the new "阶段提交" (stage commit): commit only the skill's files, commit them together with every other change, or skip for now. Committing goes through `commit-message` as usual, and `stage` and `order new` wait until you answer. Before, the orchestrator could commit only after a work order was accepted, so initialization and framing outputs stayed uncommitted until the first work order, and a repository without any commit could not get a work order at all; it now gets its first commit here. Projects initialized with an earlier version should run `init` again to upgrade.
 
 ### Fixed
 
+- `project-navigator`: `order new` without `--slice` attaches the work order to the current slice. Before, such a work order belonged to no slice, so it was missing from the roadmap and did not count toward "two failed reviews in one slice, split it again"; the orchestrator also tended to pass the position shown as "2/9" instead of the slice id, and the error now lists the valid ids.
+- `project-navigator`: the next action printed by `order new` asks for "工单审阅" (work order review) before issuing, as the workflow requires.
+- `project-navigator`: when no work order is current, "当前工单" (current work order) shows the last one and how it ended, for example in the review report of a rejected work order.
+- `project-navigator`: denials of compound commands and of `git -C <dir>` explain the allowed form, for the reviewer subagent as well. Before, the reviewer was told it may run only read-only git commands, retried the same read-only commands, and was denied again.
 - `project-navigator`: rewinding or editing a message of the orchestrator in the desktop app no longer locks orchestration. Such a rewind, like `--fork-session`, continues the conversation under a new session id; the forked session is now recognized from the orchestrator marker in its transcript and takes over automatically. Before, every plugin command was denied, and the reply claimed that another session had taken over.
 - `project-navigator`: message reports reach the current orchestrator. The orchestrator registers its address with the new `address set` command whenever it takes over or resumes, `status` shows it as "编排地址" (orchestrator address), and the executor sends to that address; with no address or a failed send, the executor writes the receipt file and asks you to choose A in the orchestrator. Before, the address was written into the work order, where it went stale after a restart or takeover and could not be corrected once the work order was issued.
 

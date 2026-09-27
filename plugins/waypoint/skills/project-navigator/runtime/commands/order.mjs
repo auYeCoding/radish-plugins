@@ -12,6 +12,7 @@ import path from "node:path";
 
 import { issueBlocker } from "../lib/code-checks.mjs";
 import {
+  COMMITTING_ORDER_STATUS,
   STAGE_COMMIT_REPLY_TYPE,
   assertNoStageCommit,
 } from "../lib/commit-step.mjs";
@@ -26,7 +27,11 @@ import {
 } from "../lib/order-approval.mjs";
 import { orderFilePath, projectRelativePath } from "../lib/paths.mjs";
 import { headCommit } from "../lib/repo.mjs";
-import { orderAcceptanceBlockers } from "../lib/review-record.mjs";
+import {
+  DEFERRED_REVIEW_KEYS,
+  orderAcceptanceBlockers,
+  unfilledReviewKey,
+} from "../lib/review-record.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import {
   SELECTION_ORDER_KIND,
@@ -141,7 +146,7 @@ function createNewOrder(context, values, now) {
   );
   return [
     ...resultLines(state),
-    `- 下一动作: 用 Write 写入 ${orderFile}, 再运行 order set issued`,
+    `- 下一动作: 运行 template order 取得骨架, 用 Write 写入 ${orderFile}, 再${replyStep(context.spec, APPROVAL_REPLY_TYPE)}, 请用户审阅; 用户选 A 后运行 order set issued`,
   ];
 }
 
@@ -166,6 +171,9 @@ function changeStatus(context, status, now) {
   }
   if (status === "accepted" && order?.status === "reviewing") {
     assertAcceptable(context);
+  }
+  if (status === COMMITTING_ORDER_STATUS && order !== null) {
+    assertReviewKeyFilled(context, DEFERRED_REVIEW_KEYS.commitChoice);
   }
   if (status === "committed") {
     assertRecordsCommitted(context.projectRoot, "order set committed");
@@ -212,6 +220,28 @@ function assertAcceptable(context) {
     throw new WorkflowError(
       `工单 ${order.id} 不能通过验收: ${blockers.join(" ")} 有判据不通过或未验证时运行 order set rejected, 按输出处理.`,
     );
+  }
+  assertReviewKeyFilled(context, DEFERRED_REVIEW_KEYS.userVerdict);
+}
+
+/**
+ * 核对验收记录中等用户选择后才写的键已经写下: 通过验收之前写用户结论,
+ * 进入提交之前写提交方式.
+ *
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @param {string} key 键名, 取值见 DEFERRED_REVIEW_KEYS.
+ * @returns {void}
+ * @throws {WorkflowError} 该键还没写时.
+ */
+function assertReviewKeyFilled(context, key) {
+  const problem = unfilledReviewKey({
+    projectRoot: context.projectRoot,
+    order: context.state.order,
+    spec: context.spec,
+    key,
+  });
+  if (problem !== undefined) {
+    throw new WorkflowError(problem);
   }
 }
 

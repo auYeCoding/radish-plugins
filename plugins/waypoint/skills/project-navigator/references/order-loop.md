@@ -29,7 +29,7 @@
 
 ### 写工单
 
-1. 运行 `order new --kind <类型> --slug <短名> [--slice <切片编号>]`. 类型: implementation 实现, selection 选型, runcheck 运行检查, fix 修复. 输出给出工单文件的路径.
+1. 运行 `order new --kind <类型> --slug <短名> [--slice <切片编号>]`. 类型: implementation 实现, selection 选型, runcheck 运行检查, fix 修复. 不带 `--slice` 时工单挂在当前切片; 切片编号是 `.navigator/plan/roadmap.md` 中的四位数字, 不是 "当前切片" 中的序号. 输出给出工单文件的路径.
 2. 运行 `template order` 取得骨架, 按下表逐项填写后用 Write 写入.
 3. 运行 `reply approve`, 回复 "工单审阅". 骨架已从工单文件原样摘录概况, 工作范围, 前提假设, 执行守则与验收判据, 不改写, 不转述; 回复结束时 hook 核对摘录与工单文件一致. 实现与修复工单要求项目已登记代码检查命令, 且验收判据含有代码检查判据; 不满足时 `reply approve` 拒绝, 按输出补救后再取骨架.
 4. "工单审阅" 中用户选 A: 运行 `order set issued`, 再运行 `reply order` (骨架已带启动提示词), 回复 "工单发布". 发布只接受用户认可过的内容: 认可之后改过工单文件, 或用户没有选 A, `order set issued` 都会拒绝. 每次发布都用掉这次认可.
@@ -93,7 +93,7 @@
 
 1. 运行 `order set reviewing`.
 2. 运行 `review-brief`, 把输出原样作为提示词派 `waypoint:navigator-reviewer`. 不增删任何文字, 守卫会逐字核对.
-3. 运行 `template review`, 用子代理交回的结果写 `review.md`. "判据核对" 表的结论照抄子代理的结论, 只能是 通过, 不通过, 未验证 之一. "人工验收" 写出用户亲手验证的步骤:
+3. 运行 `template review`, 用子代理交回的结果写 `review.md`. "判据核对" 表的结论照抄子代理的结论, 只能是 通过, 不通过, 未验证 之一. "用户结论" 与 "提交方式" 保留骨架预填的 "待用户确认", 用户选择之后再改写; 没有改写时 `order set accepted` 与 `order set committing` 会拒绝. "人工验收" 写出用户亲手验证的步骤:
    - 命令与操作只取自回执, 不自己编写安装, 建环境或改项目配置的命令.
    - 回执中没有可供用户亲手验证的内容时写 "无".
    - 不建议用户凭公开资料, 文档或经验认可未验证的判据.

@@ -1,5 +1,6 @@
 /**
- * @file 验收记录的判据结论: 读取 review.md 的判据核对表, 找出妨碍验收通过的判据.
+ * @file 验收记录的判据结论: 读取 review.md 的判据核对表, 找出妨碍验收通过的判据;
+ * 核对等用户选择后才写的键已经写下.
  *
  * "有判据不通过或未验证时不能通过验收" 由脚本执行: order set accepted 与
  * "验收报告" 请用户人工验收的选项组都先核对这里.
@@ -84,6 +85,44 @@ export function acceptanceBlockers(reviewText) {
       (row) =>
         `判据 "${row[criterionIndex] ?? ""}" 的结论为 "${row[verdictIndex] ?? ""}".`,
     );
+}
+
+/**
+ * 验收记录中等用户选择后才写的键: 人工验收的用户结论, 提交方式的用户选择.
+ * 骨架预填规格中的值, 用户选择之后改写.
+ * @type {Readonly<{userVerdict: string, commitChoice: string}>}
+ */
+export const DEFERRED_REVIEW_KEYS = Object.freeze({
+  userVerdict: "用户结论",
+  commitChoice: "用户选择",
+});
+
+/**
+ * 检查验收记录中某个等用户选择后才写的键是否已写: 键不存在, 值为空, 或仍是
+ * 骨架预填的值时视为未写.
+ *
+ * @param {object} options 参数.
+ * @param {string} options.projectRoot 项目根目录.
+ * @param {{folder: string}} options.order 当前工单.
+ * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
+ * @param {string} options.key 键名, 取值见 DEFERRED_REVIEW_KEYS.
+ * @returns {string | undefined} 未写时的原因; 已写时为 undefined.
+ */
+export function unfilledReviewKey({ projectRoot, order, spec, key }) {
+  const file = path.join(projectRoot, orderFilePath(order.folder, "review"));
+  if (!existsSync(file)) {
+    return "验收记录 review.md 还没有写入.";
+  }
+  const line = readFileSync(file, "utf8")
+    .split(/\r?\n/u)
+    .find((entry) => entry.startsWith(`- ${key}:`));
+  const value = line?.slice(`- ${key}:`.length).trim() ?? "";
+  const preset = spec.files.review.sections?.find(
+    (section) => section.presets?.[key] !== undefined,
+  )?.presets?.[key];
+  return value === "" || value === preset
+    ? `review.md 的 "${key}" 还是 "${value || "空"}", 先写下用户的选择.`
+    : undefined;
 }
 
 /**

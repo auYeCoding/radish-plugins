@@ -1001,6 +1001,57 @@ test("守卫: 写入类工具缺少目标路径时按项目之外处理", () => 
   assert.equal(decision.decision, "deny");
 });
 
+test("守卫: 复合命令与带全局参数的 git 被拒时, 理由写明正确写法", () => {
+  const reason = (command, { isSubagent, context = BASE_CONTEXT }) =>
+    decideToolUse({
+      role: "orchestrator",
+      isSubagent,
+      agentType: isSubagent ? "waypoint:navigator-reviewer" : undefined,
+      toolName: "Bash",
+      toolInput: { command },
+      projectRoot: PROJECT_ROOT,
+      context,
+      readFile: () => undefined,
+      readRecentPrompts: () => [],
+      spec: SPEC,
+    }).reason ?? "";
+  assert.match(
+    reason("git status && git diff", { isSubagent: true }),
+    /一次只运行一条命令/u,
+  );
+  assert.match(
+    reason("git -C /repo diff --stat", { isSubagent: true }),
+    /不带 `-C <目录>`/u,
+  );
+  assert.match(
+    reason("git -C /repo log", { isSubagent: false }),
+    /不带 `-C <目录>`/u,
+  );
+  assert.equal(reason("git diff --stat", { isSubagent: true }), "");
+});
+
+test("守卫: 阶段提交中放行 commit-message 与提交命令", () => {
+  const decisionFor = (toolName, toolInput, isStageCommitting) =>
+    decideToolUse({
+      role: "orchestrator",
+      isSubagent: false,
+      agentType: undefined,
+      toolName,
+      toolInput,
+      projectRoot: PROJECT_ROOT,
+      context: { ...BASE_CONTEXT, orderStatus: undefined, isStageCommitting },
+      readFile: () => undefined,
+      readRecentPrompts: () => [],
+      spec: SPEC,
+    }).decision;
+  const skill = { skill: "waypoint:commit-message" };
+  const add = { command: "git add -- .navigator" };
+  assert.equal(decisionFor("Skill", skill, false), "deny");
+  assert.equal(decisionFor("Skill", skill, true), "allow");
+  assert.equal(decisionFor("Bash", add, false), "deny");
+  assert.equal(decisionFor("Bash", add, true), "allow");
+});
+
 test("守卫: Windows 风格的反斜杠路径同样受保护", () => {
   const decision = decideToolUse({
     role: "other",

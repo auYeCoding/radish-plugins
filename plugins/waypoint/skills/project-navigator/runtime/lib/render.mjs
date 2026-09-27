@@ -41,8 +41,23 @@ export function progressValues(state, spec) {
     formatStage(state.stage, spec),
     formatPosition(state.milestones, state.milestone, empty),
     formatPosition(state.slices, state.slice, empty),
-    state.order?.id ?? empty,
+    state.order?.id ?? formatNoOrder(state.orders, empty),
   ];
+}
+
+/**
+ * 没有当前工单时的写法: 有已结束的工单时附上最近一张的编号与结束状态, 例如
+ * 验收不通过之后的验收报告仍能看出说的是哪张工单.
+ *
+ * @param {readonly {id: string, status: string}[] | undefined} orders 已结束的工单摘要.
+ * @param {string} empty 字段不适用时写的值.
+ * @returns {string} 当前工单一项的值.
+ */
+function formatNoOrder(orders, empty) {
+  const last = orders?.at(-1);
+  return last === undefined
+    ? empty
+    : `${empty} (上一张 ${last.id} 已结束, ${last.status})`;
 }
 
 /**

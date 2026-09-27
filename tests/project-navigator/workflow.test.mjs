@@ -149,9 +149,22 @@ test("工单: 类型, 短名与切片编号必须合法", () => {
     WorkflowError,
   );
   assert.throws(
-    () => createOrder(base, { ...options, slice: "0099" }),
-    WorkflowError,
+    () => createOrder(base, { ...options, slice: "2" }),
+    /不是 "当前切片" 中的序号: 现有切片 0001/u,
   );
+});
+
+test("工单: 不指定切片时挂在当前切片上", () => {
+  const options = {
+    kind: "fix",
+    slug: "retry",
+    slice: undefined,
+    baseCommit: COMMITS.base,
+  };
+  const active = { ...stateWithRoadmap(), slice: "0001" };
+  assert.equal(createOrder(active, options).order.slice, "0001");
+  const idle = { ...stateWithRoadmap(), slice: null };
+  assert.equal(createOrder(idle, options).order.slice, null);
 });
 
 test("工单: 每次发布轮次加一, 不允许跳过状态", () => {

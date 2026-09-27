@@ -61,7 +61,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 | `skip <编号> --from <草稿>`                                 | 记录用户认可的跳过: `{"reason"}`                                                                           |
 | `roadmap --from <草稿>`                                     | 更新推进路线: `{"milestones": [{"name", "goal", "metrics": [], "slices": [{"name"}]}]}`, 已有条目保留 `id` |
 | `milestone <编号> <状态>`, `slice <编号> <状态>`            | 状态为 pending, active, done                                                                               |
-| `order new --kind <类型> --slug <短名> [--slice <编号>]`    | 新建工单                                                                                                   |
+| `order new --kind <类型> --slug <短名> [--slice <编号>]`    | 新建工单; 不带 `--slice` 时挂在当前切片                                                                    |
 | `order set <状态>`                                          | 转换工单状态                                                                                               |
 | `order tests --from <草稿>`                                 | 登记可运行的测试命令: `{"commands": []}`                                                                   |
 | `review-brief`, `research-brief`                            | 取得验收与调研的委派提示词                                                                                 |
