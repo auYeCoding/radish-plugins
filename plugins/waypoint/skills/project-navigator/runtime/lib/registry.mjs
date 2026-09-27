@@ -48,6 +48,7 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/u;
  * @property {string} order 绑定的工单编号.
  * @property {string} folder 绑定的工单文件夹名.
  * @property {string} registeredAt 登记时间.
+ * @property {string} [inheritedFrom] 分叉出的会话沿用登记时, 原执行会话的编号.
  * @property {boolean} isAligned 用户是否已在开工对齐中选 "继续执行".
  * @property {number} [alignedRound] 完成对齐时工单的发布轮次.
  * @property {boolean} isAwaitingAlignment 执行会话是否已输出开工对齐, 正在等用户选择.

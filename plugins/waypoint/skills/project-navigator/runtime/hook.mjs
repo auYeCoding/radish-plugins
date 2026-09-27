@@ -9,9 +9,10 @@
  *   工具调用的其它 hook (例如格式化) 都已结束, 快照拍到的是最终内容.
  * - 用户发消息时: 编排会话注入位置与禁令, 记下消息原文供核对用户测试输出, 并记下
  *   用户对工单审阅的选择; 被接管的原编排会话注入身份提醒; 识别启动提示词并登记
- *   执行会话; 识别用户对开工对齐的选择.
+ *   执行会话; 识别用户对开工对齐的选择; 工单已发布时, 从执行会话分叉出的会话
+ *   沿用执行登记 (会话开始事件的兜底).
  * - 会话开始时 (含恢复, 分叉与上下文压缩后): 注入身份与位置提醒; 从当前编排会话
- *   分叉出的会话 (编号已改变) 自动接管编排.
+ *   分叉出的会话 (编号已改变) 自动接管编排, 从执行会话分叉出的会话沿用执行登记.
  * - 回复结束时: 校验编排会话与执行会话的回复版式, 不合格时打回一次; 编排会话回复
  *   工单审阅后开始等待用户选择.
  *
@@ -34,7 +35,10 @@ import {
   ALIGNMENT_REPLY_TYPE,
   applyAlignmentAnswer,
   executorGuardState,
+  findExecutorOrigin,
   findLaunchedOrder,
+  hasExecutableOrder,
+  inheritExecutor,
   orderReadBy,
   registerExecutor,
 } from "./lib/executors.mjs";
@@ -66,6 +70,7 @@ import {
   writeProbeHeartbeat,
 } from "./lib/registry.mjs";
 import {
+  executorForkReminder,
   executorReminder,
   orchestratorReminder,
   orchestratorResumeReminder,
@@ -241,17 +246,37 @@ function handleEvent(event) {
 }
 
 /**
- * 读取分叉出的会话的转录, 判断它来自哪个编排会话.
+ * 读取会话的转录.
  *
  * @param {unknown} transcriptPath hook 输入中的转录路径.
- * @param {import("./lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
- * @returns {import("./lib/sessions.mjs").ForkOrigin | undefined} 来源; 转录不可读或没有标记时为 undefined.
+ * @returns {string | undefined} 转录全文; 路径缺失或文件不存在时为 undefined.
  */
-function forkOriginOf(transcriptPath, orchestrators) {
+function readTranscript(transcriptPath) {
   if (typeof transcriptPath !== "string" || !existsSync(transcriptPath)) {
     return undefined;
   }
-  return findForkOrigin(readFileSync(transcriptPath, "utf8"), orchestrators);
+  return readFileSync(transcriptPath, "utf8");
+}
+
+/**
+ * 按转录中的执行会话标记, 让分叉出的会话沿用原执行登记. 转录来自编排会话
+ * (当前或曾经) 时不沿用, 由编排会话的分叉接管处理.
+ *
+ * @param {HookEvent} event hook 调用上下文.
+ * @param {string} transcript 转录全文.
+ * @returns {import("./lib/registry.mjs").ExecutorRecord | undefined} 沿用后的执行登记; 没有沿用时为 undefined.
+ */
+function inheritFromTranscript(
+  { projectRoot, orchestrators, sessionId, now },
+  transcript,
+) {
+  if (findForkOrigin(transcript, orchestrators) !== undefined) {
+    return undefined;
+  }
+  const origin = findExecutorOrigin(transcript);
+  return origin === undefined
+    ? undefined
+    : inheritExecutor({ worktreeRoot: projectRoot, sessionId, origin, now });
 }
 
 /**
@@ -357,20 +382,15 @@ function handlePostToolUse({
 /**
  * 处理用户发消息事件. 编排会话注入位置与禁令, 记下消息原文与对工单审阅的选择;
  * 被接管的原编排会话注入身份提醒; 执行会话记录用户对开工对齐的选择;
- * 启动提示词把会话登记为执行会话.
+ * 启动提示词把会话登记为执行会话. 工单已发布时, 其它会话再按转录中的执行会话
+ * 标记沿用执行登记: 分叉出的会话不一定触发会话开始事件, 这里兜底.
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
  */
-function handleUserPrompt({
-  input,
-  projectRoot,
-  state,
-  orchestrators,
-  role,
-  sessionId,
-  now,
-}) {
+function handleUserPrompt(event) {
+  const { input, projectRoot, state, orchestrators, role, sessionId, now } =
+    event;
   const prompt = String(input.prompt ?? "");
   const spec = loadSpec();
   if (role === "orchestrator") {
@@ -405,6 +425,9 @@ function handleUserPrompt({
       executorReminder(readExecutorRecord(projectRoot, sessionId)),
     );
   }
+  if (role === "other") {
+    return inheritedPromptOutput(event);
+  }
   if (role !== "executor") {
     return undefined;
   }
@@ -418,9 +441,29 @@ function handleUserPrompt({
 }
 
 /**
+ * 其它会话收到消息时, 按转录中的执行会话标记沿用执行登记. 只在工单已发布时
+ * 读取转录, 避免与执行无关的会话每条消息都读一次.
+ *
+ * @param {HookEvent} event hook 调用上下文.
+ * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
+ */
+function inheritedPromptOutput(event) {
+  const transcript = hasExecutableOrder(event.state)
+    ? readTranscript(event.input.transcript_path)
+    : undefined;
+  const inherited =
+    transcript === undefined
+      ? undefined
+      : inheritFromTranscript(event, transcript);
+  return inherited === undefined
+    ? undefined
+    : contextOutput("UserPromptSubmit", executorForkReminder(inherited));
+}
+
+/**
  * 处理会话开始事件 (含恢复, 分叉与上下文压缩后): 注入身份与位置提醒. 编排会话
  * 恢复后另外提醒重新登记编排地址. 分叉出的会话编号已改变, 先从转录认出来源:
- * 来自当前编排会话时自动接管编排.
+ * 来自当前编排会话时自动接管编排; 来自执行会话时沿用原执行登记.
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
@@ -428,16 +471,27 @@ function handleUserPrompt({
 function handleSessionStart(event) {
   const { input, projectRoot, state, orchestrators, role, sessionId, now } =
     event;
-  const origin =
+  const transcript =
     role === "other" && input.source === FORK_SOURCE
-      ? forkOriginOf(input.transcript_path, orchestrators)
+      ? readTranscript(input.transcript_path)
       : undefined;
+  const origin =
+    transcript === undefined
+      ? undefined
+      : findForkOrigin(transcript, orchestrators);
   if (origin === "current") {
     claimOrchestratorSession(projectRoot, sessionId, now);
     return contextOutput(
       "SessionStart",
       forkClaimReminder(orchestratorMarker(sessionId)),
     );
+  }
+  const inherited =
+    transcript === undefined
+      ? undefined
+      : inheritFromTranscript(event, transcript);
+  if (inherited !== undefined) {
+    return contextOutput("SessionStart", executorForkReminder(inherited));
   }
   switch (origin === "former" ? "superseded" : role) {
     case "orchestrator":

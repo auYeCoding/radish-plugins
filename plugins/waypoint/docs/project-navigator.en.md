@@ -43,6 +43,8 @@ Invoking the skill from any new session takes over orchestration and resumes fro
 
 Rewinding or editing a message of the orchestrator session in the desktop app, or forking it with `--fork-session`, continues the conversation under a new session id. The forked session is recognized and takes over orchestration automatically; you do not need to invoke the skill again.
 
+The same applies to executor sessions: after a rewind, an edit, or resending an interrupted message, the forked session keeps the original executor registration, with the alignment state as of the fork point (rewinding to before the kickoff alignment requires aligning again). If the forked session is not recognized, writing the receipt is denied; resend the order's launch prompt in the same session.
+
 ## Quick start
 
 Take "做一个团队周报汇总工具" (build a tool that combines a team's weekly reports) as an example, starting from a new repository that only has a README. Every reply ends with an option block, so you only need to reply with a letter. To add details, write them after the letter, for example `B 第 3 条假设不对, 我们用飞书` (B, assumption 3 is wrong, we use Feishu).

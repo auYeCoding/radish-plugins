@@ -339,7 +339,7 @@ function executorWritesBusinessFile({ root, hook }) {
  * 执行会话回复开工对齐, 用户选 A.
  *
  * @param {FlowContext} context 测试上下文.
- * @returns {void}
+ * @returns {string} 用户选 A 后注入执行会话的提醒.
  */
 function alignExecutor({ project, hook }) {
   const alignment = fill(replySkeleton(project(["reply", "align"]).stdout));
@@ -351,11 +351,36 @@ function alignExecutor({ project, hook }) {
     }).output,
     undefined,
   );
-  hook({
+  return hook({
     session_id: EXECUTOR,
     hook_event_name: "UserPromptSubmit",
     prompt: "A",
-  });
+  }).output.hookSpecificOutput.additionalContext;
+}
+
+/**
+ * 把若干条注入的提醒写成转录文件, 模拟分叉出的会话复制的历史.
+ *
+ * @param {string} root 项目根目录.
+ * @param {string} name 文件名.
+ * @param {readonly string[]} contexts 按先后排列的提醒.
+ * @returns {string} 转录文件的绝对路径.
+ */
+function writeTranscript(root, name, contexts) {
+  const file = path.join(root, name);
+  writeFileSync(
+    file,
+    contexts
+      .map((content) =>
+        JSON.stringify({
+          type: "attachment",
+          attachment: { type: "hook_additional_context", content: [content] },
+        }),
+      )
+      .join("\n"),
+    "utf8",
+  );
+  return file;
 }
 
 projectTest("流程: 路线与工单发布, 回复骨架带启动提示词", (context) => {
@@ -936,6 +961,88 @@ projectTest(
       transcript_path: path.join(root, "README.md"),
     });
     assert.equal(stranger.output, undefined, "转录中没有标记时不接管");
+  },
+);
+
+projectTest(
+  "流程: 从执行会话分叉出的会话沿用执行登记, 对齐状态取分叉点时的状态",
+  (context) => {
+    const { root, project, hook } = context;
+    const folder = issueFirstOrder(context);
+    const launched = hook({
+      session_id: EXECUTOR,
+      hook_event_name: "UserPromptSubmit",
+      prompt: launchPrompt(context),
+    }).output.hookSpecificOutput.additionalContext;
+    assert.match(launched, /^执行会话编号: session-executor\.$/mu);
+    const aligned = alignExecutor(context);
+    assert.match(
+      aligned,
+      /^执行会话编号: session-executor; 已对齐的发布轮次: \d+\.$/mu,
+    );
+    const writeReason = (sessionId, relativePath) =>
+      hook({
+        session_id: sessionId,
+        hook_event_name: "PreToolUse",
+        tool_name: "Write",
+        tool_input: { file_path: path.join(root, relativePath), content: "" },
+      }).output?.hookSpecificOutput?.permissionDecisionReason;
+
+    const forked = hook({
+      session_id: "session-executor-forked",
+      hook_event_name: "SessionStart",
+      source: "fork",
+      transcript_path: writeTranscript(root, "executor-fork.jsonl", [
+        launched,
+        aligned,
+      ]),
+    });
+    assert.match(
+      forked.output.hookSpecificOutput.additionalContext,
+      /已沿用原执行登记[\s\S]*已对齐[\s\S]*执行会话编号: session-executor-forked; 已对齐/u,
+    );
+    assert.equal(
+      writeReason("session-executor-forked", "src/app.js"),
+      undefined,
+      "沿用对齐后可以写业务文件",
+    );
+    writeThroughHook(
+      context,
+      "session-executor-forked",
+      `${folder}/receipt.md`,
+      fill(project(["template", "receipt"]).stdout),
+    );
+
+    const rewound = hook({
+      session_id: "session-executor-rewound",
+      hook_event_name: "UserPromptSubmit",
+      prompt: "A",
+      transcript_path: writeTranscript(root, "executor-rewound.jsonl", [
+        launched,
+      ]),
+    });
+    assert.match(
+      rewound.output.hookSpecificOutput.additionalContext,
+      /已沿用原执行登记[\s\S]*未对齐/u,
+      "没有会话开始事件时, 收到消息时兜底沿用",
+    );
+    assert.match(
+      writeReason("session-executor-rewound", "src/app.js") ?? "",
+      /开工对齐尚未完成/u,
+      "分叉点在对齐之前时不沿用之后的对齐",
+    );
+
+    const stranger = hook({
+      session_id: "session-stranger",
+      hook_event_name: "UserPromptSubmit",
+      prompt: "你好",
+      transcript_path: writeTranscript(root, "stranger.jsonl", ["无标记"]),
+    });
+    assert.equal(stranger.output, undefined, "转录中没有标记时不沿用");
+    assert.match(
+      writeReason("session-stranger", `${folder}/receipt.md`) ?? "",
+      /本会话原是执行会话时在本会话重新发送即可/u,
+    );
   },
 );
 

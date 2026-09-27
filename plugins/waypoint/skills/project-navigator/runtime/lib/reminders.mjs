@@ -1,9 +1,10 @@
 /**
  * @file hook 注入给会话的提醒文字: 编排会话每次收到消息与上下文压缩后的位置与禁令,
- * 提交步骤中放行的提交写法, 执行会话的身份与对齐状态.
+ * 提交步骤中放行的提交写法, 执行会话的身份与对齐状态, 以及分叉后沿用执行登记.
  */
 
 import { isStageCommitting } from "./commit-step.mjs";
+import { executorMarker } from "./executors.mjs";
 import { COMMIT_COMMAND_FORMS } from "./guard-commands.mjs";
 import { COMMIT_STEP_STATUSES } from "./guard.mjs";
 import {
@@ -60,7 +61,8 @@ export function orchestratorResumeReminder(state, spec) {
 }
 
 /**
- * 生成执行会话的提醒: 绑定的工单, 手册位置与对齐状态.
+ * 生成执行会话的提醒: 绑定的工单, 手册位置与对齐状态, 以及执行会话标记.
+ * 标记留在转录中, 会话分叉后 hook 据此沿用执行登记.
  *
  * @param {import("./registry.mjs").ExecutorRecord} record 执行登记.
  * @returns {string} 提醒文字.
@@ -72,5 +74,19 @@ export function executorReminder(record) {
   return [
     `[project-navigator] 你是工单 ${record.order} 的执行会话.`,
     `执行手册: ${EXECUTOR_GUIDE_FILE}; 工单: ${orderFilePath(record.folder, "order")}; 对齐状态: ${alignment}.`,
+    `${executorMarker(record)}.`,
+  ].join("\n");
+}
+
+/**
+ * 生成分叉出的会话沿用执行登记后的提醒.
+ *
+ * @param {import("./registry.mjs").ExecutorRecord} record 沿用后的执行登记.
+ * @returns {string} 提醒文字.
+ */
+export function executorForkReminder(record) {
+  return [
+    `[project-navigator] 本会话由工单 ${record.order} 的执行会话分叉而来 (例如回退, 编辑或中断后重发了消息), 会话编号已改变, 已沿用原执行登记.`,
+    executorReminder(record),
   ].join("\n");
 }
