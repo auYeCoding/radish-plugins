@@ -186,7 +186,8 @@ export function renderOptionBlock(optionSet) {
 
 /**
  * 生成一个节的骨架; 允许放启动提示词的节在提供了提示词时直接填好;
- * 表格节给出表头与一行占位; 没有键名的节可以在占位标记之前预填若干行.
+ * 表格节给出表头与一行占位; 键值行使用规格中的预填值, 其余留占位标记;
+ * 没有键名的节可以在占位标记之前预填若干行.
  *
  * @param {import("./spec.mjs").SectionSpec} section 节规格.
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
@@ -218,7 +219,9 @@ function renderSection(section, spec, launchPrompt, prefill = []) {
   const body =
     section.keys === undefined
       ? [...prefill, PLACEHOLDER]
-      : section.keys.map((key) => `- ${key}: ${PLACEHOLDER}`);
+      : section.keys.map(
+          (key) => `- ${key}: ${section.presets?.[key] ?? PLACEHOLDER}`,
+        );
   return [`## ${section.title}`, "", ...body];
 }
 

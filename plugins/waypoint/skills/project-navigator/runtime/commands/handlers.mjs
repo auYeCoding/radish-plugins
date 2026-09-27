@@ -4,6 +4,7 @@
  */
 
 import { EVIDENCE_COMMAND_NAME } from "../lib/command-access.mjs";
+import { runAddress } from "./address.mjs";
 import { runBrief } from "./brief.mjs";
 import { runCheck } from "./check.mjs";
 import { runCodeCheck } from "./codecheck.mjs";
@@ -91,4 +92,5 @@ export const COMMAND_HANDLERS = Object.freeze({
   standards: runStandards,
   codecheck: runCodeCheck,
   tools: runTools,
+  address: runAddress,
 });

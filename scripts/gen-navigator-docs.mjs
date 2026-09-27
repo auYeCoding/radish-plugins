@@ -275,18 +275,33 @@ function replySummary(title, reply, spec) {
 }
 
 /**
- * 描述一个节: 标题, 键名或表格, 是否放启动提示词.
+ * 描述一个节: 标题, 键名 (含骨架预填的值) 或表格, 是否放启动提示词.
  *
  * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").SectionSpec} section 节规格.
  * @returns {string} 描述.
  */
 function sectionLabel(section) {
   const keys =
-    section.keys === undefined ? "" : ` (${section.keys.join(", ")})`;
+    section.keys === undefined
+      ? ""
+      : ` (${section.keys.map((key) => keyLabel(key, section.presets)).join(", ")})`;
   const table =
     section.table === undefined ? "" : ` (${tableLabel(section.table)})`;
   const launch = section.allowLaunchPrompt === true ? " (放启动提示词)" : "";
   return `${section.title}${keys}${table}${launch}`;
+}
+
+/**
+ * 描述一个键名; 骨架中预填了值时附上该值.
+ *
+ * @param {string} key 键名.
+ * @param {Record<string, string> | undefined} presets 节中预填的键值.
+ * @returns {string} 描述.
+ */
+function keyLabel(key, presets) {
+  return presets?.[key] === undefined
+    ? key
+    : `${key} [骨架预填: ${presets[key]}]`;
 }
 
 /**

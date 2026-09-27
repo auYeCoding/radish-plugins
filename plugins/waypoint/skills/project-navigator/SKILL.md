@@ -24,7 +24,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 
 ## 每一步的固定动作
 
-1. 看本文末尾 "当前状态" 中的 "下一动作"; 会话中途用 `status` 命令重新查询. 进度以脚本输出为准, 不凭记忆判断.
+1. 看本文末尾 "当前状态" 中的 "下一动作"; 会话中途用 `status` 命令重新查询. 进度以脚本输出为准, 不凭记忆判断. "当前状态" 有 "地址登记" 一行时, 先按它登记编排地址.
 2. 按下方路由表, 用 Read 读取项目中 `.navigator/bin/references/` 下对应的参考文件 (由 init 复制), 按其中的步骤操作. 初始化之前不读参考文件, 回复骨架由 `reply` 命令给出.
 3. 状态只用插件命令修改. 记录文件先用 `template` 取得骨架再写. 命令需要的中文内容, 先用 Write 写成 `.navigator/drafts/` 下的 JSON 草稿, 再用 `--from` 传入.
 4. 每条回复之前, 运行 `reply <编号> --option <组号>` 取得填写要求与骨架, 按要求在骨架上填写. 回复从一级标题写起, 前面不加引导语. "当前进展" 各行原样保留, 标题, 键名, 选项块与总结块都不改. 人类总结的正文不超过 80 字, 只写结论与用户要做的选择. 回复结束时 hook 校验版式与写作规则, 不合格会被打回一次.
@@ -75,6 +75,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 | `standards --from <草稿>`                                | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                     |
 | `codecheck set --from <草稿>`                            | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                       |
 | `tools set --from <草稿>`                                | 登记用户授权的 MCP 取证工具: `{"tools": []}`, 写完整工具名; 只有验收子代理可以调用                         |
+| `address set --from <草稿>`                              | 登记编排地址: `{"address"}`, 取 ListAgents 输出第一行中本会话的名称                                        |
 | `snapshots`, `restore <提交>`, `adopt`                   | 处理验收异常                                                                                               |
 
 ## 子代理

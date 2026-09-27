@@ -1,7 +1,10 @@
 /**
  * @file 按会话身份给出的提示文字: 被接管的原编排会话与其它会话被拒绝时, 说明原因
- * 与正确做法. 写入守卫, 命令守卫与 hook 的提醒共用这里的文字.
+ * 与正确做法; 分叉接管与登记编排地址的提醒. 写入守卫, 命令守卫, enter 与 hook
+ * 的提醒共用这里的文字.
  */
+
+import { PROJECT_COMMAND_PATH } from "./paths.mjs";
 
 /**
  * 调用本技能的斜杠命令, 含插件名.
@@ -26,6 +29,24 @@ export const RECLAIM_GUIDE = `要在本会话继续编排, 请用户重新调用
  * @type {string}
  */
 export const OTHER_SESSION_GUIDE = `要编排, 请用户调用 ${SKILL_COMMAND}; 要执行工单, 在新会话中粘贴工单的启动提示词`;
+
+/**
+ * 编排会话登记消息地址的做法. 地址是 ListAgents 输出第一行中的本会话名称,
+ * 进程重启或会话分叉后会变, 所以每次接管与恢复之后都重新登记.
+ * @type {string}
+ */
+export const ADDRESS_REGISTRATION_STEP = `登记编排地址: 运行 ListAgents, 把输出第一行中本会话的名称 (含方括号中的编号, 例如 "编排会话 [9ba602]") 写成草稿 {"address": "<名称>"}, 再运行 node ${PROJECT_COMMAND_PATH} address set --from <草稿>. 执行会话消息汇报时按这个地址发送`;
+
+/**
+ * 生成分叉出的会话自动接管编排后的提醒. 提醒带编排会话标记, 以后从本会话再次
+ * 分叉时, hook 据此认出来源.
+ *
+ * @param {string} marker 本会话的编排会话标记.
+ * @returns {string} 提醒文字.
+ */
+export function forkClaimReminder(marker) {
+  return `[project-navigator] 本会话由编排会话分叉而来 (例如回退或编辑了消息), 会话编号已改变, 已自动接管编排. ${marker}. 先${ADDRESS_REGISTRATION_STEP}; 然后运行 node ${PROJECT_COMMAND_PATH} status, 按下一动作继续.`;
+}
 
 /**
  * 生成被接管的原编排会话在收到消息或会话开始时的提醒.

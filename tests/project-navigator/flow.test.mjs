@@ -872,6 +872,58 @@ projectTest(
   },
 );
 
+projectTest(
+  "流程: 从编排会话分叉出的会话自动接管编排, 编排地址随接管清空",
+  (context) => {
+    const { root, project, hook } = context;
+    const entered = runCommand(
+      PLUGIN_COMMAND,
+      ["enter", "--session", ORCHESTRATOR],
+      root,
+    ).stdout;
+    assert.match(entered, /编排会话编号: session-orchestrator/u);
+    assert.match(entered, /地址登记: /u);
+    const draft = writeDraft(root, "address.json", {
+      address: "编排会话 [e6b1dd]",
+    });
+    assert.equal(project(["address", "set", "--from", draft]).status, 0);
+    assert.match(
+      project(["status"]).stdout,
+      /编排地址: 编排会话 \[e6b1dd\], 登记于/u,
+    );
+
+    const transcript = path.join(root, "fork-transcript.jsonl");
+    writeFileSync(transcript, JSON.stringify({ content: entered }), "utf8");
+    const forked = hook({
+      session_id: "session-forked",
+      hook_event_name: "SessionStart",
+      source: "fork",
+      transcript_path: transcript,
+    });
+    assert.match(
+      forked.output.hookSpecificOutput.additionalContext,
+      /已自动接管编排. 编排会话编号: session-forked/u,
+    );
+    assert.match(project(["status"]).stdout, /编排地址: 未登记/u);
+    assert.match(
+      hook({
+        session_id: ORCHESTRATOR,
+        hook_event_name: "UserPromptSubmit",
+        prompt: "A",
+      }).output.hookSpecificOutput.additionalContext,
+      /已不是编排会话/u,
+    );
+
+    const stranger = hook({
+      session_id: "session-stranger",
+      hook_event_name: "SessionStart",
+      source: "fork",
+      transcript_path: path.join(root, "README.md"),
+    });
+    assert.equal(stranger.output, undefined, "转录中没有标记时不接管");
+  },
+);
+
 projectTest("流程: 提交后未记录时, 下次进入自动纳入自己的提交", (context) => {
   const { root, project } = context;
   const folder = issueFirstOrder(context);

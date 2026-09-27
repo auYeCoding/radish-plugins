@@ -32,8 +32,10 @@ import {
   shortHash,
 } from "../lib/repo.mjs";
 import { readApprovalStatus } from "../lib/order-approval.mjs";
+import { ADDRESS_REGISTRATION_STEP } from "../lib/session-notices.mjs";
 import {
   claimOrchestratorSession,
+  orchestratorMarker,
   readOrchestrators,
 } from "../lib/sessions.mjs";
 import { hasAllNavigatorHooks, readSettingsFile } from "../lib/settings.mjs";
@@ -201,8 +203,11 @@ function describeProgress({
     ? findRestoreTarget(projectRoot, reconciliation)
     : undefined;
   const isAdopted = shouldClaim && reconciliation.kind === "own";
+  const orchestrators = readOrchestrators(projectRoot);
   return [
-    `- 会话登记: ${describeSession(readOrchestrators(projectRoot), sessionId)}`,
+    `- 会话登记: ${describeSession(orchestrators, sessionId)}`,
+    `- 编排地址: ${describeAddress(orchestrators)}`,
+    ...(shouldClaim ? [`- 地址登记: ${ADDRESS_REGISTRATION_STEP}`] : []),
     "",
     ...renderProgressSection(current, spec),
     "",
@@ -309,8 +314,21 @@ function describeSession(orchestrators, sessionId) {
       : `已有编排会话登记, 接管时间 ${time}`;
   }
   return orchestrators.current.id === sessionId
-    ? "本会话是编排会话"
+    ? `本会话是编排会话, ${orchestratorMarker(sessionId)}`
     : "本会话不是编排会话";
+}
+
+/**
+ * 描述编排地址的登记情况, 供执行会话消息汇报时查询.
+ *
+ * @param {import("../lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
+ * @returns {string} 描述.
+ */
+function describeAddress(orchestrators) {
+  const current = orchestrators.current;
+  return current?.address === undefined
+    ? "未登记, 执行会话改用文档汇报"
+    : `${current.address}, 登记于 ${current.addressedAt ?? ""}`;
 }
 
 /**

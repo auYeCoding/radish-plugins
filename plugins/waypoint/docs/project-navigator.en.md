@@ -41,6 +41,8 @@ The skill runs only when you invoke it explicitly. Plain-language requests never
 
 Invoking the skill from any new session takes over orchestration and resumes from the last position. The previous orchestrator session loses its orchestration rights and is told so the next time you send it a message; to continue orchestrating there, invoke the skill again in that session.
 
+Rewinding or editing a message of the orchestrator session in the desktop app, or forking it with `--fork-session`, continues the conversation under a new session id. The forked session is recognized and takes over orchestration automatically; you do not need to invoke the skill again.
+
 ## Quick start
 
 Take "做一个团队周报汇总工具" (build a tool that combines a team's weekly reports) as an example, starting from a new repository that only has a README. Every reply ends with an option block, so you only need to reply with a letter. To add details, write them after the letter, for example `B 第 3 条假设不对, 我们用飞书` (B, assumption 3 is wrong, we use Feishu).
@@ -122,7 +124,7 @@ A requirement change can come in at any stage and returns to the same position a
 3. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". Its "模块划分" (module plan) section lists the modules to create and change, and what changes in the entry file; read it before you choose A. It can edit business files only after you choose A.
 4. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
    - A. Document report: the executor writes the receipt file; go back to the orchestrator and choose A in "等待回执". If the receipt is not there yet, the orchestrator replies with "等待回执" again and says the receipt was not found.
-   - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open.
+   - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open. The orchestrator registers its address every time it takes over or resumes, and the executor sends to the "编排地址" (orchestrator address) shown by `status`; when no address is registered or sending fails, the executor writes the receipt file instead and reminds you to choose A in the orchestrator session.
 5. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree; see [Test authorization and evidence tools](#test-authorization-and-evidence-tools) below.
 6. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit. If there are changes outside the receipt (for example, editor project files), the orchestrator lists them and asks whether to include them.
 
