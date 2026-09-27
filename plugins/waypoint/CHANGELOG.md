@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-27
+
 ### Changed
 
 - `project-navigator`: the review record skeleton prefills "用户结论" (user verdict) and "提交方式" (commit choice) with "待用户确认" (awaiting the user), and `order set accepted` and `order set committing` refuse until the orchestrator writes down your choice. Before, the write check rejected the unfilled keys, so the orchestrator had to invent values before you had chosen.
@@ -112,7 +114,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.6.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.0...HEAD
+[0.7.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.0
 [0.6.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.6.0
 [0.5.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.5.0
 [0.4.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.4.0
