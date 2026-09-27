@@ -11,6 +11,10 @@ import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { issueBlocker } from "../lib/code-checks.mjs";
+import {
+  STAGE_COMMIT_REPLY_TYPE,
+  assertNoStageCommit,
+} from "../lib/commit-step.mjs";
 import { replyStep } from "../lib/guidance.mjs";
 import { formatNumber } from "../lib/numbering.mjs";
 import {
@@ -21,10 +25,8 @@ import {
   readOrderText,
 } from "../lib/order-approval.mjs";
 import { orderFilePath, projectRelativePath } from "../lib/paths.mjs";
-import { COMMIT_SKILL } from "../lib/guard.mjs";
-import { headCommit, listUncommittedPaths } from "../lib/repo.mjs";
+import { headCommit } from "../lib/repo.mjs";
 import { orderAcceptanceBlockers } from "../lib/review-record.mjs";
-import { COMMITTED_PATHSPECS } from "../lib/tracked-paths.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import {
   SELECTION_ORDER_KIND,
@@ -34,6 +36,7 @@ import {
   setOrderStatus,
 } from "../lib/workflow-orders.mjs";
 import {
+  assertRecordsCommitted,
   openProject,
   readDraftJson,
   resultLines,
@@ -114,6 +117,10 @@ export function runOrder({ positionals, values, cwd, now }) {
  * @returns {string[]} 输出各行.
  */
 function createNewOrder(context, values, now) {
+  assertNoStageCommit(
+    context.state,
+    replyStep(context.spec, STAGE_COMMIT_REPLY_TYPE),
+  );
   const baseCommit = headCommit(context.projectRoot);
   if (baseCommit === undefined) {
     throw new WorkflowError("仓库还没有任何提交, 请先完成首次提交再发布工单.");
@@ -161,7 +168,7 @@ function changeStatus(context, status, now) {
     assertAcceptable(context);
   }
   if (status === "committed") {
-    assertCommitted(context);
+    assertRecordsCommitted(context.projectRoot, "order set committed");
   }
   const next = setOrderStatus(
     context.state,
@@ -238,26 +245,6 @@ function assertIssuable(context) {
       ? `工单 ${order.id} 正在等用户审阅: 用户在 "${APPROVAL_REPLY_TYPE}" 中选 A 之后才能发布.`
       : `工单 ${order.id} 还没有经用户审阅, 或审阅之后内容有改动: 先${replyStep(spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后再运行 order set issued, 然后${replyStep(spec, ISSUE_REPLY_TYPE)}.`,
   );
-}
-
-/**
- * 核对提交已经完整: 状态目录与插件管理的项目配置中没有未入库的文件. 被提交漏掉的
- * 记录要在提交步骤中补交, 不能等到以后.
- *
- * @param {import("./support.mjs").ProjectContext} context 项目上下文.
- * @returns {void}
- * @throws {WorkflowError} 仍有未入库的文件时, 原因列出文件并写明补救办法.
- */
-function assertCommitted(context) {
-  const uncommitted = listUncommittedPaths(
-    context.projectRoot,
-    COMMITTED_PATHSPECS,
-  );
-  if (uncommitted.length > 0) {
-    throw new WorkflowError(
-      `以下文件没有随提交入库: ${uncommitted.join(", ")}. 再次调用 ${COMMIT_SKILL}, 参数写 "提交, 纳入范围: ${uncommitted.join(", ")}; 纳入范围之外的改动用文字列出并询问", 提交之后重新运行 order set committed.`,
-    );
-  }
 }
 
 /**

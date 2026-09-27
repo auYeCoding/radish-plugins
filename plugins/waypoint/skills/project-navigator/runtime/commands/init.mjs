@@ -4,12 +4,14 @@
  * 初始化分两步: 第一步写入状态目录, 运行脚本副本与 hook 配置, 并发出自检请求;
  * 编排会话随后尝试一次被禁止的写入, 守卫拦下时留下心跳; 第二步 (`--verify`)
  * 核对心跳, 确认 hook 在当前会话中已经生效. 写入之前先检查状态目录中必须入库的
- * 路径是否会被项目的忽略规则漏掉.
+ * 路径是否会被项目的忽略规则漏掉. 自检通过时有尚未入库的技能产物, 就登记一次
+ * 阶段提交 (空仓库的首次提交也由此完成).
  */
 
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { requestStageCommit } from "../lib/commit-step.mjs";
 import { checkEnvironment } from "../lib/environment.mjs";
 import {
   EXECUTOR_GUIDE_FILE,
@@ -55,6 +57,7 @@ import {
   writeState,
 } from "../lib/state.mjs";
 import {
+  listUncommittedProducts,
   requiredTrackedPaths,
   summarizeIgnoredPaths,
 } from "../lib/tracked-paths.mjs";
@@ -216,9 +219,15 @@ function verifyProbe(projectRoot, now) {
       "- 处理办法: 重启 Claude Code 会话后重新调用技能, 再做一次自检",
     ];
   }
+  const verified = {
+    ...state,
+    init: { ...state.init, status: INIT_ACTIVE, verifiedAt: now },
+  };
   writeState(
     projectRoot,
-    { ...state, init: { ...state.init, status: INIT_ACTIVE, verifiedAt: now } },
+    listUncommittedProducts(projectRoot).length > 0
+      ? requestStageCommit(verified, state.stage === null ? "初始化" : "升级")
+      : verified,
     now,
   );
   takeSnapshot(projectRoot, { now, head: headCommit(projectRoot) });

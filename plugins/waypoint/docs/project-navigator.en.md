@@ -20,7 +20,7 @@ It is not meant for small tasks such as fixing a typo, patching a small bug, or 
 
 ## Requirements
 
-- [Git](https://git-scm.com): the project must be a Git repository with at least one commit. If it is not a repository yet, run [`/waypoint:repo-init`](repo-init.en.md) first.
+- [Git](https://git-scm.com): the project must be a Git repository. If it is not a repository yet, run [`/waypoint:repo-init`](repo-init.en.md) first; if it has no commit yet, the "阶段提交" (stage commit) after initialization makes the first commit.
 - [Node.js](https://nodejs.org) 22 or later: the guard hooks and the record scripts run on Node.js.
 - Start Claude Code in the project root. Executor sessions do not use worktrees.
 - During selection, the public git repositories (https) of the chosen dependencies must be reachable: the review fetches source code from the original repositories to verify the evidence.
@@ -51,7 +51,8 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 
 1. Start Claude Code in the project root and enter `/waypoint:project-navigator 做一个团队周报汇总工具`.
 2. The skill replies with "初始设置" (setup), listing the checks and what it will write. Reply `A`. In the default permission mode, Claude Code asks you to approve the initialization command once.
-3. After the self-check passes, the skill replies with "首次接入" (first entry). Reply `A` for a new project, or `B` for a project with existing code.
+3. After the self-check passes, the skill replies with "阶段提交" (stage commit) and asks how to commit the files written by initialization: `A` commits only the skill's files, `B` commits them together with the other changes in the working tree, and `C` does not commit for now.
+4. Then the skill replies with "首次接入" (first entry). Reply `A` for a new project, or `B` for a project with existing code.
 
 ### Framing and main flow
 
@@ -59,6 +60,7 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 2. The skill sends the researcher subagent to look into similar products, users, industry practice, and constraints, then replies with "调研报告" (research report). Research needs web access, which Claude Code may ask you to approve, and usually takes a few minutes.
 3. Each "头脑风暴" (brainstorming) round asks at most three questions, often with candidate answers and a recommended one. Answer by number. The skill asks for your consent before converging.
 4. The skill writes the project brief and replies with "产出确认" (confirm output). The main flow and roadmap that follow are confirmed the same way.
+5. Whenever a new stage begins while records from the previous stage are still uncommitted, the skill first replies with "阶段提交", with the same options as after initialization. Until you answer, the skill neither enters another stage nor creates a work order.
 
 ### Selection and the first work order
 
@@ -89,7 +91,7 @@ Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks a
 
 - The `.gitignore` inside `.navigator/` re-includes the plugin's files, so rules such as `lib/` or `bin/` in your project cannot leave them out.
 - On initialization and on every invocation, the skill checks the plugin's files against all of Git's ignore rules (the project's `.gitignore` files at every level, plus the machine-local and global excludes). If a rule ignores `.navigator/` as a whole, or the configuration under `.claude/`, the skill stops and names the rule, so you can change it before continuing.
-- After each work order is committed, any file under `.navigator/` or in the plugin-managed configuration that is still uncommitted is listed, and the work order is complete only after a follow-up commit.
+- After each work order commit and each stage commit, any file under `.navigator/` or in the plugin-managed configuration that is still uncommitted is listed, and the commit is complete only after a follow-up commit.
 
 ## Roles
 

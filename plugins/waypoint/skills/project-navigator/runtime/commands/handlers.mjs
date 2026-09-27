@@ -16,6 +16,7 @@ import { runPlan } from "./plan.mjs";
 import { runRecords } from "./records.mjs";
 import { runReply } from "./reply.mjs";
 import { runSnapshot } from "./snapshot.mjs";
+import { runStageCommit } from "./stage-commit.mjs";
 import { runStage } from "./stage.mjs";
 import { runStandards } from "./standards.mjs";
 import { runTemplate } from "./template.mjs";
@@ -93,4 +94,5 @@ export const COMMAND_HANDLERS = Object.freeze({
   codecheck: runCodeCheck,
   tools: runTools,
   address: runAddress,
+  stagecommit: runStageCommit,
 });

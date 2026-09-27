@@ -29,7 +29,7 @@ import path from "node:path";
 
 import { RESEARCH_FRAME, buildReviewBrief } from "./lib/briefs.mjs";
 import { orderTestCommands } from "./lib/code-checks.mjs";
-import { isCommitInProgress } from "./lib/commit-step.mjs";
+import { isCommitInProgress, isStageCommitting } from "./lib/commit-step.mjs";
 import {
   ALIGNMENT_REPLY_TYPE,
   applyAlignmentAnswer,
@@ -277,6 +277,7 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
     projectRoot,
     context: {
       orderStatus: state.order?.status,
+      isStageCommitting: isStageCommitting(state),
       authorizedTests: testCommands,
       evidenceTools: state.evidenceTools,
       ...executorGuardState(record, state),

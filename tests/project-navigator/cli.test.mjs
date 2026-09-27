@@ -30,6 +30,7 @@ import {
   createTemporaryRepository,
   initializeProject,
   runCommand,
+  runGit,
   runHook,
 } from "./helpers.mjs";
 
@@ -148,7 +149,52 @@ test("命令行: 初始化, 自检, 登记与卸载的完整流程", () => {
       root,
     );
     assert.match(entered.stdout, /本会话是编排会话/u);
-    assert.match(entered.stdout, /回复 "首次接入"/u);
+    assert.match(entered.stdout, /回复 "阶段提交".+提交 "初始化" 的成果/u);
+    const project = (args) =>
+      runCommand(path.join(root, PROJECT_COMMAND), args, root);
+    assert.equal(project(["stage", "0"]).status, 1, "阶段提交之前不能推进");
+    const skill = runHook(
+      path.join(root, PROJECT_HOOK),
+      {
+        session_id: SESSION_ID,
+        hook_event_name: "PreToolUse",
+        tool_name: "Skill",
+        tool_input: { skill: "waypoint:commit-message" },
+      },
+      root,
+    );
+    assert.equal(
+      skill.output.hookSpecificOutput.permissionDecision,
+      "deny",
+      "用户选择之前不能调用 commit-message",
+    );
+    assert.equal(project(["stagecommit", "start"]).status, 0);
+    assert.equal(
+      runHook(
+        path.join(root, PROJECT_HOOK),
+        {
+          session_id: SESSION_ID,
+          hook_event_name: "PreToolUse",
+          tool_name: "Skill",
+          tool_input: { skill: "waypoint:commit-message" },
+        },
+        root,
+      ).output,
+      undefined,
+      "阶段提交中可以调用 commit-message",
+    );
+    const early = project(["stagecommit", "done"]);
+    assert.equal(early.status, 1, "记录没有入库时不能收尾");
+    assert.match(early.stdout, /没有随提交入库/u);
+    const head = commitPaths(
+      root,
+      [".navigator", ".claude/settings.json"],
+      "chore: 接入编排",
+    );
+    assert.equal(project(["stagecommit", "done"]).status, 0);
+    const status = project(["status"]).stdout;
+    assert.match(status, /回复 "首次接入"/u);
+    assert.match(status, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));
 
     const takeover = runCommand(
       PLUGIN_COMMAND,
@@ -265,9 +311,50 @@ test("命令行: 升级时把旧状态文件中的会话登记迁移到运行期
     const state = JSON.parse(readFileSync(stateFile, "utf8"));
     assert.equal(state.session, undefined, "状态文件不再记录会话");
     assert.equal(state.formerSessions, undefined);
-    assert.equal(state.schema, 3);
+    assert.equal(state.schema, 4);
   } finally {
     repository.cleanup();
+  }
+});
+
+test("命令行: 仓库还没有提交时, 初始化之后的阶段提交完成首次提交", () => {
+  const directory = createTemporaryDirectory();
+  const root = directory.root;
+  try {
+    runGit(root, ["init", "-q", "-b", "main"]);
+    runCommand(PLUGIN_COMMAND, ["init", "--session", SESSION_ID], root);
+    runHook(
+      path.join(root, PROJECT_HOOK),
+      {
+        session_id: SESSION_ID,
+        hook_event_name: "PreToolUse",
+        tool_name: "Write",
+        tool_input: { file_path: path.join(root, PROBE_FILE), content: "x" },
+      },
+      root,
+    );
+    const project = (args) =>
+      runCommand(path.join(root, PROJECT_COMMAND), args, root);
+    assert.match(project(["init", "--verify"]).stdout, /自检结果: 通过/u);
+    assert.match(project(["status"]).stdout, /提交 "初始化" 的成果/u);
+    assert.equal(project(["stagecommit", "start"]).status, 0);
+    const head = commitPaths(
+      root,
+      [".navigator", ".claude/settings.json"],
+      "chore: 首次提交",
+    );
+    assert.equal(project(["stagecommit", "done"]).status, 0);
+    const status = project(["status"]).stdout;
+    assert.match(status, /对账结果: 一致/u);
+    assert.match(status, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));
+    assert.equal(
+      project(["order", "new", "--kind", "runcheck", "--slug", "runcheck"])
+        .status,
+      0,
+      "首次提交之后可以新建工单",
+    );
+  } finally {
+    directory.cleanup();
   }
 });
 

@@ -114,3 +114,15 @@
 4. 纳入范围之外还有改动时 (例如编辑器的工程文件), 用文字列出并询问, 按用户的回答处理, 不自行排除. 编排会话不能用提问框.
 5. 守卫在提交步骤只放行 `git add -- <路径...>`, 经标准输入传消息的 `git commit -F -` (Bash 用 heredoc, PowerShell 用 `@'...'@` 管道) 与不带强制参数的 `git push`. 被拒绝时按拒绝理由换成放行的写法, 不改为请用户手动提交.
 6. 提交完成后运行 `order set committed`. `.navigator/`, `.claude/settings.json` 或 `.claude/rules/engineering.md` 中还有没入库的文件时, 命令会拒绝并列出这些文件: 按输出再次调用 `waypoint:commit-message` 补交, 然后重新运行. 切片的工单全部完成时运行 `slice <编号> done`.
+
+## 阶段提交
+
+初始化自检通过后, 以及推进阶段时上一阶段还有没入库的技能产物, 下一动作要求回复 "阶段提交". 没有处理之前, `stage` 与 `order new` 都会拒绝.
+
+1. 用只读的 `git status --short` 与 `git branch --show-current` 查询. "完成阶段" 写下一动作中引号里的成果名; "记录改动" 写 `.navigator/`, `.claude/settings.json` 与 `.claude/rules/engineering.md` 中的改动; "其它改动" 写这三处之外的改动, 没有时写 "无"; "当前分支" 写分支名.
+2. 用户选 A 或 B: 运行 `stagecommit start`, 再调用技能 `waypoint:commit-message`, 提交消息由该技能生成并展示:
+   - A (技能产物单独提交): 参数写 "提交, 纳入范围: .navigator/ 下的改动, .claude/settings.json 与 .claude/rules/engineering.md; 用户已选择不纳入其它改动, 不再询问".
+   - B (全部改动一并提交): 参数写 "提交, 纳入全部改动, 不再询问".
+3. 提交完成后运行 `stagecommit done`. 还有没入库的技能产物时命令会拒绝并列出文件, 按输出补交后重新运行.
+4. 用户选 C: 运行 `stagecommit skip`. 没入库的产物留到下一次阶段提交或工单提交.
+5. 然后回到原来的步骤, 例如推进阶段后该阶段的第一步.

@@ -113,6 +113,7 @@ const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
 /**
  * @typedef {object} GuardContext 判定时需要的状态.
  * @property {string | undefined} orderStatus 当前工单状态.
+ * @property {boolean} [isStageCommitting] 阶段提交是否正在提交.
  * @property {string[]} authorizedTests 当前工单可以运行的测试命令: 代码检查命令与用户授权的测试.
  * @property {string[]} evidenceTools 用户授权验收子代理调用的 MCP 取证工具.
  * @property {string | undefined} executorFolder 执行会话绑定的工单文件夹名.
@@ -187,7 +188,7 @@ function decideOrchestratorTool(input) {
     return toDecision(
       checkOrchestratorCommand(String(toolInput.command ?? ""), {
         authorizedTests: context.authorizedTests,
-        isCommitStep: COMMIT_STEP_STATUSES.includes(context.orderStatus ?? ""),
+        isCommitStep: isCommitStep(context),
       }),
     );
   }
@@ -195,8 +196,7 @@ function decideOrchestratorTool(input) {
     return decideAgent(toolInput, context);
   }
   if (toolName === "Skill") {
-    return toolInput.skill === COMMIT_SKILL &&
-      COMMIT_STEP_STATUSES.includes(context.orderStatus ?? "")
+    return toolInput.skill === COMMIT_SKILL && isCommitStep(context)
       ? allow()
       : deny(
           `编排会话只在提交步骤调用 ${COMMIT_SKILL}; 其它技能与其它时机都不调用.`,
@@ -209,6 +209,19 @@ function decideOrchestratorTool(input) {
   }
   return deny(
     `编排会话不使用 ${toolName}: 调研交给调研子代理, 实现交给执行会话.`,
+  );
+}
+
+/**
+ * 判断是否处于提交步骤: 工单验收通过等待提交或正在提交, 或阶段提交正在提交.
+ *
+ * @param {GuardContext} context 状态上下文.
+ * @returns {boolean} 处于提交步骤时返回 true.
+ */
+function isCommitStep(context) {
+  return (
+    COMMIT_STEP_STATUSES.includes(context.orderStatus ?? "") ||
+    context.isStageCommitting === true
   );
 }
 

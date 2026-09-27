@@ -1047,6 +1047,49 @@ projectTest(
   },
 );
 
+projectTest(
+  "流程: 阶段完成时有未入库的产物, 先处理阶段提交再推进",
+  (context) => {
+    const { root, project } = context;
+    commitPaths(root, [".navigator", ".claude/settings.json"], "chore: 接入");
+    assert.equal(project(["stage", "1"]).status, 0);
+    const quiet = project(["stage", "2"]);
+    assert.doesNotMatch(
+      quiet.stdout,
+      /阶段提交/u,
+      "只有状态文件改动时不请用户提交",
+    );
+    writeThroughHook(
+      context,
+      ORCHESTRATOR,
+      ".navigator/plan/main-flow.md",
+      fill(project(["template", "main-flow"]).stdout),
+    );
+    const entered = project(["stage", "3"]);
+    assert.equal(entered.status, 0, entered.stdout);
+    assert.match(entered.stdout, /下一动作: 回复 "阶段提交"/u);
+    assert.match(
+      project(["status"]).stdout,
+      /提交 "阶段 2 \(主线\) 完成" 的成果/u,
+    );
+    const blocked = project([
+      "order",
+      "new",
+      "--kind",
+      "selection",
+      "--slug",
+      "db",
+    ]);
+    assert.equal(blocked.status, 1);
+    assert.match(blocked.stdout, /阶段提交 "阶段 2 \(主线\) 完成" 尚未处理/u);
+    assert.equal(project(["stagecommit", "skip"]).status, 0);
+    assert.equal(
+      project(["order", "new", "--kind", "selection", "--slug", "db"]).status,
+      0,
+    );
+  },
+);
+
 projectTest("流程: 记录被改动时先处理验收异常, 其它命令暂停", (context) => {
   const { root, project } = context;
   const brief = path.join(root, ".navigator", "plan", "notes.md");

@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { isCommitInProgress } from "../lib/commit-step.mjs";
+import { COMMIT_SKILL } from "../lib/guard.mjs";
 import { ANOMALY_GUIDES, replyStep } from "../lib/guidance.mjs";
 import {
   DRAFTS_DIRECTORY,
@@ -19,7 +20,12 @@ import {
 } from "../lib/pending-writes.mjs";
 import { RECONCILE_LABELS, compareHistory } from "../lib/reconcile.mjs";
 import { PLAN_VIEW_FILES, writePlanViews } from "../lib/render-plan.mjs";
-import { findRepositoryRoot, headCommit, shortHash } from "../lib/repo.mjs";
+import {
+  findRepositoryRoot,
+  headCommit,
+  listUncommittedPaths,
+  shortHash,
+} from "../lib/repo.mjs";
 import {
   changedSinceLatestSnapshot,
   recordSnapshotChanges,
@@ -27,6 +33,7 @@ import {
 } from "../lib/snapshots.mjs";
 import { loadSpec } from "../lib/spec.mjs";
 import { INIT_ACTIVE, readState, writeState } from "../lib/state.mjs";
+import { COMMITTED_PATHSPECS } from "../lib/tracked-paths.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 
 /**
@@ -148,6 +155,24 @@ export function saveState(
     });
   }
   return written;
+}
+
+/**
+ * 核对提交已经完整: 状态目录与插件管理的项目配置中没有未入库的文件. 被提交漏掉的
+ * 记录要在提交步骤中补交, 不能等到以后. 工单提交与阶段提交共用.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @param {string} retryCommand 补交之后要重新运行的插件命令.
+ * @returns {void}
+ * @throws {WorkflowError} 仍有未入库的文件时, 原因列出文件并写明补救办法.
+ */
+export function assertRecordsCommitted(projectRoot, retryCommand) {
+  const uncommitted = listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS);
+  if (uncommitted.length > 0) {
+    throw new WorkflowError(
+      `以下文件没有随提交入库: ${uncommitted.join(", ")}. 再次调用 ${COMMIT_SKILL}, 参数写 "提交, 纳入范围: ${uncommitted.join(", ")}; 纳入范围之外的改动用文字列出并询问", 提交之后重新运行 ${retryCommand}.`,
+    );
+  }
 }
 
 /**

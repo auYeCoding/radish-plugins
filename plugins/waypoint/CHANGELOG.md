@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: stage commits. After initialization, and whenever a stage begins while the previous stage left uncommitted records, the orchestrator replies with the new "阶段提交" (stage commit): commit only the skill's files, commit them together with every other change, or skip for now. Committing goes through `commit-message` as usual, and `stage` and `order new` wait until you answer. Before, the orchestrator could commit only after a work order was accepted, so initialization and framing outputs stayed uncommitted until the first work order, and a repository without any commit could not get a work order at all; it now gets its first commit here. Projects initialized with an earlier version should run `init` again to upgrade.
+
 ### Fixed
 
 - `project-navigator`: rewinding or editing a message of the orchestrator in the desktop app no longer locks orchestration. Such a rewind, like `--fork-session`, continues the conversation under a new session id; the forked session is now recognized from the orchestrator marker in its transcript and takes over automatically. Before, every plugin command was denied, and the reply claimed that another session had taken over.
