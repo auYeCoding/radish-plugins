@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: rewinding, editing, or resending an interrupted message of an executor session in the desktop app no longer strips its executor rights. The forked session continues under a new session id; it now keeps the executor registration through the executor marker in its transcript, with the alignment state as of the fork point. Before, the forked session was treated as unrelated, writing `receipt.md` was denied, and the work order was stuck at the report. Executors started with 0.7.0 or earlier carry no marker; if one is not recognized after a fork, resend the launch prompt in the same session.
+- `project-navigator`: plugin commands with harmless redirects or pipes, such as `status 2>&1 | head -40`, are no longer denied as command-line writes to `.navigator/`. The check now ignores the plugin script path after node and redirects that write no file, while `... > .navigator/<file>` is still denied.
+- `project-navigator`: denials for sessions that are neither orchestrator nor executor say that an executor recognized as unrelated can resend the launch prompt in the same session, instead of asking for a new session.
+
 ## [0.7.0] - 2026-09-27
 
 ### Changed

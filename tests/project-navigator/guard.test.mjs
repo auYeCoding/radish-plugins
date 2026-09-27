@@ -776,6 +776,44 @@ const EXECUTOR_CASES = Object.freeze([
     expected: "allow",
   },
   {
+    name: "执行会话截取源码证据核对的输出",
+    role: "executor",
+    tool: "Bash",
+    input: {
+      command:
+        "node .navigator/bin/runtime/navigator.mjs evidence check https://github.com/a/b v1 src/a.py 1-40 2>&1 | head -60",
+    },
+    expected: "allow",
+  },
+  {
+    name: "执行会话把插件命令的错误输出丢弃",
+    role: "executor",
+    tool: "PowerShell",
+    input: {
+      command:
+        'node "C:\\My Project\\.navigator\\bin\\runtime\\navigator.mjs" status 2>$null',
+    },
+    expected: "allow",
+  },
+  {
+    name: "执行会话把插件命令的输出重定向到编排记录",
+    role: "executor",
+    tool: "Bash",
+    input: {
+      command:
+        "node .navigator/bin/runtime/navigator.mjs template receipt > .navigator/orders/0001-x/receipt.md",
+    },
+    expected: "deny",
+    reason: /不能用命令行改写/u,
+  },
+  {
+    name: "执行会话用命令覆盖插件脚本",
+    role: "executor",
+    tool: "Bash",
+    input: { command: "cp x.mjs .navigator/bin/runtime/navigator.mjs" },
+    expected: "deny",
+  },
+  {
     name: "执行会话把工单转为验收中",
     role: "executor",
     tool: "Bash",
@@ -939,6 +977,33 @@ const OTHER_CASES = Object.freeze([
     role: "other",
     tool: "Bash",
     input: { command: "echo {} > .navigator/state.json" },
+    expected: "deny",
+  },
+  {
+    name: "其它会话查看状态并截取输出",
+    role: "other",
+    tool: "Bash",
+    input: {
+      command:
+        "node .navigator/bin/runtime/navigator.mjs status 2>&1 | head -40",
+    },
+    expected: "allow",
+  },
+  {
+    name: "其它会话查看编排记录的改动并丢弃错误输出",
+    role: "other",
+    tool: "Bash",
+    input: { command: "git diff -- .navigator 2>/dev/null" },
+    expected: "allow",
+  },
+  {
+    name: "其它会话用 tee 改编排记录",
+    role: "other",
+    tool: "Bash",
+    input: {
+      command:
+        "node .navigator/bin/runtime/navigator.mjs status 2>&1 | tee .navigator/plan/brief.md",
+    },
     expected: "deny",
   },
   { name: "其它会话联网", role: "other", tool: "WebSearch", expected: "allow" },

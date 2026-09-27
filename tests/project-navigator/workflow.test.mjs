@@ -9,6 +9,8 @@ import { buildLaunchPrompt } from "../../plugins/waypoint/skills/project-navigat
 import {
   applyAlignmentAnswer,
   executorGuardState,
+  executorMarker,
+  findExecutorOrigin,
   findLaunchedOrder,
   isAlignmentConfirmed,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/executors.mjs";
@@ -395,6 +397,36 @@ test("会话: 分叉出的会话按转录中的编排会话标记认出来源", 
     "former",
   );
   assert.equal(findForkOrigin("无标记", orchestrators), undefined);
+});
+
+test("会话: 分叉出的会话按转录中最后一个执行会话标记认出分叉点时的执行身份", () => {
+  const unaligned = {
+    sessionId: "executor-1",
+    order: "0001",
+    folder: "0001-export-csv",
+    registeredAt: NOW,
+    isAligned: false,
+    isAwaitingAlignment: false,
+  };
+  const aligned = { ...unaligned, isAligned: true, alignedRound: 2 };
+  const transcript = (...records) =>
+    records
+      .map((record) => JSON.stringify({ content: executorMarker(record) }))
+      .join("\n");
+  assert.deepEqual(findExecutorOrigin(transcript(unaligned)), {
+    sessionId: "executor-1",
+    alignedRound: undefined,
+  });
+  assert.deepEqual(findExecutorOrigin(transcript(unaligned, aligned)), {
+    sessionId: "executor-1",
+    alignedRound: 2,
+  });
+  assert.deepEqual(
+    findExecutorOrigin(transcript(aligned, unaligned)),
+    { sessionId: "executor-1", alignedRound: undefined },
+    "回退到重新对齐之前时, 取分叉点时的未对齐状态",
+  );
+  assert.equal(findExecutorOrigin("无标记"), undefined);
 });
 
 test("执行: 只有当前已发布的工单能被启动提示词登记", () => {

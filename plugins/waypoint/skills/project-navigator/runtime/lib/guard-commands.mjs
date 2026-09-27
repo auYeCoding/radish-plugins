@@ -160,6 +160,30 @@ const PROTECTED_PATH_PATTERN =
   /\.navigator[\\/]|\.claude[\\/](settings|rules)/iu;
 
 /**
+ * 由 node 运行插件脚本的部分: 脚本本身位于 `.navigator/` 下, 运行它不是改写.
+ * 只认 node 之后的脚本路径; 作为其它命令参数出现的同一路径 (例如复制的目标)
+ * 仍按受保护路径处理.
+ * @type {RegExp}
+ */
+const NAVIGATOR_SCRIPT_RUN_PATTERN =
+  /\bnode(?:\.exe)?["']?\s+(?:-\S+\s+)*(?:"[^"]*navigator\.mjs"|'[^']*navigator\.mjs'|[^\s"';&|<>]*navigator\.mjs)/giu;
+
+/**
+ * 不写文件的重定向: 文件描述符之间的复制 (例如 `2>&1`, `>&2`), 以及写到空设备
+ * (`/dev/null`, PowerShell 的 `$null`, cmd 的 `NUL`).
+ * @type {RegExp}
+ */
+const HARMLESS_REDIRECT_PATTERN =
+  /[\d*]?>&\d+|[\d*]?>>?\s*(?:\/dev\/null|\$null|nul)(?=$|[\s;&|)])/giu;
+
+/**
+ * 执行会话与其它会话用命令行改写受保护路径时的拒绝理由.
+ * @type {string}
+ */
+const PROTECTED_WRITE_REASON =
+  "命令中有写文件的操作 (重定向到文件, tee, 删除, 移动, 复制等), 且涉及 .navigator/ 下的编排记录或 .claude/ 下的防护配置; 这些文件不能用命令行改写. 插件命令的输出直接读取即可, 不需要重定向到文件.";
+
+/**
  * 编排会话派出的子代理运行了不允许的命令时的拒绝理由.
  * @type {string}
  */
@@ -275,13 +299,25 @@ export function checkOtherCommand(command, role) {
   if (role === "executor" && COMMIT_OR_PUSH_PATTERN.test(command)) {
     return "执行会话不提交, 不推送: 验收通过后由用户统一提交.";
   }
-  if (
-    PROTECTED_PATH_PATTERN.test(command) &&
-    WRITE_OPERATION_PATTERN.test(command)
-  ) {
-    return "不能用命令行改写 .navigator/ 下的编排记录或 .claude/ 下的防护配置.";
-  }
-  return undefined;
+  return writesProtectedPath(command) ? PROTECTED_WRITE_REASON : undefined;
+}
+
+/**
+ * 粗查命令是否用命令行改写受保护的路径. 先去掉运行插件脚本的部分与不写文件的
+ * 重定向: 否则脚本路径本身会被当成受保护路径, `2>&1` 会被当成写入, 所有带
+ * 重定向的插件命令都会被拒绝.
+ *
+ * @param {string} command 命令全文.
+ * @returns {boolean} 可能改写受保护路径时返回 true.
+ */
+function writesProtectedPath(command) {
+  const remaining = command
+    .replace(NAVIGATOR_SCRIPT_RUN_PATTERN, "node navigator.mjs")
+    .replace(HARMLESS_REDIRECT_PATTERN, " ");
+  return (
+    PROTECTED_PATH_PATTERN.test(remaining) &&
+    WRITE_OPERATION_PATTERN.test(remaining)
+  );
 }
 
 /**

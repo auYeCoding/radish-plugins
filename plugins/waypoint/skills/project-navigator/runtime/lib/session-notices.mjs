@@ -25,10 +25,11 @@ export const SUPERSEDED_NOTICE = "本会话已不是编排会话: 编排已由�
 export const RECLAIM_GUIDE = `要在本会话继续编排, 请用户重新调用 ${SKILL_COMMAND} 接管`;
 
 /**
- * 其它会话要参与编排或执行工单时的做法.
+ * 其它会话要参与编排或执行工单时的做法. 原是执行会话, 分叉后没有被认出的会话
+ * 也会收到这段话, 所以写明在本会话重新发送启动提示词即可, 不必新开会话.
  * @type {string}
  */
-export const OTHER_SESSION_GUIDE = `要编排, 请用户调用 ${SKILL_COMMAND}; 要执行工单, 在新会话中粘贴工单的启动提示词`;
+export const OTHER_SESSION_GUIDE = `要编排, 请用户调用 ${SKILL_COMMAND}; 要执行工单, 请用户发送工单的启动提示词 (含 "执行工单 <编号>"), 本会话原是执行会话时在本会话重新发送即可`;
 
 /**
  * 编排会话登记消息地址的做法. 地址是 ListAgents 输出第一行中的本会话名称,

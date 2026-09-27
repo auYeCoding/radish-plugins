@@ -1,6 +1,6 @@
 /**
  * @file 执行会话的登记与对齐: 从启动提示词或读取工单文件识别执行会话,
- * 从用户对 "开工对齐" 的选择识别对齐完成.
+ * 从用户对 "开工对齐" 的选择识别对齐完成, 从分叉出的会话的转录沿用原执行登记.
  *
  * 当前或曾经的编排会话一律不登记为执行会话; 只有状态为已发布的当前工单可以被执行.
  */
@@ -12,7 +12,7 @@ import {
   projectRelativePath,
   relativePathsEqual,
 } from "./paths.mjs";
-import { writeExecutorRecord } from "./registry.mjs";
+import { readExecutorRecord, writeExecutorRecord } from "./registry.mjs";
 import { isOrchestratorSession, readOrchestrators } from "./sessions.mjs";
 
 /**
@@ -20,6 +20,34 @@ import { isOrchestratorSession, readOrchestrators } from "./sessions.mjs";
  * @type {string}
  */
 export const ALIGNMENT_REPLY_TYPE = "开工对齐";
+
+/**
+ * 执行会话在自己的转录中留下的标记的前缀, 后接会话编号. 执行提醒带这个标记;
+ * 会话分叉后编号改变, 新会话的转录复制了原会话的历史, hook 据此找到原执行登记.
+ * @type {string}
+ */
+const EXECUTOR_MARKER_PREFIX = "执行会话编号: ";
+
+/**
+ * 标记中会话编号之后, 已对齐的发布轮次的前缀. 未对齐时标记不带这一段.
+ * @type {string}
+ */
+const ALIGNED_ROUND_PREFIX = "; 已对齐的发布轮次: ";
+
+/**
+ * 转录中的执行会话标记: 第 1 组为会话编号, 第 2 组为已对齐的发布轮次 (可选).
+ * @type {RegExp}
+ */
+const EXECUTOR_MARKER_PATTERN = new RegExp(
+  `${EXECUTOR_MARKER_PREFIX}([A-Za-z0-9_-]+)(?:${ALIGNED_ROUND_PREFIX}(\\d+))?`,
+  "gu",
+);
+
+/**
+ * @typedef {object} ExecutorOrigin 分叉出的会话在分叉点时的执行身份.
+ * @property {string} sessionId 原执行会话编号.
+ * @property {number | undefined} alignedRound 分叉点时已对齐的发布轮次; 未对齐时为 undefined.
+ */
 
 /**
  * 可以被执行的工单状态.
@@ -57,6 +85,16 @@ export function findLaunchedOrder(state, prompt) {
     };
   }
   return { order };
+}
+
+/**
+ * 判断当前工单是否处于可以执行的状态 (已发布).
+ *
+ * @param {import("./state.mjs").NavigatorState} state 当前状态.
+ * @returns {boolean} 可以执行时返回 true.
+ */
+export function hasExecutableOrder(state) {
+  return state.order?.status === EXECUTABLE_STATUS;
 }
 
 /**
@@ -104,6 +142,76 @@ export function registerExecutor({ worktreeRoot, sessionId, order, now }) {
     isAwaitingAlignment: false,
   });
   return true;
+}
+
+/**
+ * 生成执行会话在转录中留下的标记: 会话编号, 已对齐时另带对齐的发布轮次.
+ * 标记随执行提醒注入, 对齐状态每次改变都会注入新的提醒, 所以转录中最后一个
+ * 标记就是分叉点时的执行身份.
+ *
+ * @param {import("./registry.mjs").ExecutorRecord} record 执行登记.
+ * @returns {string} 标记文字.
+ */
+export function executorMarker(record) {
+  const alignment =
+    record.isAligned && record.alignedRound !== undefined
+      ? `${ALIGNED_ROUND_PREFIX}${record.alignedRound}`
+      : "";
+  return `${EXECUTOR_MARKER_PREFIX}${record.sessionId}${alignment}`;
+}
+
+/**
+ * 从分叉出的会话的转录找出分叉点时的执行身份: 取转录中最后一个执行会话标记.
+ *
+ * @param {string} transcript 转录全文.
+ * @returns {ExecutorOrigin | undefined} 执行身份; 转录中没有标记时为 undefined.
+ */
+export function findExecutorOrigin(transcript) {
+  const last = [...transcript.matchAll(EXECUTOR_MARKER_PATTERN)].at(-1);
+  if (last === undefined) {
+    return undefined;
+  }
+  return {
+    sessionId: last[1],
+    alignedRound: last[2] === undefined ? undefined : Number(last[2]),
+  };
+}
+
+/**
+ * 让分叉出的会话沿用原执行会话的登记: 绑定同一张工单, 对齐状态取分叉点时的
+ * 状态, 而不是原会话当前的状态 (回退到对齐之前时不能沿用之后的对齐).
+ * 原会话没有执行登记, 或本会话当前或曾经是编排会话时不登记.
+ *
+ * @param {object} options 参数.
+ * @param {string} options.worktreeRoot 工作区根目录.
+ * @param {string} options.sessionId 分叉出的会话编号.
+ * @param {ExecutorOrigin} options.origin 分叉点时的执行身份.
+ * @param {string} options.now 当前时间, ISO 格式.
+ * @returns {import("./registry.mjs").ExecutorRecord | undefined} 新的执行登记; 没有登记时为 undefined.
+ */
+export function inheritExecutor({ worktreeRoot, sessionId, origin, now }) {
+  const previous = readExecutorRecord(worktreeRoot, origin.sessionId);
+  if (
+    previous === undefined ||
+    origin.sessionId === sessionId ||
+    isOrchestratorSession(readOrchestrators(worktreeRoot), sessionId)
+  ) {
+    return undefined;
+  }
+  const record = {
+    sessionId,
+    order: previous.order,
+    folder: previous.folder,
+    registeredAt: now,
+    inheritedFrom: origin.sessionId,
+    isAligned: origin.alignedRound !== undefined,
+    ...(origin.alignedRound === undefined
+      ? {}
+      : { alignedRound: origin.alignedRound }),
+    isAwaitingAlignment: false,
+  };
+  writeExecutorRecord(worktreeRoot, record);
+  return record;
 }
 
 /**
