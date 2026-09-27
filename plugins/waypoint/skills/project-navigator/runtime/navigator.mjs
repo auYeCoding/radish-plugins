@@ -14,6 +14,8 @@
  * - 对账: snapshots, restore <提交>, adopt
  * - 体检与规范: check [文件...], standards --from <草稿>, codecheck set --from <草稿>
  * - 取证工具: tools set --from <草稿>
+ * - 编排地址: address set --from <草稿>
+ * - 阶段提交: stagecommit start|done|skip
  *
  * 命令的访问级别见 `lib/command-access.mjs`, 由守卫按会话身份执行.
  * enter 由技能加载时的 `!` 命令调用, 任何情况下都以退出码 0 结束, 错误写进输出,

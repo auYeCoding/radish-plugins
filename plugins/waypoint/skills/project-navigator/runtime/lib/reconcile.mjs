@@ -75,7 +75,7 @@ export function reconcile(worktreeRoot, state) {
  * @param {string | undefined} head 当前 HEAD.
  * @returns {ReconcileResult} 对账结果.
  */
-function compareHistory(worktreeRoot, recorded, head) {
+export function compareHistory(worktreeRoot, recorded, head) {
   const base = { recorded, head, commits: [], files: [] };
   if (head === undefined) {
     return { ...base, kind: "none" };

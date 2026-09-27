@@ -19,6 +19,19 @@ import { readLegacySessionFields } from "./state.mjs";
  */
 
 /**
+ * 编排会话在自己的转录中留下的标记的前缀, 后接会话编号. enter 的输出与分叉
+ * 接管的提醒都带这个标记; 会话分叉后编号改变, 新会话的转录复制了原会话的历史,
+ * hook 据此认出它是从哪个编排会话分叉出来的.
+ * @type {string}
+ */
+const ORCHESTRATOR_MARKER_PREFIX = "编排会话编号: ";
+
+/**
+ * @typedef {"current" | "former"} ForkOrigin 分叉出的会话来自当前编排会话,
+ * 还是来自已被接管的原编排会话.
+ */
+
+/**
  * 读取编排会话登记. 还没有登记文件时, 从结构版本 3 之前写在状态文件中的旧登记
  * 迁移 (只读, 不写入), 让升级前后的身份保持连续.
  *
@@ -97,6 +110,52 @@ export function claimOrchestrator(record, sessionId, now) {
     .filter((id) => id !== sessionId)
     .filter((id, index, all) => all.indexOf(id) === index);
   return { current: { id: sessionId, claimedAt: now }, former };
+}
+
+/**
+ * 生成编排会话在转录中留下的标记.
+ *
+ * @param {string} sessionId 编排会话编号.
+ * @returns {string} 标记文字.
+ */
+export function orchestratorMarker(sessionId) {
+  return `${ORCHESTRATOR_MARKER_PREFIX}${sessionId}`;
+}
+
+/**
+ * 从分叉出的会话的转录判断它来自哪个编排会话: 转录中有当前编排会话的标记时为
+ * "current"; 只有曾经的编排会话的标记时为 "former"; 都没有时为 undefined.
+ *
+ * @param {string} transcript 转录全文.
+ * @param {import("./registry.mjs").OrchestratorRecord} record 编排会话登记.
+ * @returns {ForkOrigin | undefined} 来源.
+ */
+export function findForkOrigin(transcript, record) {
+  const hasMarker = (id) => transcript.includes(orchestratorMarker(id));
+  if (record.current !== undefined && hasMarker(record.current.id)) {
+    return "current";
+  }
+  return record.former.some(hasMarker) ? "former" : undefined;
+}
+
+/**
+ * 登记当前编排会话的消息地址 (ListAgents 输出第一行中的会话名称), 供执行会话
+ * 消息汇报时查询. 地址在进程重启或会话分叉后会变, 接管时随登记一起清空.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @param {{address: string, now: string}} options 地址与登记时间.
+ * @returns {boolean} 已登记时返回 true; 还没有编排会话时为 false.
+ */
+export function recordOrchestratorAddress(worktreeRoot, { address, now }) {
+  const record = ensureOrchestratorRecord(worktreeRoot);
+  if (record.current === undefined) {
+    return false;
+  }
+  writeOrchestratorRecord(worktreeRoot, {
+    ...record,
+    current: { ...record.current, address, addressedAt: now },
+  });
+  return true;
 }
 
 /**

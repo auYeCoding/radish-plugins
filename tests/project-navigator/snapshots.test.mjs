@@ -1,6 +1,6 @@
 /**
  * @file 快照与对账测试: 在临时 Git 仓库中覆盖快照去重, 逐字节恢复, 增量快照,
- * 以及对账的各种情形.
+ * 待并入快照的写入, 以及对账的各种情形.
  */
 
 import assert from "node:assert/strict";
@@ -14,6 +14,11 @@ import {
 import path from "node:path";
 import { test } from "node:test";
 
+import {
+  clearPendingWrites,
+  flushPendingWrites,
+  markPendingWrite,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/pending-writes.mjs";
 import { reconcile } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/reconcile.mjs";
 import {
   changedSinceLatestSnapshot,
@@ -173,6 +178,49 @@ repositoryTest(
       }) !== undefined,
     );
     assert.deepEqual(changedSinceLatestSnapshot(root), []);
+  },
+);
+
+repositoryTest(
+  "快照: 待并入的写入在其它 hook 改写文件之后并入, 快照是改写后的内容",
+  (root, initial) => {
+    writeNavigatorState(root, initial);
+    takeSnapshot(root, { now: NOW, head: initial });
+    const receipt = ".navigator/orders/0001-demo/receipt.md";
+    const file = path.join(root, receipt);
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "回执\n    - 四个空格的列表\n", "utf8");
+    markPendingWrite(root, receipt);
+    writeFileSync(file, "回执\n\n- 格式化后的列表\n", "utf8");
+    assert.deepEqual(flushPendingWrites(root, { now: NOW, head: initial }), [
+      receipt,
+    ]);
+    assert.deepEqual(changedSinceLatestSnapshot(root), []);
+    assert.deepEqual(
+      flushPendingWrites(root, { now: NOW, head: initial }),
+      [],
+      "并入之后标记被删除",
+    );
+  },
+);
+
+repositoryTest(
+  "快照: 没有标记的文件被改动时仍被发现, 完整快照后清除全部标记",
+  (root, initial) => {
+    writeNavigatorState(root, initial);
+    const plan = path.join(root, ".navigator", "plan");
+    writeFileSync(path.join(plan, "a.md"), "甲\n", "utf8");
+    takeSnapshot(root, { now: NOW, head: initial });
+    writeFileSync(path.join(plan, "a.md"), "甲被手工改动\n", "utf8");
+    writeFileSync(path.join(plan, "b.md"), "乙\n", "utf8");
+    markPendingWrite(root, ".navigator/plan/b.md");
+    flushPendingWrites(root, { now: NOW, head: initial });
+    assert.deepEqual(changedSinceLatestSnapshot(root), [
+      ".navigator/plan/a.md",
+    ]);
+    markPendingWrite(root, ".navigator/plan/b.md");
+    clearPendingWrites(root);
+    assert.deepEqual(flushPendingWrites(root, { now: NOW, head: initial }), []);
   },
 );
 

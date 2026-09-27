@@ -17,8 +17,10 @@ import { isChoiceSelected } from "../../plugins/waypoint/skills/project-navigato
 import { APPROVAL_STATUSES } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/order-approval.mjs";
 import {
   claimOrchestrator,
+  findForkOrigin,
   identifyRole,
   isOrchestratorSession,
+  orchestratorMarker,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/sessions.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { createInitialState } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs";
@@ -147,9 +149,22 @@ test("工单: 类型, 短名与切片编号必须合法", () => {
     WorkflowError,
   );
   assert.throws(
-    () => createOrder(base, { ...options, slice: "0099" }),
-    WorkflowError,
+    () => createOrder(base, { ...options, slice: "2" }),
+    /不是 "当前切片" 中的序号: 现有切片 0001/u,
   );
+});
+
+test("工单: 不指定切片时挂在当前切片上", () => {
+  const options = {
+    kind: "fix",
+    slug: "retry",
+    slice: undefined,
+    baseCommit: COMMITS.base,
+  };
+  const active = { ...stateWithRoadmap(), slice: "0001" };
+  assert.equal(createOrder(active, options).order.slice, "0001");
+  const idle = { ...stateWithRoadmap(), slice: null };
+  assert.equal(createOrder(idle, options).order.slice, null);
 });
 
 test("工单: 每次发布轮次加一, 不允许跳过状态", () => {
@@ -359,6 +374,27 @@ test("会话: 身份按编排登记与执行登记判断, 被接管的会话单�
   assert.equal(role("executor-1", executorRecord), "executor");
   assert.equal(role("stranger", undefined), "other");
   assert.equal(role("", undefined), "other");
+});
+
+test("会话: 分叉出的会话按转录中的编排会话标记认出来源", () => {
+  const orchestrators = {
+    current: { id: "orchestrator-2", claimedAt: NOW },
+    former: ["orchestrator-1"],
+  };
+  const transcript = (...ids) => ids.map(orchestratorMarker).join("\n");
+  assert.equal(
+    findForkOrigin(
+      transcript("orchestrator-1", "orchestrator-2"),
+      orchestrators,
+    ),
+    "current",
+    "转录中有当前编排会话的标记时, 不论先后都来自当前编排会话",
+  );
+  assert.equal(
+    findForkOrigin(transcript("orchestrator-1"), orchestrators),
+    "former",
+  );
+  assert.equal(findForkOrigin("无标记", orchestrators), undefined);
 });
 
 test("执行: 只有当前已发布的工单能被启动提示词登记", () => {

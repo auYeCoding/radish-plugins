@@ -29,7 +29,7 @@
 
 ### 写工单
 
-1. 运行 `order new --kind <类型> --slug <短名> [--slice <切片编号>]`. 类型: implementation 实现, selection 选型, runcheck 运行检查, fix 修复. 输出给出工单文件的路径.
+1. 运行 `order new --kind <类型> --slug <短名> [--slice <切片编号>]`. 类型: implementation 实现, selection 选型, runcheck 运行检查, fix 修复. 不带 `--slice` 时工单挂在当前切片; 切片编号是 `.navigator/plan/roadmap.md` 中的四位数字, 不是 "当前切片" 中的序号. 输出给出工单文件的路径.
 2. 运行 `template order` 取得骨架, 按下表逐项填写后用 Write 写入.
 3. 运行 `reply approve`, 回复 "工单审阅". 骨架已从工单文件原样摘录概况, 工作范围, 前提假设, 执行守则与验收判据, 不改写, 不转述; 回复结束时 hook 核对摘录与工单文件一致. 实现与修复工单要求项目已登记代码检查命令, 且验收判据含有代码检查判据; 不满足时 `reply approve` 拒绝, 按输出补救后再取骨架.
 4. "工单审阅" 中用户选 A: 运行 `order set issued`, 再运行 `reply order` (骨架已带启动提示词), 回复 "工单发布". 发布只接受用户认可过的内容: 认可之后改过工单文件, 或用户没有选 A, `order set issued` 都会拒绝. 每次发布都用掉这次认可.
@@ -44,7 +44,7 @@
 | 完成标志   | 使用者能观察到的结果                                                                                                                                                                                     |
 | 计划要求   | 默认 "必须先计划"; 改动只在一处且没有逻辑分支时写 "免除计划", 并写明原因                                                                                                                                 |
 | 基准提交   | 当前提交的完整哈希, 用 `git rev-parse HEAD` 查询                                                                                                                                                         |
-| 编排会话   | 本会话名称, 即 ListAgents 输出的第一行, 供消息汇报使用                                                                                                                                                   |
+| 编排会话   | 骨架已预填, 原样保留; 执行会话消息汇报时从 `status` 的 "编排地址" 一行取地址                                                                                                                             |
 | 回执路径   | 同一文件夹中的 `receipt.md`                                                                                                                                                                              |
 | 执行守则   | 本工单特有的约束, 例如 "不改 `src/api/` 的公共接口"; 手册与项目规范中已有的规则不重复. 要留存抓包原文, 复现脚本等证据时, 写明放在本工单文件夹的 `artifacts/` 下                                          |
 | 前提假设   | 执行会话动手前要核对的事实, 每条都能验证                                                                                                                                                                 |
@@ -93,7 +93,7 @@
 
 1. 运行 `order set reviewing`.
 2. 运行 `review-brief`, 把输出原样作为提示词派 `waypoint:navigator-reviewer`. 不增删任何文字, 守卫会逐字核对.
-3. 运行 `template review`, 用子代理交回的结果写 `review.md`. "判据核对" 表的结论照抄子代理的结论, 只能是 通过, 不通过, 未验证 之一. "人工验收" 写出用户亲手验证的步骤:
+3. 运行 `template review`, 用子代理交回的结果写 `review.md`. "判据核对" 表的结论照抄子代理的结论, 只能是 通过, 不通过, 未验证 之一. "用户结论" 与 "提交方式" 保留骨架预填的 "待用户确认", 用户选择之后再改写; 没有改写时 `order set accepted` 与 `order set committing` 会拒绝. "人工验收" 写出用户亲手验证的步骤:
    - 命令与操作只取自回执, 不自己编写安装, 建环境或改项目配置的命令.
    - 回执中没有可供用户亲手验证的内容时写 "无".
    - 不建议用户凭公开资料, 文档或经验认可未验证的判据.
@@ -114,3 +114,15 @@
 4. 纳入范围之外还有改动时 (例如编辑器的工程文件), 用文字列出并询问, 按用户的回答处理, 不自行排除. 编排会话不能用提问框.
 5. 守卫在提交步骤只放行 `git add -- <路径...>`, 经标准输入传消息的 `git commit -F -` (Bash 用 heredoc, PowerShell 用 `@'...'@` 管道) 与不带强制参数的 `git push`. 被拒绝时按拒绝理由换成放行的写法, 不改为请用户手动提交.
 6. 提交完成后运行 `order set committed`. `.navigator/`, `.claude/settings.json` 或 `.claude/rules/engineering.md` 中还有没入库的文件时, 命令会拒绝并列出这些文件: 按输出再次调用 `waypoint:commit-message` 补交, 然后重新运行. 切片的工单全部完成时运行 `slice <编号> done`.
+
+## 阶段提交
+
+初始化自检通过后, 以及推进阶段时上一阶段还有没入库的技能产物, 下一动作要求回复 "阶段提交". 没有处理之前, `stage` 与 `order new` 都会拒绝.
+
+1. 用只读的 `git status --short` 与 `git branch --show-current` 查询. "完成阶段" 写下一动作中引号里的成果名; "记录改动" 写 `.navigator/`, `.claude/settings.json` 与 `.claude/rules/engineering.md` 中的改动; "其它改动" 写这三处之外的改动, 没有时写 "无"; "当前分支" 写分支名.
+2. 用户选 A 或 B: 运行 `stagecommit start`, 再调用技能 `waypoint:commit-message`, 提交消息由该技能生成并展示:
+   - A (技能产物单独提交): 参数写 "提交, 纳入范围: .navigator/ 下的改动, .claude/settings.json 与 .claude/rules/engineering.md; 用户已选择不纳入其它改动, 不再询问".
+   - B (全部改动一并提交): 参数写 "提交, 纳入全部改动, 不再询问".
+3. 提交完成后运行 `stagecommit done`. 还有没入库的技能产物时命令会拒绝并列出文件, 按输出补交后重新运行.
+4. 用户选 C: 运行 `stagecommit skip`. 没入库的产物留到下一次阶段提交或工单提交.
+5. 然后回到原来的步骤, 例如推进阶段后该阶段的第一步.

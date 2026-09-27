@@ -10,6 +10,7 @@
  * 移入历史, 当前工单清空.
  */
 
+import { COMMITTING_ORDER_STATUS } from "./commit-step.mjs";
 import { allocateNumber } from "./numbering.mjs";
 import { WorkflowError } from "./workflow-error.mjs";
 
@@ -60,13 +61,14 @@ export const ORDER_KINDS = Object.freeze([
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 /**
- * 新建工单, 成为当前工单. 工单严格串行: 已有未结束的工单时不能新建.
+ * 新建工单, 成为当前工单. 工单严格串行: 已有未结束的工单时不能新建. 没有指定
+ * 切片时挂在当前切片上, 这样连续不通过的次数与路线中的工单列表都按切片统计.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
  * @param {object} options 工单参数.
  * @param {string} options.kind 工单类型.
  * @param {string} options.slug 文件夹短名.
- * @param {string | undefined} options.slice 所属切片编号.
+ * @param {string | undefined} options.slice 所属切片编号; 省略时为当前切片.
  * @param {string} options.baseCommit 基准提交.
  * @returns {import("./state.mjs").NavigatorState} 新状态.
  * @throws {WorkflowError} 已有进行中的工单, 或参数不合法时.
@@ -89,7 +91,10 @@ export function createOrder(state, { kind, slug, slice, baseCommit }) {
     slice !== undefined &&
     !state.slices.some((entry) => entry.id === slice)
   ) {
-    throw new WorkflowError(`切片 ${slice} 不存在.`);
+    const ids = state.slices.map((entry) => entry.id).join(", ") || "无";
+    throw new WorkflowError(
+      `切片 ${slice} 不存在. 切片编号是四位数字, 不是 "当前切片" 中的序号: 现有切片 ${ids}, 当前切片 ${state.slice ?? "无"}. 不带 --slice 时默认挂在当前切片.`,
+    );
   }
   const { id, next } = allocateNumber(state.next, "order");
   return {
@@ -100,7 +105,7 @@ export function createOrder(state, { kind, slug, slice, baseCommit }) {
       slug,
       folder: `${id}-${slug}`,
       kind,
-      slice: slice ?? null,
+      slice: slice ?? state.slice ?? null,
       status: "drafting",
       round: 0,
       baseCommit,
@@ -170,7 +175,7 @@ export function setOrderStatus(state, status, head) {
  */
 export function adoptCommit(state, head, action) {
   const adopted =
-    state.order?.status === "committing"
+    state.order?.status === COMMITTING_ORDER_STATUS
       ? setOrderStatus(state, "committed", head)
       : { ...state, lastCommit: head };
   return { ...adopted, lastAction: action };

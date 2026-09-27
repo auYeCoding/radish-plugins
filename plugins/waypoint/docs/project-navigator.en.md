@@ -20,7 +20,7 @@ It is not meant for small tasks such as fixing a typo, patching a small bug, or 
 
 ## Requirements
 
-- [Git](https://git-scm.com): the project must be a Git repository with at least one commit. If it is not a repository yet, run [`/waypoint:repo-init`](repo-init.en.md) first.
+- [Git](https://git-scm.com): the project must be a Git repository. If it is not a repository yet, run [`/waypoint:repo-init`](repo-init.en.md) first; if it has no commit yet, the "阶段提交" (stage commit) after initialization makes the first commit.
 - [Node.js](https://nodejs.org) 22 or later: the guard hooks and the record scripts run on Node.js.
 - Start Claude Code in the project root. Executor sessions do not use worktrees.
 - During selection, the public git repositories (https) of the chosen dependencies must be reachable: the review fetches source code from the original repositories to verify the evidence.
@@ -41,6 +41,8 @@ The skill runs only when you invoke it explicitly. Plain-language requests never
 
 Invoking the skill from any new session takes over orchestration and resumes from the last position. The previous orchestrator session loses its orchestration rights and is told so the next time you send it a message; to continue orchestrating there, invoke the skill again in that session.
 
+Rewinding or editing a message of the orchestrator session in the desktop app, or forking it with `--fork-session`, continues the conversation under a new session id. The forked session is recognized and takes over orchestration automatically; you do not need to invoke the skill again.
+
 ## Quick start
 
 Take "做一个团队周报汇总工具" (build a tool that combines a team's weekly reports) as an example, starting from a new repository that only has a README. Every reply ends with an option block, so you only need to reply with a letter. To add details, write them after the letter, for example `B 第 3 条假设不对, 我们用飞书` (B, assumption 3 is wrong, we use Feishu).
@@ -49,7 +51,8 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 
 1. Start Claude Code in the project root and enter `/waypoint:project-navigator 做一个团队周报汇总工具`.
 2. The skill replies with "初始设置" (setup), listing the checks and what it will write. Reply `A`. In the default permission mode, Claude Code asks you to approve the initialization command once.
-3. After the self-check passes, the skill replies with "首次接入" (first entry). Reply `A` for a new project, or `B` for a project with existing code.
+3. After the self-check passes, the skill replies with "阶段提交" (stage commit) and asks how to commit the files written by initialization: `A` commits only the skill's files, `B` commits them together with the other changes in the working tree, and `C` does not commit for now.
+4. Then the skill replies with "首次接入" (first entry). Reply `A` for a new project, or `B` for a project with existing code.
 
 ### Framing and main flow
 
@@ -57,6 +60,7 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 2. The skill sends the researcher subagent to look into similar products, users, industry practice, and constraints, then replies with "调研报告" (research report). Research needs web access, which Claude Code may ask you to approve, and usually takes a few minutes.
 3. Each "头脑风暴" (brainstorming) round asks at most three questions, often with candidate answers and a recommended one. Answer by number. The skill asks for your consent before converging.
 4. The skill writes the project brief and replies with "产出确认" (confirm output). The main flow and roadmap that follow are confirmed the same way.
+5. Whenever a new stage begins while records from the previous stage are still uncommitted, the skill first replies with "阶段提交", with the same options as after initialization. Until you answer, the skill neither enters another stage nor creates a work order.
 
 ### Selection and the first work order
 
@@ -87,7 +91,7 @@ Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks a
 
 - The `.gitignore` inside `.navigator/` re-includes the plugin's files, so rules such as `lib/` or `bin/` in your project cannot leave them out.
 - On initialization and on every invocation, the skill checks the plugin's files against all of Git's ignore rules (the project's `.gitignore` files at every level, plus the machine-local and global excludes). If a rule ignores `.navigator/` as a whole, or the configuration under `.claude/`, the skill stops and names the rule, so you can change it before continuing.
-- After each work order is committed, any file under `.navigator/` or in the plugin-managed configuration that is still uncommitted is listed, and the work order is complete only after a follow-up commit.
+- After each work order commit and each stage commit, any file under `.navigator/` or in the plugin-managed configuration that is still uncommitted is listed, and the commit is complete only after a follow-up commit.
 
 ## Roles
 
@@ -122,7 +126,7 @@ A requirement change can come in at any stage and returns to the same position a
 3. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". Its "模块划分" (module plan) section lists the modules to create and change, and what changes in the entry file; read it before you choose A. It can edit business files only after you choose A.
 4. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
    - A. Document report: the executor writes the receipt file; go back to the orchestrator and choose A in "等待回执". If the receipt is not there yet, the orchestrator replies with "等待回执" again and says the receipt was not found.
-   - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open.
+   - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open. The orchestrator registers its address every time it takes over or resumes, and the executor sends to the "编排地址" (orchestrator address) shown by `status`; when no address is registered or sending fails, the executor writes the receipt file instead and reminds you to choose A in the orchestrator session.
 5. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree; see [Test authorization and evidence tools](#test-authorization-and-evidence-tools) below.
 6. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit. If there are changes outside the receipt (for example, editor project files), the orchestrator lists them and asks whether to include them.
 

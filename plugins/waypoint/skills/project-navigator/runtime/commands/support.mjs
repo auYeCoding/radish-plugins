@@ -5,6 +5,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { isCommitInProgress } from "../lib/commit-step.mjs";
+import { COMMIT_SKILL } from "../lib/guard.mjs";
 import { ANOMALY_GUIDES, replyStep } from "../lib/guidance.mjs";
 import {
   DRAFTS_DIRECTORY,
@@ -12,9 +14,18 @@ import {
   isUnderDirectory,
   projectRelativePath,
 } from "../lib/paths.mjs";
-import { RECONCILE_LABELS } from "../lib/reconcile.mjs";
+import {
+  clearPendingWrites,
+  flushPendingWrites,
+} from "../lib/pending-writes.mjs";
+import { RECONCILE_LABELS, compareHistory } from "../lib/reconcile.mjs";
 import { PLAN_VIEW_FILES, writePlanViews } from "../lib/render-plan.mjs";
-import { findRepositoryRoot, headCommit } from "../lib/repo.mjs";
+import {
+  findRepositoryRoot,
+  headCommit,
+  listUncommittedPaths,
+  shortHash,
+} from "../lib/repo.mjs";
 import {
   changedSinceLatestSnapshot,
   recordSnapshotChanges,
@@ -22,6 +33,7 @@ import {
 } from "../lib/snapshots.mjs";
 import { loadSpec } from "../lib/spec.mjs";
 import { INIT_ACTIVE, readState, writeState } from "../lib/state.mjs";
+import { COMMITTED_PATHSPECS } from "../lib/tracked-paths.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 
 /**
@@ -43,8 +55,9 @@ export const SNAPSHOT_MODES = Object.freeze({
  */
 
 /**
- * 打开已初始化且防护生效的项目. 默认要求记录与快照一致: 对账异常尚未处理,
- * 或状态目录在最近的快照之后被其它程序改动过 (例如 `git reset` 回退了记录) 时拒绝,
+ * 打开已初始化且防护生效的项目. 先把待并入快照的写入并入快照, 再核对记录:
+ * 对账异常尚未处理, 状态目录在最近的快照之后被其它程序改动过 (例如 `git reset`
+ * 回退了记录), 或提交历史出现了编排之外的变化 (例如用户手动提交) 时拒绝,
  * 以免命令在被回退或被改动的记录上继续推进. 处理异常的命令允许在异常时打开.
  *
  * @param {string} cwd 会话工作目录.
@@ -62,6 +75,12 @@ export function openProject(cwd, { allowAnomaly = false } = {}) {
     throw new WorkflowError("项目尚未完成初始化, 请先运行 init 并通过自检.");
   }
   const spec = loadSpec();
+  if (state.pendingAnomaly === undefined) {
+    flushPendingWrites(projectRoot, {
+      now: new Date().toISOString(),
+      head: headCommit(projectRoot),
+    });
+  }
   if (!allowAnomaly) {
     assertReconciled(projectRoot, state, spec);
   }
@@ -127,6 +146,7 @@ export function saveState(
   const head = headCommit(context.projectRoot);
   if (snapshot === SNAPSHOT_MODES.full) {
     takeSnapshot(context.projectRoot, { now, head });
+    clearPendingWrites(context.projectRoot);
   } else if (snapshot === SNAPSHOT_MODES.changes) {
     recordSnapshotChanges(context.projectRoot, {
       paths: [STATE_FILE, ...PLAN_VIEW_FILES, ...writtenPaths],
@@ -135,6 +155,24 @@ export function saveState(
     });
   }
   return written;
+}
+
+/**
+ * 核对提交已经完整: 状态目录与插件管理的项目配置中没有未入库的文件. 被提交漏掉的
+ * 记录要在提交步骤中补交, 不能等到以后. 工单提交与阶段提交共用.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @param {string} retryCommand 补交之后要重新运行的插件命令.
+ * @returns {void}
+ * @throws {WorkflowError} 仍有未入库的文件时, 原因列出文件并写明补救办法.
+ */
+export function assertRecordsCommitted(projectRoot, retryCommand) {
+  const uncommitted = listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS);
+  if (uncommitted.length > 0) {
+    throw new WorkflowError(
+      `以下文件没有随提交入库: ${uncommitted.join(", ")}. 再次调用 ${COMMIT_SKILL}, 参数写 "提交, 纳入范围: ${uncommitted.join(", ")}; 纳入范围之外的改动用文字列出并询问", 提交之后重新运行 ${retryCommand}.`,
+    );
+  }
 }
 
 /**
@@ -179,7 +217,9 @@ export function resultLines(state) {
 }
 
 /**
- * 确认记录可以继续推进: 没有尚未处理的对账异常, 状态目录也与最近的快照一致.
+ * 确认记录可以继续推进: 没有尚未处理的对账异常, 状态目录与最近的快照一致,
+ * 提交历史也与记录一致. 提交步骤中 HEAD 会先于记录前进, 这时不比较提交历史.
+ * 自己的提交 (提交中入库的 lastCommit 等于父提交) 不算异常, 由 enter 自动纳入.
  *
  * @param {string} projectRoot 项目根目录.
  * @param {import("../lib/state.mjs").NavigatorState} state 当前状态.
@@ -197,6 +237,20 @@ function assertReconciled(projectRoot, state, spec) {
   if (changed.length > 0) {
     throw new WorkflowError(
       `状态目录在最近的快照之后被改动过, 例如记录被 git 回退或被手工修改: ${changed.join(", ")}. 本命令没有执行; 先运行 status, 按其中的下一动作处理.`,
+    );
+  }
+  if (isCommitInProgress(state)) {
+    return;
+  }
+  const history = compareHistory(
+    projectRoot,
+    state.lastCommit,
+    headCommit(projectRoot),
+  );
+  if (Object.hasOwn(ANOMALY_GUIDES, history.kind)) {
+    const commits = history.commits.map(shortHash).join(", ");
+    throw new WorkflowError(
+      `提交历史与记录不一致 (${RECONCILE_LABELS[history.kind]}${commits === "" ? "" : `: ${commits}`}), 例如在编排之外手动提交或回退了提交. 本命令没有执行; 先运行 status, 按其中的下一动作处理.`,
     );
   }
 }

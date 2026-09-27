@@ -5,6 +5,11 @@
  * 运行哪条命令. "运行 X" 指运行项目中的插件命令 `node <命令路径> X`.
  */
 
+import {
+  STAGE_COMMIT_REPLY_TYPE,
+  STAGE_COMMIT_STATUSES,
+} from "./commit-step.mjs";
+import { COMMIT_SKILL } from "./guard.mjs";
 import { APPROVAL_REPLY_TYPE, APPROVAL_STATUSES } from "./order-approval.mjs";
 import { shortHash } from "./repo.mjs";
 
@@ -106,6 +111,9 @@ export function nextAction(input) {
       input.restoreTarget,
     );
   }
+  if (state.stageCommit !== null && state.stageCommit !== undefined) {
+    return stageCommitAction(spec, state.stageCommit);
+  }
   if (state.stage === null) {
     return replyStep(spec, "首次接入");
   }
@@ -134,6 +142,19 @@ function anomalyAction(spec, guide, restoreTarget) {
       ? "告知用户没有可用的恢复来源, 请改选其它选项"
       : `运行 restore ${shortHash(restoreTarget)}`;
   return `${replyStep(spec, "验收异常", guide.optionSet)}; ${guide.followUp.replace(RESTORE_SLOT, restore)}`;
+}
+
+/**
+ * 有待处理的阶段提交时的下一动作: 等用户选择提交范围, 或正在提交.
+ *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {import("./commit-step.mjs").StageCommit} stageCommit 待处理的阶段提交.
+ * @returns {string} 下一动作.
+ */
+function stageCommitAction(spec, stageCommit) {
+  return stageCommit.status === STAGE_COMMIT_STATUSES.committing
+    ? `阶段提交 "${stageCommit.label}" 正在提交: 确认提交完成后运行 stagecommit done`
+    : `${replyStep(spec, STAGE_COMMIT_REPLY_TYPE)}, 提交 "${stageCommit.label}" 的成果; 用户选 A 或 B 后运行 stagecommit start, 按选择的范围调用 ${COMMIT_SKILL}, 完成后运行 stagecommit done; 选 C 后运行 stagecommit skip`;
 }
 
 /**

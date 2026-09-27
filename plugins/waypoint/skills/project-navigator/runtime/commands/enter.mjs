@@ -4,7 +4,7 @@
  *
  * enter 由技能加载时的 `!` 命令调用, 输出会原样注入技能内容, 因此必须始终以
  * 退出码 0 结束, 且输出中只含由状态决定的内容. 调用技能的会话由 enter 接管编排.
- * status 只查询, 不写任何文件.
+ * status 只查询, 不写状态目录; 对账之前与 enter 一样, 先把待并入快照的写入并入快照.
  */
 
 import { existsSync } from "node:fs";
@@ -21,17 +21,21 @@ import {
   navigatorPath,
   orderFilePath,
 } from "../lib/paths.mjs";
+import { flushPendingWrites } from "../lib/pending-writes.mjs";
 import { RECONCILE_LABELS, reconcile } from "../lib/reconcile.mjs";
 import { renderProgressSection } from "../lib/render.mjs";
 import {
   countTrackedFiles,
   findIgnoredPaths,
+  headCommit,
   readGitBlob,
   shortHash,
 } from "../lib/repo.mjs";
 import { readApprovalStatus } from "../lib/order-approval.mjs";
+import { ADDRESS_REGISTRATION_STEP } from "../lib/session-notices.mjs";
 import {
   claimOrchestratorSession,
+  orchestratorMarker,
   readOrchestrators,
 } from "../lib/sessions.mjs";
 import { hasAllNavigatorHooks, readSettingsFile } from "../lib/settings.mjs";
@@ -178,6 +182,9 @@ function describeProgress({
   now,
   spec,
 }) {
+  if (state.pendingAnomaly === undefined) {
+    flushPendingWrites(projectRoot, { now, head: headCommit(projectRoot) });
+  }
   const reconciliation = reconcile(projectRoot, state);
   const isAnomaly = Object.hasOwn(ANOMALY_GUIDES, reconciliation.kind);
   const current = shouldClaim
@@ -196,8 +203,11 @@ function describeProgress({
     ? findRestoreTarget(projectRoot, reconciliation)
     : undefined;
   const isAdopted = shouldClaim && reconciliation.kind === "own";
+  const orchestrators = readOrchestrators(projectRoot);
   return [
-    `- 会话登记: ${describeSession(readOrchestrators(projectRoot), sessionId)}`,
+    `- 会话登记: ${describeSession(orchestrators, sessionId)}`,
+    `- 编排地址: ${describeAddress(orchestrators)}`,
+    ...(shouldClaim ? [`- 地址登记: ${ADDRESS_REGISTRATION_STEP}`] : []),
     "",
     ...renderProgressSection(current, spec),
     "",
@@ -304,8 +314,21 @@ function describeSession(orchestrators, sessionId) {
       : `已有编排会话登记, 接管时间 ${time}`;
   }
   return orchestrators.current.id === sessionId
-    ? "本会话是编排会话"
+    ? `本会话是编排会话, ${orchestratorMarker(sessionId)}`
     : "本会话不是编排会话";
+}
+
+/**
+ * 描述编排地址的登记情况, 供执行会话消息汇报时查询.
+ *
+ * @param {import("../lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
+ * @returns {string} 描述.
+ */
+function describeAddress(orchestrators) {
+  const current = orchestrators.current;
+  return current?.address === undefined
+    ? "未登记, 执行会话改用文档汇报"
+    : `${current.address}, 登记于 ${current.addressedAt ?? ""}`;
 }
 
 /**

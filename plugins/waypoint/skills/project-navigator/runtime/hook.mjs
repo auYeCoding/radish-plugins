@@ -3,12 +3,15 @@
  * `node <本文件>` 调用, 从标准输入读取事件 JSON.
  *
  * - 工具调用前: 按会话身份判定放行或拒绝; 探测写入时留下自检心跳.
- * - 工具调用后: 状态目录中的文件被写入后, 把这个文件并入快照; 读取当前工单文件的
- *   会话登记为执行会话.
+ * - 工具调用后: 状态目录中的文件被写入后, 为这个文件留下待并入快照的标记; 读取
+ *   当前工单文件的会话登记为执行会话.
+ * - 用户发消息, 会话开始与回复结束时: 先把待并入的写入并入快照. 这些时刻同一次
+ *   工具调用的其它 hook (例如格式化) 都已结束, 快照拍到的是最终内容.
  * - 用户发消息时: 编排会话注入位置与禁令, 记下消息原文供核对用户测试输出, 并记下
  *   用户对工单审阅的选择; 被接管的原编排会话注入身份提醒; 识别启动提示词并登记
  *   执行会话; 识别用户对开工对齐的选择.
- * - 会话开始时 (含上下文压缩后): 注入身份与位置提醒.
+ * - 会话开始时 (含恢复, 分叉与上下文压缩后): 注入身份与位置提醒; 从当前编排会话
+ *   分叉出的会话 (编号已改变) 自动接管编排.
  * - 回复结束时: 校验编排会话与执行会话的回复版式, 不合格时打回一次; 编排会话回复
  *   工单审阅后开始等待用户选择.
  *
@@ -26,6 +29,7 @@ import path from "node:path";
 
 import { RESEARCH_FRAME, buildReviewBrief } from "./lib/briefs.mjs";
 import { orderTestCommands } from "./lib/code-checks.mjs";
+import { isCommitInProgress, isStageCommitting } from "./lib/commit-step.mjs";
 import {
   ALIGNMENT_REPLY_TYPE,
   applyAlignmentAnswer,
@@ -52,6 +56,7 @@ import {
   isUnderDirectory,
   projectRelativePath,
 } from "./lib/paths.mjs";
+import { flushPendingWrites, markPendingWrite } from "./lib/pending-writes.mjs";
 import { headCommit } from "./lib/repo.mjs";
 import {
   appendPrompt,
@@ -67,9 +72,18 @@ import {
 } from "./lib/reminders.mjs";
 import { checkReply, locateReply } from "./lib/reply-checks.mjs";
 import { criteriaTableSpec } from "./lib/review-record.mjs";
-import { supersededReminder } from "./lib/session-notices.mjs";
-import { identifyRole, readOrchestrators } from "./lib/sessions.mjs";
-import { recordSnapshotChanges } from "./lib/snapshots.mjs";
+import {
+  ADDRESS_REGISTRATION_STEP,
+  forkClaimReminder,
+  supersededReminder,
+} from "./lib/session-notices.mjs";
+import {
+  claimOrchestratorSession,
+  findForkOrigin,
+  identifyRole,
+  orchestratorMarker,
+  readOrchestrators,
+} from "./lib/sessions.mjs";
 import { findReply, loadSpec } from "./lib/spec.mjs";
 import { INIT_UNINSTALLED, readState } from "./lib/state.mjs";
 import { checkWriting, formatFinding } from "./lib/writing-checks.mjs";
@@ -89,16 +103,33 @@ const REPLY_REJECTION_HEADER =
 const MAX_WRITING_PROBLEMS = 8;
 
 /**
- * 编排会话回复时跳过版式校验的工单状态: 正在提交时, 回复由 commit-message 技能输出.
- * @type {string}
- */
-const COMMITTING_STATUS = "committing";
-
-/**
  * 读取文件的工具名.
  * @type {string}
  */
 const READ_TOOL = "Read";
+
+/**
+ * 会话开始事件中表示分叉出新会话的来源值, 例如桌面应用回退消息, 或 `--fork-session`.
+ * @type {string}
+ */
+const FORK_SOURCE = "fork";
+
+/**
+ * 会话开始事件中表示恢复原会话的来源值, 会话编号不变.
+ * @type {string}
+ */
+const RESUME_SOURCE = "resume";
+
+/**
+ * 先并入待并入快照的写入再处理的事件: 这些事件发生时, 此前工具调用的全部
+ * hook 都已结束. 工具调用前后的事件不并入, 以免拍到格式化之前的内容.
+ * @type {readonly string[]}
+ */
+const FLUSH_EVENTS = Object.freeze([
+  "UserPromptSubmit",
+  "SessionStart",
+  "Stop",
+]);
 
 /**
  * @typedef {object} HookEvent 一次 hook 调用的上下文.
@@ -139,6 +170,13 @@ function main() {
       executorRecord: readExecutorRecord(projectRoot, sessionId),
       sessionId,
     });
+    const now = new Date().toISOString();
+    if (
+      FLUSH_EVENTS.includes(String(input.hook_event_name ?? "")) &&
+      state.pendingAnomaly === undefined
+    ) {
+      flushPendingWrites(projectRoot, { now, head: headCommit(projectRoot) });
+    }
     const output = handleEvent({
       input,
       projectRoot,
@@ -146,7 +184,7 @@ function main() {
       orchestrators,
       role,
       sessionId,
-      now: new Date().toISOString(),
+      now,
     });
     if (output !== undefined) {
       process.stdout.write(JSON.stringify(output));
@@ -203,6 +241,20 @@ function handleEvent(event) {
 }
 
 /**
+ * 读取分叉出的会话的转录, 判断它来自哪个编排会话.
+ *
+ * @param {unknown} transcriptPath hook 输入中的转录路径.
+ * @param {import("./lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
+ * @returns {import("./lib/sessions.mjs").ForkOrigin | undefined} 来源; 转录不可读或没有标记时为 undefined.
+ */
+function forkOriginOf(transcriptPath, orchestrators) {
+  if (typeof transcriptPath !== "string" || !existsSync(transcriptPath)) {
+    return undefined;
+  }
+  return findForkOrigin(readFileSync(transcriptPath, "utf8"), orchestrators);
+}
+
+/**
  * 处理工具调用前事件: 调用守卫, 拒绝时输出理由; 探测写入时记录心跳.
  *
  * @param {HookEvent} event hook 调用上下文.
@@ -225,6 +277,7 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
     projectRoot,
     context: {
       orderStatus: state.order?.status,
+      isStageCommitting: isStageCommitting(state),
       authorizedTests: testCommands,
       evidenceTools: state.evidenceTools,
       ...executorGuardState(record, state),
@@ -253,9 +306,9 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
 }
 
 /**
- * 处理工具调用后事件: 状态目录中的文件被写入后, 把这个文件并入快照 (对账异常
- * 尚未处理时不拍); 其它会话读取当前工单文件时, 登记为执行会话 (启动提示词没有
- * 被识别时的兜底).
+ * 处理工具调用后事件: 状态目录中的文件被写入后, 为这个文件留下待并入快照的标记
+ * (对账异常尚未处理时不标记); 其它会话读取当前工单文件时, 登记为执行会话
+ * (启动提示词没有被识别时的兜底).
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
@@ -281,11 +334,7 @@ function handlePostToolUse({
       isUnderDirectory(relative, NAVIGATOR_DIRECTORY) &&
       state.pendingAnomaly === undefined
     ) {
-      recordSnapshotChanges(projectRoot, {
-        paths: [relative],
-        now,
-        head: headCommit(projectRoot),
-      });
+      markPendingWrite(projectRoot, relative);
     }
     return undefined;
   }
@@ -369,23 +418,37 @@ function handleUserPrompt({
 }
 
 /**
- * 处理会话开始事件 (含恢复与上下文压缩后): 注入身份与位置提醒.
+ * 处理会话开始事件 (含恢复, 分叉与上下文压缩后): 注入身份与位置提醒. 编排会话
+ * 恢复后另外提醒重新登记编排地址. 分叉出的会话编号已改变, 先从转录认出来源:
+ * 来自当前编排会话时自动接管编排.
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
  */
-function handleSessionStart({
-  projectRoot,
-  state,
-  orchestrators,
-  role,
-  sessionId,
-}) {
-  switch (role) {
+function handleSessionStart(event) {
+  const { input, projectRoot, state, orchestrators, role, sessionId, now } =
+    event;
+  const origin =
+    role === "other" && input.source === FORK_SOURCE
+      ? forkOriginOf(input.transcript_path, orchestrators)
+      : undefined;
+  if (origin === "current") {
+    claimOrchestratorSession(projectRoot, sessionId, now);
+    return contextOutput(
+      "SessionStart",
+      forkClaimReminder(orchestratorMarker(sessionId)),
+    );
+  }
+  switch (origin === "former" ? "superseded" : role) {
     case "orchestrator":
       return contextOutput(
         "SessionStart",
-        orchestratorResumeReminder(state, loadSpec()),
+        [
+          orchestratorResumeReminder(state, loadSpec()),
+          ...(input.source === RESUME_SOURCE
+            ? [`会话刚恢复, 编排地址可能已改变: ${ADDRESS_REGISTRATION_STEP}.`]
+            : []),
+        ].join("\n"),
       );
     case "superseded":
       return contextOutput(
@@ -456,7 +519,7 @@ function orchestratorReplyProblems(
   text,
   shouldCheck,
 ) {
-  if (state.order?.status === COMMITTING_STATUS) {
+  if (isCommitInProgress(state)) {
     return [];
   }
   const spec = loadSpec();

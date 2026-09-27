@@ -179,6 +179,13 @@ export const ORCHESTRATOR_REGISTRY_FILE = "orchestrator.json";
 export const ORDER_APPROVAL_FILE = "order-approval.json";
 
 /**
+ * 待并入快照的写入在运行期登记目录中的子目录名: 每次写入状态目录留下一个标记,
+ * 等同一次工具调用的其它 hook (例如格式化) 结束后再并入快照.
+ * @type {string}
+ */
+export const PENDING_WRITES_DIRECTORY = "pending-writes";
+
+/**
  * 运行期登记信息在 Git 目录中的子目录名. 不入库, 也不受回退影响.
  * @type {string}
  */

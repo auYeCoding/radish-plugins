@@ -42,6 +42,12 @@ const EXECUTOR = "session-executor";
 const FILLER = "已填写的内容";
 
 /**
+ * 验收记录骨架中等用户选择后才写的键的预填值.
+ * @type {string}
+ */
+const DEFERRED_PRESET = "待用户确认";
+
+/**
  * 测试用的代码检查命令.
  * @type {string}
  */
@@ -124,18 +130,23 @@ function writeThroughHook({ root, hook }, sessionId, relativePath, content) {
 }
 
 /**
- * 按骨架写入验收记录, 判据核对只有一行, 结论为指定值.
+ * 按骨架写入验收记录, 判据核对只有一行, 结论为指定值. 默认也写下用户结论与
+ * 提交方式, 相当于用户已经作出选择.
  *
  * @param {FlowContext} context 测试上下文.
  * @param {string} folder 工单文件夹, 相对于项目根目录.
  * @param {string} verdict 判据结论.
+ * @param {{isDecided?: boolean}} [options] 是否写下用户的选择; 为 false 时保留骨架预填的值.
  * @returns {void}
  */
-function writeReview(context, folder, verdict) {
-  const text = fill(context.project(["template", "review"]).stdout).replace(
+function writeReview(context, folder, verdict, { isDecided = true } = {}) {
+  const skeleton = fill(context.project(["template", "review"]).stdout).replace(
     `| ${FILLER} | ${FILLER} | ${FILLER} |`,
     `| ${FILLER} | ${verdict} | ${FILLER} |`,
   );
+  const text = isDecided
+    ? skeleton.replaceAll(DEFERRED_PRESET, FILLER)
+    : skeleton;
   writeThroughHook(context, ORCHESTRATOR, `${folder}/review.md`, text);
 }
 
@@ -713,8 +724,12 @@ projectTest(
     assert.equal(manual.status, 1);
     assert.match(manual.stdout, /order set rejected/u);
     assert.equal(project(["reply", "review", "--option", "2"]).status, 0);
-    writeReview(context, folder, "通过");
+    writeReview(context, folder, "通过", { isDecided: false });
     assert.equal(project(["reply", "review", "--option", "1"]).status, 0);
+    const undecided = project(["order", "set", "accepted"]);
+    assert.equal(undecided.status, 1, "用户结论还是预填值时不能通过验收");
+    assert.match(undecided.stdout, /"用户结论" 还是 "待用户确认"/u);
+    writeReview(context, folder, "通过");
     assert.equal(project(["order", "set", "accepted"]).status, 0);
   },
 );
@@ -872,6 +887,58 @@ projectTest(
   },
 );
 
+projectTest(
+  "流程: 从编排会话分叉出的会话自动接管编排, 编排地址随接管清空",
+  (context) => {
+    const { root, project, hook } = context;
+    const entered = runCommand(
+      PLUGIN_COMMAND,
+      ["enter", "--session", ORCHESTRATOR],
+      root,
+    ).stdout;
+    assert.match(entered, /编排会话编号: session-orchestrator/u);
+    assert.match(entered, /地址登记: /u);
+    const draft = writeDraft(root, "address.json", {
+      address: "编排会话 [e6b1dd]",
+    });
+    assert.equal(project(["address", "set", "--from", draft]).status, 0);
+    assert.match(
+      project(["status"]).stdout,
+      /编排地址: 编排会话 \[e6b1dd\], 登记于/u,
+    );
+
+    const transcript = path.join(root, "fork-transcript.jsonl");
+    writeFileSync(transcript, JSON.stringify({ content: entered }), "utf8");
+    const forked = hook({
+      session_id: "session-forked",
+      hook_event_name: "SessionStart",
+      source: "fork",
+      transcript_path: transcript,
+    });
+    assert.match(
+      forked.output.hookSpecificOutput.additionalContext,
+      /已自动接管编排. 编排会话编号: session-forked/u,
+    );
+    assert.match(project(["status"]).stdout, /编排地址: 未登记/u);
+    assert.match(
+      hook({
+        session_id: ORCHESTRATOR,
+        hook_event_name: "UserPromptSubmit",
+        prompt: "A",
+      }).output.hookSpecificOutput.additionalContext,
+      /已不是编排会话/u,
+    );
+
+    const stranger = hook({
+      session_id: "session-stranger",
+      hook_event_name: "SessionStart",
+      source: "fork",
+      transcript_path: path.join(root, "README.md"),
+    });
+    assert.equal(stranger.output, undefined, "转录中没有标记时不接管");
+  },
+);
+
 projectTest("流程: 提交后未记录时, 下次进入自动纳入自己的提交", (context) => {
   const { root, project } = context;
   const folder = issueFirstOrder(context);
@@ -887,7 +954,7 @@ projectTest("流程: 提交后未记录时, 下次进入自动纳入自己的提
     root,
   ).stdout;
   assert.match(entered, /发现自己的提交, 已自动纳入/u);
-  assert.match(entered, /当前工单: 无/u);
+  assert.match(entered, /当前工单: 无 \(上一张 0001 已结束, committed\)/u);
 });
 
 projectTest(
@@ -937,6 +1004,104 @@ projectTest(
     assert.equal(state.step, "research", "恢复出回退之前的记录");
     assert.match(project(["status"]).stdout, /对账结果: 一致/u);
     assert.equal(project(["stage", "2"]).status, 0);
+  },
+);
+
+projectTest(
+  "流程: 写入后被其它 hook 改写的记录文件, 对账仍然一致",
+  (context) => {
+    const { root, project, hook } = context;
+    const folder = issueFirstOrder(context);
+    const receipt = path.join(root, folder, "receipt.md");
+    const content = fill(project(["template", "receipt"]).stdout);
+    writeFileSync(receipt, content, "utf8");
+    hook({
+      session_id: EXECUTOR,
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: receipt },
+    });
+    writeFileSync(receipt, `${content}\n`, "utf8");
+    assert.equal(
+      hook({ session_id: EXECUTOR, hook_event_name: "Stop" }).status,
+      0,
+    );
+    assert.match(project(["status"]).stdout, /对账结果: 一致/u);
+
+    const review = path.join(root, folder, "review.md");
+    const reviewText = fill(project(["template", "review"]).stdout);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    writeFileSync(review, reviewText, "utf8");
+    hook({
+      session_id: ORCHESTRATOR,
+      hook_event_name: "PostToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: review },
+    });
+    writeFileSync(review, `${reviewText}\n`, "utf8");
+    const rejected = project(["order", "set", "rejected"]);
+    assert.equal(rejected.status, 0, rejected.stdout);
+  },
+);
+
+projectTest(
+  "流程: 会话中途手动提交后, 改变状态的命令暂停, 纳入后继续",
+  (context) => {
+    const { root, project } = context;
+    assert.equal(project(["stage", "1"]).status, 0);
+    writeFileSync(path.join(root, "README.md"), "# 改动\n", "utf8");
+    commitPaths(root, ["README.md"], "docs: 手动提交");
+    const paused = project(["stage", "2"]);
+    assert.equal(paused.status, 1, "手动提交之后编排命令暂停");
+    assert.match(paused.stdout, /提交历史与记录不一致 \(陌生提交/u);
+    const status = project(["status"]).stdout;
+    assert.match(status, /对账结果: 陌生提交/u);
+    assert.match(status, /使用第 2 组选项/u);
+    assert.equal(project(["adopt"]).status, 0);
+    assert.equal(project(["stage", "2"]).status, 0);
+  },
+);
+
+projectTest(
+  "流程: 阶段完成时有未入库的产物, 先处理阶段提交再推进",
+  (context) => {
+    const { root, project } = context;
+    commitPaths(root, [".navigator", ".claude/settings.json"], "chore: 接入");
+    assert.equal(project(["stage", "1"]).status, 0);
+    const quiet = project(["stage", "2"]);
+    assert.doesNotMatch(
+      quiet.stdout,
+      /阶段提交/u,
+      "只有状态文件改动时不请用户提交",
+    );
+    writeThroughHook(
+      context,
+      ORCHESTRATOR,
+      ".navigator/plan/main-flow.md",
+      fill(project(["template", "main-flow"]).stdout),
+    );
+    const entered = project(["stage", "3"]);
+    assert.equal(entered.status, 0, entered.stdout);
+    assert.match(entered.stdout, /下一动作: 回复 "阶段提交"/u);
+    assert.match(
+      project(["status"]).stdout,
+      /提交 "阶段 2 \(主线\) 完成" 的成果/u,
+    );
+    const blocked = project([
+      "order",
+      "new",
+      "--kind",
+      "selection",
+      "--slug",
+      "db",
+    ]);
+    assert.equal(blocked.status, 1);
+    assert.match(blocked.stdout, /阶段提交 "阶段 2 \(主线\) 完成" 尚未处理/u);
+    assert.equal(project(["stagecommit", "skip"]).status, 0);
+    assert.equal(
+      project(["order", "new", "--kind", "selection", "--slug", "db"]).status,
+      0,
+    );
   },
 );
 

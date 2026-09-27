@@ -55,7 +55,7 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/u;
 
 /**
  * @typedef {object} OrchestratorRecord 编排会话的登记信息.
- * @property {{id: string, claimedAt: string} | undefined} current 当前编排会话; 还没有会话接管时为 undefined.
+ * @property {{id: string, claimedAt: string, address?: string, addressedAt?: string} | undefined} current 当前编排会话, 含登记的消息地址与登记时间; 还没有会话接管时为 undefined.
  * @property {string[]} former 曾经的编排会话, 按接管的先后排列; 这些会话不会被登记为执行会话.
  */
 

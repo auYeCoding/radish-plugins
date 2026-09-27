@@ -124,6 +124,21 @@ const ORCHESTRATOR_COMPOUND_REASON =
   "编排会话不运行复合命令 (含管道, 重定向或多条命令串联); 请一次只运行一条插件命令或只读 git 命令.";
 
 /**
+ * git 与子命令之间带了全局参数 (例如 `-C <目录>`) 时的补充说明. 只读判断按
+ * 紧跟 git 的子命令进行, 带全局参数的写法认不出子命令, 一律拒绝.
+ * @type {string}
+ */
+const GIT_GLOBAL_OPTION_HINT =
+  "git 命令不带 `-C <目录>` 等全局参数: 工作目录已是仓库根目录, 直接写 `git <子命令> ...`.";
+
+/**
+ * 验收子代理运行复合命令时的拒绝理由.
+ * @type {string}
+ */
+const REVIEWER_COMPOUND_REASON =
+  "验收子代理一次只运行一条命令, 不用 `&&`, `;`, `|` 串联, 也不用重定向; 请把只读 git 命令逐条分开运行.";
+
+/**
  * 编排会话运行白名单之外的命令时的拒绝理由.
  * @type {string}
  */
@@ -183,8 +198,11 @@ export function checkOrchestratorCommand(command, context) {
   if (NAVIGATOR_COMMAND_PATTERN.test(trimmed) || isReadOnlyGit(trimmed)) {
     return undefined;
   }
-  return context.isCommitStep && COMMIT_STEP_GIT_PATTERN.test(trimmed)
-    ? `守卫不放行这种写法. ${COMMIT_COMMAND_FORMS}`
+  if (context.isCommitStep && COMMIT_STEP_GIT_PATTERN.test(trimmed)) {
+    return `守卫不放行这种写法. ${COMMIT_COMMAND_FORMS}`;
+  }
+  return hasGitGlobalOption(trimmed)
+    ? `${ORCHESTRATOR_COMMAND_REASON} ${GIT_GLOBAL_OPTION_HINT}`
     : ORCHESTRATOR_COMMAND_REASON;
 }
 
@@ -202,7 +220,7 @@ export function checkReviewerCommand(command, context) {
     return undefined;
   }
   if (COMPOUND_PATTERN.test(trimmed)) {
-    return REVIEWER_COMMAND_REASON;
+    return REVIEWER_COMPOUND_REASON;
   }
   if (isReadOnlyGit(trimmed)) {
     return undefined;
@@ -210,7 +228,20 @@ export function checkReviewerCommand(command, context) {
   if (context.canVerifyEvidence === true && isEvidenceCommand(trimmed)) {
     return undefined;
   }
-  return REVIEWER_COMMAND_REASON;
+  return hasGitGlobalOption(trimmed)
+    ? `${REVIEWER_COMMAND_REASON} ${GIT_GLOBAL_OPTION_HINT}`
+    : REVIEWER_COMMAND_REASON;
+}
+
+/**
+ * 判断 git 命令是否在子命令之前带了全局参数, 例如 `git -C <目录> status`.
+ *
+ * @param {string} command 去掉首尾空白的命令.
+ * @returns {boolean} 带全局参数时返回 true.
+ */
+function hasGitGlobalOption(command) {
+  const words = command.split(/\s+/u);
+  return words[0] === "git" && (words[1]?.startsWith("-") ?? false);
 }
 
 /**

@@ -55,6 +55,8 @@ export const COMMAND_ACCESS = Object.freeze({
   standards: ORCHESTRATOR_ONLY,
   codecheck: ORCHESTRATOR_ONLY,
   tools: ORCHESTRATOR_ONLY,
+  address: ORCHESTRATOR_ONLY,
+  stagecommit: ORCHESTRATOR_ONLY,
 });
 
 /**

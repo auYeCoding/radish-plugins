@@ -19,6 +19,7 @@ import { SPEC_FILE } from "./paths.mjs";
  * @typedef {object} SectionSpec 回复或记录文件中一个二级节的规格.
  * @property {string} title 节标题, 4 个汉字.
  * @property {string[]} [keys] 键值行的键名, 按顺序; 省略时节内容不固定.
+ * @property {Record<string, string>} [presets] 骨架中预填的键值, 键为键名. 用于写骨架时还不知道, 或由固定说明代替的值; 预填值不是占位标记, 写入校验放行.
  * @property {TableSpec} [table] 节中必须有的表格; 与 keys 不同时使用.
  * @property {boolean} [allowLaunchPrompt] 是否允许放启动提示词代码块.
  * @property {string} [source] 内容来源; 为 "order" 时正文摘录自当前工单文件的同名节, 不由编排会话撰写.

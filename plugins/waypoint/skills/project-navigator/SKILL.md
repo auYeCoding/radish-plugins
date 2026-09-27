@@ -24,7 +24,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 
 ## 每一步的固定动作
 
-1. 看本文末尾 "当前状态" 中的 "下一动作"; 会话中途用 `status` 命令重新查询. 进度以脚本输出为准, 不凭记忆判断.
+1. 看本文末尾 "当前状态" 中的 "下一动作"; 会话中途用 `status` 命令重新查询. 进度以脚本输出为准, 不凭记忆判断. "当前状态" 有 "地址登记" 一行时, 先按它登记编排地址.
 2. 按下方路由表, 用 Read 读取项目中 `.navigator/bin/references/` 下对应的参考文件 (由 init 复制), 按其中的步骤操作. 初始化之前不读参考文件, 回复骨架由 `reply` 命令给出.
 3. 状态只用插件命令修改. 记录文件先用 `template` 取得骨架再写. 命令需要的中文内容, 先用 Write 写成 `.navigator/drafts/` 下的 JSON 草稿, 再用 `--from` 传入.
 4. 每条回复之前, 运行 `reply <编号> --option <组号>` 取得填写要求与骨架, 按要求在骨架上填写. 回复从一级标题写起, 前面不加引导语. "当前进展" 各行原样保留, 标题, 键名, 选项块与总结块都不改. 人类总结的正文不超过 80 字, 只写结论与用户要做的选择. 回复结束时 hook 校验版式与写作规则, 不合格会被打回一次.
@@ -40,7 +40,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 | 首次接入之后, 阶段 0 盘点, 阶段 1 立项, 阶段 2 | `intake.md`           |
 | 立项中的头脑风暴                               | `brainstorm.md`       |
 | 阶段 3 选型与规范对照                          | `selection.md`        |
-| 阶段 4 骨架, 阶段 5 切片, 任何工单往返         | `order-loop.md`       |
+| 阶段 4 骨架, 阶段 5 切片, 工单往返, 阶段提交   | `order-loop.md`       |
 | 需求变更, 里程复查, 阶段 6 收尾                | `change-milestone.md` |
 | 恢复进度, 验收异常, 运行受阻, 升级             | `recovery.md`         |
 | 体检                                           | `checkup.md`          |
@@ -52,30 +52,32 @@ allowed-tools: Bash(node *) PowerShell(node *)
 
 初始化之后, 命令一律写成 `node .navigator/bin/runtime/navigator.mjs <命令>`. 按原样书写, 路径两侧不加引号, 项目配置中的放行规则按这个写法匹配. 一次只运行一条命令, 不用 `&&` 或管道串联, 守卫会拒绝复合命令.
 
-| 命令                                                     | 用途与草稿格式                                                                                             |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `status`                                                 | 查看位置, 对账结果与下一动作                                                                               |
-| `reply <编号> [--option <组号>]`                         | 取得填写要求与骨架; "下一动作" 已写出参数时照抄; 不带编号时列出全部类型与编号                              |
-| `template <种类> [--option <结构>]`                      | 取得记录文件骨架; 种类见 files.md                                                                          |
-| `stage <编号>`, `step <标识>`                            | 记录阶段与步骤                                                                                             |
-| `skip <编号> --from <草稿>`                              | 记录用户认可的跳过: `{"reason"}`                                                                           |
-| `roadmap --from <草稿>`                                  | 更新推进路线: `{"milestones": [{"name", "goal", "metrics": [], "slices": [{"name"}]}]}`, 已有条目保留 `id` |
-| `milestone <编号> <状态>`, `slice <编号> <状态>`         | 状态为 pending, active, done                                                                               |
-| `order new --kind <类型> --slug <短名> [--slice <编号>]` | 新建工单                                                                                                   |
-| `order set <状态>`                                       | 转换工单状态                                                                                               |
-| `order tests --from <草稿>`                              | 登记可运行的测试命令: `{"commands": []}`                                                                   |
-| `review-brief`, `research-brief`                         | 取得验收与调研的委派提示词                                                                                 |
-| `evidence`                                               | 从原仓库取回选型回执证据表引用的源码行; 由验收子代理运行, 编排会话不用它自己核验                           |
-| `risk add --from <草稿>`                                 | 登记风险: `{"description", "severity": "high/medium/low", "source", "handling"}`                           |
-| `risk set <编号> <状态> [--from <草稿>]`                 | 状态为 open, investigating, resolved, accepted; 草稿 `{"handling"}`                                        |
-| `decision add --from <草稿>`                             | 登记决策: `{"title"}`                                                                                      |
-| `decision supersede <编号> --by <编号>`                  | 标记决策被取代                                                                                             |
-| `change add --from <草稿>`                               | 登记变更: `{"title", "status": "accepted/deferred/dropped"}`                                               |
-| `check [文件...]`                                        | 体检的脚本检查                                                                                             |
-| `standards --from <草稿>`                                | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                     |
-| `codecheck set --from <草稿>`                            | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                       |
-| `tools set --from <草稿>`                                | 登记用户授权的 MCP 取证工具: `{"tools": []}`, 写完整工具名; 只有验收子代理可以调用                         |
-| `snapshots`, `restore <提交>`, `adopt`                   | 处理验收异常                                                                                               |
+| 命令                                                        | 用途与草稿格式                                                                                             |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `status`                                                    | 查看位置, 对账结果与下一动作                                                                               |
+| `reply <编号> [--option <组号>]`                            | 取得填写要求与骨架; "下一动作" 已写出参数时照抄; 不带编号时列出全部类型与编号                              |
+| `template <种类> [--option <结构>]`                         | 取得记录文件骨架; 种类见 files.md                                                                          |
+| `stage <编号>`, `step <标识>`                               | 记录阶段与步骤                                                                                             |
+| `skip <编号> --from <草稿>`                                 | 记录用户认可的跳过: `{"reason"}`                                                                           |
+| `roadmap --from <草稿>`                                     | 更新推进路线: `{"milestones": [{"name", "goal", "metrics": [], "slices": [{"name"}]}]}`, 已有条目保留 `id` |
+| `milestone <编号> <状态>`, `slice <编号> <状态>`            | 状态为 pending, active, done                                                                               |
+| `order new --kind <类型> --slug <短名> [--slice <编号>]`    | 新建工单; 不带 `--slice` 时挂在当前切片                                                                    |
+| `order set <状态>`                                          | 转换工单状态                                                                                               |
+| `order tests --from <草稿>`                                 | 登记可运行的测试命令: `{"commands": []}`                                                                   |
+| `review-brief`, `research-brief`                            | 取得验收与调研的委派提示词                                                                                 |
+| `evidence`                                                  | 从原仓库取回选型回执证据表引用的源码行; 由验收子代理运行, 编排会话不用它自己核验                           |
+| `risk add --from <草稿>`                                    | 登记风险: `{"description", "severity": "high/medium/low", "source", "handling"}`                           |
+| `risk set <编号> <状态> [--from <草稿>]`                    | 状态为 open, investigating, resolved, accepted; 草稿 `{"handling"}`                                        |
+| `decision add --from <草稿>`                                | 登记决策: `{"title"}`                                                                                      |
+| `decision supersede <编号> --by <编号>`                     | 标记决策被取代                                                                                             |
+| `change add --from <草稿>`                                  | 登记变更: `{"title", "status": "accepted/deferred/dropped"}`                                               |
+| `check [文件...]`                                           | 体检的脚本检查                                                                                             |
+| `standards --from <草稿>`                                   | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                     |
+| `codecheck set --from <草稿>`                               | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                       |
+| `tools set --from <草稿>`                                   | 登记用户授权的 MCP 取证工具: `{"tools": []}`, 写完整工具名; 只有验收子代理可以调用                         |
+| `stagecommit start`, `stagecommit done`, `stagecommit skip` | 阶段提交: 用户选择提交后开始, 提交后收尾; 选择暂不提交时跳过                                               |
+| `address set --from <草稿>`                                 | 登记编排地址: `{"address"}`, 取 ListAgents 输出第一行中本会话的名称                                        |
+| `snapshots`, `restore <提交>`, `adopt`                      | 处理验收异常                                                                                               |
 
 ## 子代理
 

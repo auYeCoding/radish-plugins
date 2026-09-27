@@ -14,10 +14,10 @@ import { navigatorPath } from "./paths.mjs";
 
 /**
  * 状态文件结构的版本号; 结构变化时加一, 并在读取时迁移.
- * 版本 3 把编排会话的登记移出状态文件.
+ * 版本 3 把编排会话的登记移出状态文件; 版本 4 增加待处理的阶段提交.
  * @type {number}
  */
-export const STATE_SCHEMA_VERSION = 3;
+export const STATE_SCHEMA_VERSION = 4;
 
 /**
  * 初始化状态: 已写入配置, 等待自检确认 hook 生效.
@@ -76,6 +76,7 @@ export class StateConflictError extends Error {
  * @property {import("./code-checks.mjs").CodeChecks | null} codeChecks 登记的代码检查命令; 尚未登记时为 null.
  * @property {string[]} evidenceTools 用户授权验收子代理调用的 MCP 取证工具.
  * @property {string | null} lastCommit 记录中的最近提交.
+ * @property {import("./commit-step.mjs").StageCommit | null} stageCommit 待处理的阶段提交; 没有时为 null.
  * @property {string} [pendingAnomaly] 尚未处理的对账异常类别; 存在时暂停快照与其它命令.
  * @property {string} lastAction 最后一个动作的中文描述.
  * @property {string} updatedAt 最后写入时间.
@@ -117,6 +118,7 @@ export function createInitialState({ skillVersion, now }) {
     codeChecks: null,
     evidenceTools: [],
     lastCommit: null,
+    stageCommit: null,
     lastAction: "初始化",
     updatedAt: now,
     skipped: [],
@@ -231,6 +233,7 @@ function normalizeState(raw) {
     changes: raw.changes ?? [],
     codeChecks: raw.codeChecks ?? null,
     evidenceTools: raw.evidenceTools ?? [],
+    stageCommit: raw.stageCommit ?? null,
     skipped: raw.skipped ?? [],
   };
 }

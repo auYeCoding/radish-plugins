@@ -23,6 +23,7 @@ import {
   SKILL_ROOT,
   STATE_FILE,
 } from "./paths.mjs";
+import { listUncommittedPaths } from "./repo.mjs";
 
 /**
  * 替换记录文件路径模式中 "*" 的示例路径段, 只用于检查忽略规则.
@@ -40,6 +41,19 @@ export const COMMITTED_PATHSPECS = Object.freeze([
   PROJECT_SETTINGS_FILE,
   ENGINEERING_RULES_FILE,
 ]);
+
+/**
+ * 列出尚未入库的技能产物: 状态目录与插件管理的项目配置中相对 HEAD 有改动的
+ * 文件, 不含状态文件. 状态文件每条命令都会改写, 只有它改动时不值得单独提交.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @returns {string[]} 以正斜杠分隔的项目相对路径.
+ */
+export function listUncommittedProducts(worktreeRoot) {
+  return listUncommittedPaths(worktreeRoot, COMMITTED_PATHSPECS).filter(
+    (file) => file !== STATE_FILE,
+  );
+}
 
 /**
  * 列出必须能入库的项目相对路径, 以正斜杠分隔, 不重复.

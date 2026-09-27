@@ -3,6 +3,7 @@
  * 提交步骤中放行的提交写法, 执行会话的身份与对齐状态.
  */
 
+import { isStageCommitting } from "./commit-step.mjs";
 import { COMMIT_COMMAND_FORMS } from "./guard-commands.mjs";
 import { COMMIT_STEP_STATUSES } from "./guard.mjs";
 import {
@@ -34,7 +35,9 @@ export function orchestratorReminder(state, spec) {
   const position = spec.format.progressKeys
     .map((key, index) => `${key} ${values[index]}`)
     .join(", ");
-  const isCommitStep = COMMIT_STEP_STATUSES.includes(state.order?.status ?? "");
+  const isCommitStep =
+    COMMIT_STEP_STATUSES.includes(state.order?.status ?? "") ||
+    isStageCommitting(state);
   return [
     `[project-navigator] 你是编排会话. ${position}.`,
     `禁令: ${ORCHESTRATOR_RULES.map((rule, index) => `${index + 1}. ${rule}`).join("; ")}.`,

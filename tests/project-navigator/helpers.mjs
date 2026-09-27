@@ -126,7 +126,8 @@ export function replySkeleton(output) {
 }
 
 /**
- * 在临时仓库中完成初始化与自检, 使指定会话成为编排会话.
+ * 在临时仓库中完成初始化与自检, 使指定会话成为编排会话. 初始化后的阶段提交
+ * 选暂不提交, 让各测试自己决定提交什么.
  *
  * @param {string} root 仓库根目录.
  * @param {string} sessionId 编排会话编号.
@@ -148,6 +149,7 @@ export function initializeProject(root, sessionId) {
   if (!verify.stdout.includes("通过, 防护已生效")) {
     throw new Error(`自检未通过: ${verify.stdout}`);
   }
+  project(["stagecommit", "skip"]);
   runCommand(PLUGIN_COMMAND, ["enter", "--session", sessionId], root);
   return { project, hook };
 }

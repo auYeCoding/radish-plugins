@@ -41,8 +41,23 @@ export function progressValues(state, spec) {
     formatStage(state.stage, spec),
     formatPosition(state.milestones, state.milestone, empty),
     formatPosition(state.slices, state.slice, empty),
-    state.order?.id ?? empty,
+    state.order?.id ?? formatNoOrder(state.orders, empty),
   ];
+}
+
+/**
+ * 没有当前工单时的写法: 有已结束的工单时附上最近一张的编号与结束状态, 例如
+ * 验收不通过之后的验收报告仍能看出说的是哪张工单.
+ *
+ * @param {readonly {id: string, status: string}[] | undefined} orders 已结束的工单摘要.
+ * @param {string} empty 字段不适用时写的值.
+ * @returns {string} 当前工单一项的值.
+ */
+function formatNoOrder(orders, empty) {
+  const last = orders?.at(-1);
+  return last === undefined
+    ? empty
+    : `${empty} (上一张 ${last.id} 已结束, ${last.status})`;
 }
 
 /**
@@ -186,7 +201,8 @@ export function renderOptionBlock(optionSet) {
 
 /**
  * 生成一个节的骨架; 允许放启动提示词的节在提供了提示词时直接填好;
- * 表格节给出表头与一行占位; 没有键名的节可以在占位标记之前预填若干行.
+ * 表格节给出表头与一行占位; 键值行使用规格中的预填值, 其余留占位标记;
+ * 没有键名的节可以在占位标记之前预填若干行.
  *
  * @param {import("./spec.mjs").SectionSpec} section 节规格.
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
@@ -218,7 +234,9 @@ function renderSection(section, spec, launchPrompt, prefill = []) {
   const body =
     section.keys === undefined
       ? [...prefill, PLACEHOLDER]
-      : section.keys.map((key) => `- ${key}: ${PLACEHOLDER}`);
+      : section.keys.map(
+          (key) => `- ${key}: ${section.presets?.[key] ?? PLACEHOLDER}`,
+        );
   return [`## ${section.title}`, "", ...body];
 }
 
