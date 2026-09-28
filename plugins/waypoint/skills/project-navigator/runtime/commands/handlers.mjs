@@ -76,6 +76,7 @@ export const COMMAND_HANDLERS = Object.freeze({
   stage: runStage,
   step: runStage,
   skip: runStage,
+  finish: runStage,
   roadmap: runPlan,
   milestone: runPlan,
   slice: runPlan,

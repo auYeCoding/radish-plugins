@@ -6,7 +6,7 @@
  * 命令:
  * - 初始化与进入: init [--session <编号>] [--verify], uninstall, enter --session <编号>, status
  * - 骨架: reply <回复类型> [--option <组号>], template <文件种类> [--option <结构编号>]
- * - 阶段: stage <阶段编号>, step <步骤标识>, skip <阶段编号> --from <草稿>
+ * - 阶段: stage <阶段编号>, step <步骤标识>, skip <阶段编号> --from <草稿>, finish
  * - 推进路线: roadmap --from <草稿>, milestone <编号> <状态>, slice <编号> <状态>
  * - 工单: order new|set|tests, review-brief, research-brief
  * - 源码证据: evidence, evidence check <仓库> <版本> <路径> <行号>

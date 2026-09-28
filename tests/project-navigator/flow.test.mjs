@@ -1252,6 +1252,46 @@ projectTest(
   },
 );
 
+projectTest("流程: 项目收尾时确认收尾, 收尾记录经阶段提交入库", (context) => {
+  const { root, project } = context;
+  commitPaths(root, [".navigator", ".claude/settings.json"], "chore: 接入");
+  const early = project(["finish"]);
+  assert.equal(early.status, 1, "最后一个阶段之前不能确认收尾");
+  assert.match(early.stdout, /只能在阶段 6 确认收尾/u);
+  assert.equal(project(["stage", "6"]).status, 0);
+  assert.equal(
+    project(["step", "finished"]).status,
+    1,
+    "完成标记只由 finish 设置",
+  );
+  writeThroughHook(
+    context,
+    ORCHESTRATOR,
+    ".navigator/plan/main-flow.md",
+    fill(commandSkeleton(project(["template", "main-flow"]).stdout)),
+  );
+  const finished = project(["finish"]);
+  assert.equal(finished.status, 0, finished.stdout);
+  assert.match(finished.stdout, /下一动作: 回复 "阶段提交"/u);
+  assert.match(
+    project(["status"]).stdout,
+    /提交 "阶段 6 \(收尾\) 完成" 的成果/u,
+  );
+  assert.equal(project(["stagecommit", "start"]).status, 0);
+  commitPaths(root, [".navigator"], "docs: 项目收尾");
+  const done = project(["stagecommit", "done"]);
+  assert.equal(done.status, 0, done.stdout);
+  const status = project(["status"]).stdout;
+  assert.match(status, /下一动作: 项目已确认收尾/u);
+  assert.doesNotMatch(status, /继续阶段 6/u);
+  assert.doesNotMatch(
+    project(["finish"]).stdout,
+    /阶段提交/u,
+    "再次确认收尾时没有新的产物, 不请用户提交",
+  );
+  assert.equal(project(["stage", "5"]).status, 0, "继续迭代时回到阶段 5");
+});
+
 projectTest("流程: 记录被改动时先处理验收异常, 其它命令暂停", (context) => {
   const { root, project } = context;
   const brief = path.join(root, ".navigator", "plan", "notes.md");

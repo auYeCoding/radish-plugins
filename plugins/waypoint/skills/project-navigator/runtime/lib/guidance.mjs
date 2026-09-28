@@ -12,6 +12,8 @@ import {
 import { COMMIT_SKILL } from "./guard.mjs";
 import { APPROVAL_REPLY_TYPE, APPROVAL_STATUSES } from "./order-approval.mjs";
 import { shortHash } from "./repo.mjs";
+import { lastStageNumber } from "./spec.mjs";
+import { isProjectFinished } from "./workflow-plan.mjs";
 
 /**
  * 发布工单的回复类型.
@@ -119,6 +121,9 @@ export function nextAction(input) {
   }
   if (isNewSession) {
     return replyStep(spec, "恢复进度");
+  }
+  if (isProjectFinished(state, lastStageNumber(spec))) {
+    return `项目已确认收尾: 用户提出新需求或要继续迭代时, 按需求变更流程新开里程, 更新推进路线后运行 stage 5; 其它情况${replyStep(spec, "项目收尾")}`;
   }
   return state.order === null
     ? `继续阶段 ${state.stage} 的步骤 ${state.step}`

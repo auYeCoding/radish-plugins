@@ -62,7 +62,7 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 2. The skill sends the researcher subagent to look into similar products, users, industry practice, and constraints, then replies with "调研报告" (research report). Research needs web access, which Claude Code may ask you to approve, and usually takes a few minutes.
 3. Each "头脑风暴" (brainstorming) round asks at most three questions, often with candidate answers and a recommended one. Answer by number. The skill asks for your consent before converging.
 4. The skill writes the project brief and replies with "产出确认" (confirm output). The main flow and roadmap that follow are confirmed the same way.
-5. Whenever a new stage begins while records from the previous stage are still uncommitted, the skill first replies with "阶段提交", with the same options as after initialization. Until you answer, the skill neither enters another stage nor creates a work order.
+5. Whenever a new stage begins while records from the previous stage are still uncommitted, the skill first replies with "阶段提交", with the same options as after initialization. Until you answer, the skill neither enters another stage nor creates a work order. When you choose `A` in stage 6's "项目收尾" (project closing) to confirm the closing, the closing records go through a "阶段提交" as well.
 
 ### Selection and the first work order
 
