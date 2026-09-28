@@ -155,14 +155,7 @@ export function renderFileSkeleton({
   spec,
   prefills = {},
 }) {
-  const sections = (fileSpec.variants ?? [fileSpec.sections ?? []])[
-    variantIndex
-  ];
-  if (sections === undefined) {
-    throw new Error(
-      `render: "${fileSpec.title}" 没有第 ${variantIndex + 1} 种结构`,
-    );
-  }
+  const sections = fileSections(fileSpec, variantIndex);
   const lines = [
     `# ${fileSpec.title}`,
     ...(fileSpec.hasProgress === true
@@ -179,6 +172,26 @@ export function renderFileSkeleton({
     CODE_FENCE,
   ];
   return `${lines.join("\n")}\n`;
+}
+
+/**
+ * 取出某种记录文件的一种固定节序列.
+ *
+ * @param {import("./file-checks.mjs").FileSpec} fileSpec 文件规格.
+ * @param {number} variantIndex 使用第几种固定节序列, 从 0 开始.
+ * @returns {import("./spec.mjs").SectionSpec[]} 固定节序列.
+ * @throws {Error} 固定节序列不存在时.
+ */
+export function fileSections(fileSpec, variantIndex) {
+  const sections = (fileSpec.variants ?? [fileSpec.sections ?? []])[
+    variantIndex
+  ];
+  if (sections === undefined) {
+    throw new Error(
+      `render: "${fileSpec.title}" 没有第 ${variantIndex + 1} 种结构`,
+    );
+  }
+  return sections;
 }
 
 /**

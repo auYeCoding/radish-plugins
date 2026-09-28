@@ -1,6 +1,6 @@
 /**
- * @file 记录文件结构校验测试: 每种文件的骨架填写后合格, 常见违规被指出,
- * Edit 类写入先重建全文再校验.
+ * @file 记录文件结构校验测试: 每种文件的骨架填写后合格, 填写要求覆盖每个受校验的节,
+ * 常见违规被指出, Edit 类写入先重建全文再校验.
  */
 
 import assert from "node:assert/strict";
@@ -11,6 +11,10 @@ import {
   checkFile,
   findFileSpec,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/file-checks.mjs";
+import {
+  KEY_SECTION_RULE,
+  renderFileGuide,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/file-guide.mjs";
 import {
   PLACEHOLDER,
   renderFileSkeleton,
@@ -101,6 +105,48 @@ for (const [kind, fileSpec] of Object.entries(SPEC.files)) {
     });
   });
 }
+
+for (const [kind, fileSpec] of Object.entries(SPEC.files)) {
+  (fileSpec.variants ?? [fileSpec.sections ?? []]).forEach(
+    (sections, index) => {
+      test(`文件: ${kind} 第 ${index + 1} 种结构的填写要求列出每个键值节与表格节`, () => {
+        const guide = renderFileGuide({ fileSpec, sections, spec: SPEC }).join(
+          "\n",
+        );
+        assert.match(guide, /^填写要求:\n/u);
+        assert.match(guide, /\n骨架:\n$/u);
+        for (const section of sections) {
+          if (section.keys !== undefined || section.table !== undefined) {
+            assert.ok(guide.includes(`"${section.title}"`), section.title);
+          }
+        }
+      });
+    },
+  );
+}
+
+test("文件: 回执的填写要求写明键值节每个键只占一行, 多行内容放没有键名的节", () => {
+  const guide = renderFileGuide({
+    fileSpec: SPEC.files.receipt,
+    sections: SPEC.files.receipt.variants[0],
+    spec: SPEC,
+  }).join("\n");
+  assert.ok(guide.includes(KEY_SECTION_RULE));
+  assert.match(guide, /"测试记录"/u);
+  assert.match(guide, /表格与多行内容写进没有键名的节 \("开工核对"/u);
+});
+
+test("文件: 键值节中接了表格时被拒, 理由与填写要求一致", () => {
+  const text = filledFile("receipt").replace(
+    `- 测试结果: ${FILLER}\n`,
+    `- 测试结果: 见下表\n\n| 命令 | 退出码 |\n| --- | --- |\n| npm test | 0 |\n`,
+  );
+  assert.ok(
+    check("receipt", text).some((problem) =>
+      problem.includes('"## 测试记录" 应依次包含'),
+    ),
+  );
+});
 
 test("文件: init 写入的术语表结构合格", () => {
   assert.deepEqual(check("glossary", renderGlossarySeed(SPEC)), []);

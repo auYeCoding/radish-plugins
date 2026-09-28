@@ -1,5 +1,5 @@
 /**
- * @file template 命令: 输出某种记录文件的骨架, "当前进展" 已按状态填好;
+ * @file template 命令: 输出某种记录文件的填写要求与骨架, "当前进展" 已按状态填好;
  * 会改动代码的工单, 验收判据第一条预填代码检查判据.
  *
  * 用法: template <文件种类> [--option <结构编号>], 文件种类为规格 files 中的键,
@@ -7,7 +7,8 @@
  */
 
 import { orderSkeletonPrefills } from "../lib/code-checks.mjs";
-import { renderFileSkeleton } from "../lib/render.mjs";
+import { renderFileGuide } from "../lib/file-guide.mjs";
+import { fileSections, renderFileSkeleton } from "../lib/render.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import { loadSpec } from "../lib/spec.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
@@ -40,12 +41,21 @@ export function runTemplate({ positionals, values, cwd }) {
   const projectRoot = findRepositoryRoot(cwd);
   const state =
     projectRoot === undefined ? undefined : readStateIfValid(projectRoot);
+  const fileSpec = spec.files[kind];
+  const variantIndex = Number(values.option ?? "1") - 1;
   const skeleton = renderFileSkeleton({
-    fileSpec: spec.files[kind],
-    variantIndex: Number(values.option ?? "1") - 1,
+    fileSpec,
+    variantIndex,
     state,
     spec,
     prefills: kind === ORDER_FILE_KIND ? orderSkeletonPrefills(state) : {},
   });
-  return skeleton.trimEnd().split("\n");
+  return [
+    ...renderFileGuide({
+      fileSpec,
+      sections: fileSections(fileSpec, variantIndex),
+      spec,
+    }),
+    ...skeleton.trimEnd().split("\n"),
+  ];
 }

@@ -3,7 +3,7 @@
  * 以及回复结束时会被打回的写作规则.
  *
  * 要求在填写的时刻出现在模型眼前, 回复结束时的校验只做兜底. 内容全部由规格生成,
- * 与校验使用同一份阈值与词表.
+ * 与校验使用同一份阈值与词表. 输出格式与人类总结一条也供 template 的填写要求使用.
  */
 
 import { PLACEHOLDER } from "./render.mjs";
@@ -44,16 +44,32 @@ const WRITING_CHECKED_ROLE = "orchestrator";
  * @returns {string[]} 各行.
  */
 export function renderReplyGuide({ type, role, spec }) {
-  return [
-    "填写要求:",
-    "",
+  return wrapGuide([
     `- 回复从下面的 "# ${type}" 写起, 前面不加引导语. 只替换 "${PLACEHOLDER}", 标题, 键名, 当前进展与选项块原样保留.`,
-    `- 人类总结只写结论与要用户做的选择, 不超过 ${spec.format.summaryMaxLength} 字. ${UNIT_RULE}`,
+    summaryRule(spec.format),
     ...(role === WRITING_CHECKED_ROLE ? writingLines(spec.writing) : []),
-    "",
-    "骨架:",
-    "",
-  ];
+  ]);
+}
+
+/**
+ * 给填写要求的各条加上开头 "填写要求:" 与结尾 "骨架:", 其后紧接骨架.
+ * reply 与 template 两个命令的输出共用这一格式.
+ *
+ * @param {readonly string[]} rules 各条要求, 每条一行.
+ * @returns {string[]} 各行.
+ */
+export function wrapGuide(rules) {
+  return ["填写要求:", "", ...rules, "", "骨架:", ""];
+}
+
+/**
+ * 人类总结的写法与字数上限.
+ *
+ * @param {import("./spec.mjs").FormatSpec} format 全局版式规则.
+ * @returns {string} 一条要求.
+ */
+export function summaryRule(format) {
+  return `- 人类总结只写结论与要用户做的选择, 不超过 ${format.summaryMaxLength} 字. ${UNIT_RULE}`;
 }
 
 /**
