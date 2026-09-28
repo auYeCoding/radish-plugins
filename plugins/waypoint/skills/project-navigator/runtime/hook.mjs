@@ -7,8 +7,8 @@
  *   当前工单文件的会话登记为执行会话.
  * - 用户发消息, 会话开始与回复结束时: 先把待并入的写入并入快照. 这些时刻同一次
  *   工具调用的其它 hook (例如格式化) 都已结束, 快照拍到的是最终内容.
- * - 用户发消息时: 编排会话注入位置与禁令, 记下消息原文供核对用户测试输出, 并记下
- *   用户对工单审阅的选择; 被接管的原编排会话注入身份提醒; 识别启动提示词并登记
+ * - 用户发消息时: 编排会话注入位置与禁令 (编排地址未登记时附登记做法), 记下消息
+ *   原文供核对用户测试输出, 并记下用户对工单审阅的选择; 被接管的原编排会话注入身份提醒; 识别启动提示词并登记
  *   执行会话; 识别用户对开工对齐的选择; 工单已发布时, 从执行会话分叉出的会话
  *   沿用执行登记 (会话开始事件的兜底).
  * - 会话开始时 (含恢复, 分叉与上下文压缩后): 注入身份与位置提醒; 从当前编排会话
@@ -85,6 +85,7 @@ import {
 import {
   claimOrchestratorSession,
   findForkOrigin,
+  hasOrchestratorAddress,
   identifyRole,
   orchestratorMarker,
   readOrchestrators,
@@ -396,7 +397,14 @@ function handleUserPrompt(event) {
   if (role === "orchestrator") {
     appendPrompt(projectRoot, prompt, now);
     applyApprovalAnswer({ projectRoot, order: state.order, prompt, spec, now });
-    return contextOutput("UserPromptSubmit", orchestratorReminder(state, spec));
+    return contextOutput(
+      "UserPromptSubmit",
+      orchestratorReminder({
+        state,
+        spec,
+        isAddressRegistered: hasOrchestratorAddress(orchestrators),
+      }),
+    );
   }
   if (role === "superseded") {
     return contextOutput(
@@ -494,16 +502,22 @@ function handleSessionStart(event) {
     return contextOutput("SessionStart", executorForkReminder(inherited));
   }
   switch (origin === "former" ? "superseded" : role) {
-    case "orchestrator":
+    case "orchestrator": {
+      const isAddressRegistered = hasOrchestratorAddress(orchestrators);
       return contextOutput(
         "SessionStart",
         [
-          orchestratorResumeReminder(state, loadSpec()),
-          ...(input.source === RESUME_SOURCE
+          orchestratorResumeReminder({
+            state,
+            spec: loadSpec(),
+            isAddressRegistered,
+          }),
+          ...(input.source === RESUME_SOURCE && isAddressRegistered
             ? [`会话刚恢复, 编排地址可能已改变: ${ADDRESS_REGISTRATION_STEP}.`]
             : []),
         ].join("\n"),
       );
+    }
     case "superseded":
       return contextOutput(
         "SessionStart",

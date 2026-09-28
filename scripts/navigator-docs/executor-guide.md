@@ -26,7 +26,7 @@
 5. 实施: 只做工单 "工作范围" 中要做的事; 遵守工单 "执行守则" 与项目规范 `.claude/rules/engineering.md`.
 6. 自检: 逐条核对验收判据, 运行测试. 需要真实账号, 会产生费用或外部副作用的测试, 先按下方 "测试边界" 询问.
 7. 汇报: 回复 "执行完成" 或 "执行受阻", 由用户选择汇报方式:
-   - A. 文档汇报: 运行 `node .navigator/bin/runtime/navigator.mjs template receipt` 取得回执骨架 (选型工单加 `--option 2`), 填好后写入工单文件夹中的 `receipt.md`.
+   - A. 文档汇报: 运行 `node .navigator/bin/runtime/navigator.mjs template receipt` 取得填写要求与回执骨架 (选型工单加 `--option 2`), 按要求填好后写入工单文件夹中的 `receipt.md`.
    - B. 消息汇报: 同样按回执骨架写好回执全文. 先运行 `node .navigator/bin/runtime/navigator.mjs status`, 用 SendMessage 发给 "编排地址" 一行中的会话名称, 编排会话收到后写入回执文件. 地址未登记, 发送失败, 或同名会话不止一个时, 改为文档汇报: 把同样的回执写入 `receipt.md`, 并告诉用户 "消息未送达, 已写入回执, 请在编排会话中选 A".
 
 ## 模块划分

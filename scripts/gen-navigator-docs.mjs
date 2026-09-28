@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import * as prettier from "prettier";
 
 import { SHARED_COMMANDS } from "../plugins/waypoint/skills/project-navigator/runtime/lib/command-access.mjs";
+import { KEY_SECTION_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/file-guide.mjs";
 import {
   OPTION_LETTERS,
   renderOptionBlock,
@@ -327,7 +328,7 @@ function filesDocument({ spec }) {
   return [
     "# 记录文件",
     "",
-    `\`.navigator/\` 下的记录文件在写入前按以下结构校验, 不合格的写入会被拒绝. 新建文件前运行 \`template <种类>\` 取得骨架. 每个文件以一级标题开头, 以人类总结块结尾.`,
+    `\`.navigator/\` 下的记录文件在写入前按以下结构校验, 不合格的写入会被拒绝. 新建文件前运行 \`template <种类>\` 取得填写要求与骨架, 按要求在骨架上填写. 每个文件以一级标题开头, 以人类总结块结尾. ${KEY_SECTION_RULE}.`,
     ...Object.entries(spec.files).flatMap(([kind, fileSpec]) => [
       "",
       `## ${fileSpec.title}`,
@@ -397,6 +398,8 @@ function receiptStructures(spec) {
       (sections, index) =>
         `- ${names[index] ?? `结构 ${index + 1}`} (\`--option ${index + 1}\`): ${sections.map(sectionLabel).join("; ")}`,
     ),
+    "",
+    `括号中是键名. ${KEY_SECTION_RULE}, 否则写入被拒. 表格与多行内容写进没有键名的节, 完整输出放进证据文件后在值中写出路径.`,
   ];
 }
 

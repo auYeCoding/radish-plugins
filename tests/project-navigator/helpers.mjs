@@ -116,12 +116,12 @@ export function runCommand(command, args, cwd) {
 }
 
 /**
- * 从 reply 命令的输出中取出骨架: 跳过前面的填写要求, 从一级标题开始.
+ * 从 reply 或 template 命令的输出中取出骨架: 跳过前面的填写要求, 从一级标题开始.
  *
- * @param {string} output reply 命令的标准输出.
+ * @param {string} output reply 或 template 命令的标准输出.
  * @returns {string} 骨架.
  */
-export function replySkeleton(output) {
+export function commandSkeleton(output) {
   return output.slice(output.search(/^# /mu));
 }
 

@@ -159,6 +159,16 @@ export function recordOrchestratorAddress(worktreeRoot, { address, now }) {
 }
 
 /**
+ * 判断当前编排会话是否已登记编排地址.
+ *
+ * @param {import("./registry.mjs").OrchestratorRecord} record 编排会话登记.
+ * @returns {boolean} 已登记时返回 true; 还没有编排会话或没有登记地址时为 false.
+ */
+export function hasOrchestratorAddress(record) {
+  return record.current?.address !== undefined;
+}
+
+/**
  * 判断会话当前或曾经是编排会话; 这些会话不能登记为执行会话.
  *
  * @param {import("./registry.mjs").OrchestratorRecord} record 编排会话登记.

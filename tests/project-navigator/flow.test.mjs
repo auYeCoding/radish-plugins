@@ -18,7 +18,7 @@ import {
   commitPaths,
   createTemporaryRepository,
   initializeProject,
-  replySkeleton,
+  commandSkeleton,
   runCommand,
   runGit,
 } from "./helpers.mjs";
@@ -140,7 +140,9 @@ function writeThroughHook({ root, hook }, sessionId, relativePath, content) {
  * @returns {void}
  */
 function writeReview(context, folder, verdict, { isDecided = true } = {}) {
-  const skeleton = fill(context.project(["template", "review"]).stdout).replace(
+  const skeleton = fill(
+    commandSkeleton(context.project(["template", "review"]).stdout),
+  ).replace(
     `| ${FILLER} | ${FILLER} | ${FILLER} |`,
     `| ${FILLER} | ${verdict} | ${FILLER} |`,
   );
@@ -240,7 +242,7 @@ function writeOrder(context, folder, edit = (text) => text) {
     context,
     ORCHESTRATOR,
     `${folder}/order.md`,
-    edit(fill(context.project(["template", "order"]).stdout)),
+    edit(fill(commandSkeleton(context.project(["template", "order"]).stdout))),
   );
 }
 
@@ -253,7 +255,7 @@ function writeOrder(context, folder, edit = (text) => text) {
 function replyApproval({ project, hook }) {
   const skeleton = project(["reply", "approve"]);
   assert.equal(skeleton.status, 0, skeleton.stdout);
-  const reply = fill(replySkeleton(skeleton.stdout));
+  const reply = fill(commandSkeleton(skeleton.stdout));
   assert.equal(
     hook({
       session_id: ORCHESTRATOR,
@@ -342,7 +344,7 @@ function executorWritesBusinessFile({ root, hook }) {
  * @returns {string} 用户选 A 后注入执行会话的提醒.
  */
 function alignExecutor({ project, hook }) {
-  const alignment = fill(replySkeleton(project(["reply", "align"]).stdout));
+  const alignment = fill(commandSkeleton(project(["reply", "align"]).stdout));
   assert.equal(
     hook({
       session_id: EXECUTOR,
@@ -387,7 +389,7 @@ projectTest("流程: 路线与工单发布, 回复骨架带启动提示词", (co
   const { root, project, hook } = context;
   issueFirstOrder(context);
   assert.ok(existsSync(path.join(root, ".navigator", "plan", "roadmap.md")));
-  const reply = replySkeleton(project(["reply", "order"]).stdout);
+  const reply = commandSkeleton(project(["reply", "order"]).stdout);
   assert.match(reply, /^```markdown$/mu);
   assert.match(reply, /执行工单 0001\./u);
   const accepted = hook({
@@ -433,7 +435,7 @@ projectTest(
     assert.equal(unreviewed.status, 1);
     assert.match(unreviewed.stdout, /还没有经用户审阅/u);
 
-    const skeleton = replySkeleton(project(["reply", "approve"]).stdout);
+    const skeleton = commandSkeleton(project(["reply", "approve"]).stdout);
     assert.match(
       skeleton,
       /^- 文件路径: \.navigator\/orders\/0001-export-csv\/order\.md$/mu,
@@ -508,7 +510,7 @@ projectTest("流程: 发布后等待回执, 回执写入后转为读回执", (co
   const { project, hook } = context;
   const folder = issueFirstOrder(context);
   assert.match(project(["status"]).stdout, /回复 "等待回执" \(reply wait\)/u);
-  const reply = fill(replySkeleton(project(["reply", "wait"]).stdout));
+  const reply = fill(commandSkeleton(project(["reply", "wait"]).stdout));
   assert.match(reply, /^\[回执到位\]$/mu);
   const accepted = hook({
     session_id: ORCHESTRATOR,
@@ -520,7 +522,7 @@ projectTest("流程: 发布后等待回执, 回执写入后转为读回执", (co
     context,
     ORCHESTRATOR,
     `${folder}/receipt.md`,
-    fill(project(["template", "receipt"]).stdout),
+    fill(commandSkeleton(project(["template", "receipt"]).stdout)),
   );
   assert.match(project(["status"]).stdout, /工单 0001 已有回执/u);
 });
@@ -560,7 +562,7 @@ projectTest("流程: 执行会话登记, 对齐, 回执, 验收与提交", (cont
     context,
     EXECUTOR,
     `${folder}/receipt.md`,
-    fill(project(["template", "receipt"]).stdout),
+    fill(commandSkeleton(project(["template", "receipt"]).stdout)),
   );
   mkdirSync(path.join(root, "src"), { recursive: true });
   writeFileSync(path.join(root, "src", "app.js"), "export {};\n", "utf8");
@@ -656,7 +658,7 @@ projectTest(
       hook_event_name: "UserPromptSubmit",
       prompt: launchPrompt(context),
     });
-    const alignment = `对账相符, 计划已做完, 下面是开工对齐.\n\n---\n\n${fill(replySkeleton(project(["reply", "align"]).stdout))}`;
+    const alignment = `对账相符, 计划已做完, 下面是开工对齐.\n\n---\n\n${fill(commandSkeleton(project(["reply", "align"]).stdout))}`;
     assert.equal(
       hook({
         session_id: EXECUTOR,
@@ -799,7 +801,7 @@ projectTest(
 
     userSays(context, "运行结果:\nHTTP/2 200\nx-mid: aZ3f");
     const userTests = (output) =>
-      fill(project(["template", "user-tests"]).stdout).replace(
+      fill(commandSkeleton(project(["template", "user-tests"]).stdout)).replace(
         /```text/u,
         `## 测试 0001: 注册第一步\n\n- 测试命令: \`python main.py\`\n- 对应判据: 判据 2\n\n\`\`\`output\n${output}\n\`\`\`\n\n\`\`\`text`,
       );
@@ -965,6 +967,40 @@ projectTest(
 );
 
 projectTest(
+  "流程: 编排地址未登记时, 编排会话收到消息与恢复时都得到登记提醒, 登记后不再提醒",
+  (context) => {
+    const { root, project, hook } = context;
+    const reminderOf = (input) =>
+      hook({ session_id: ORCHESTRATOR, ...input }).output.hookSpecificOutput
+        .additionalContext;
+    const unregistered = /编排地址尚未登记.*address set --from/u;
+    assert.match(
+      reminderOf({ hook_event_name: "UserPromptSubmit", prompt: "A" }),
+      unregistered,
+    );
+    const resumedBefore = reminderOf({
+      hook_event_name: "SessionStart",
+      source: "resume",
+    });
+    assert.match(resumedBefore, unregistered);
+    assert.doesNotMatch(resumedBefore, /会话刚恢复/u);
+
+    const draft = writeDraft(root, "address.json", {
+      address: "编排会话 [e6b1dd]",
+    });
+    assert.equal(project(["address", "set", "--from", draft]).status, 0);
+    assert.doesNotMatch(
+      reminderOf({ hook_event_name: "UserPromptSubmit", prompt: "A" }),
+      /编排地址尚未登记/u,
+    );
+    assert.match(
+      reminderOf({ hook_event_name: "SessionStart", source: "resume" }),
+      /会话刚恢复, 编排地址可能已改变/u,
+    );
+  },
+);
+
+projectTest(
   "流程: 从执行会话分叉出的会话沿用执行登记, 对齐状态取分叉点时的状态",
   (context) => {
     const { root, project, hook } = context;
@@ -1010,7 +1046,7 @@ projectTest(
       context,
       "session-executor-forked",
       `${folder}/receipt.md`,
-      fill(project(["template", "receipt"]).stdout),
+      fill(commandSkeleton(project(["template", "receipt"]).stdout)),
     );
 
     const rewound = hook({
@@ -1120,7 +1156,9 @@ projectTest(
     const { root, project, hook } = context;
     const folder = issueFirstOrder(context);
     const receipt = path.join(root, folder, "receipt.md");
-    const content = fill(project(["template", "receipt"]).stdout);
+    const content = fill(
+      commandSkeleton(project(["template", "receipt"]).stdout),
+    );
     writeFileSync(receipt, content, "utf8");
     hook({
       session_id: EXECUTOR,
@@ -1136,7 +1174,9 @@ projectTest(
     assert.match(project(["status"]).stdout, /对账结果: 一致/u);
 
     const review = path.join(root, folder, "review.md");
-    const reviewText = fill(project(["template", "review"]).stdout);
+    const reviewText = fill(
+      commandSkeleton(project(["template", "review"]).stdout),
+    );
     assert.equal(project(["order", "set", "reviewing"]).status, 0);
     writeFileSync(review, reviewText, "utf8");
     hook({
@@ -1185,7 +1225,7 @@ projectTest(
       context,
       ORCHESTRATOR,
       ".navigator/plan/main-flow.md",
-      fill(project(["template", "main-flow"]).stdout),
+      fill(commandSkeleton(project(["template", "main-flow"]).stdout)),
     );
     const entered = project(["stage", "3"]);
     assert.equal(entered.status, 0, entered.stdout);

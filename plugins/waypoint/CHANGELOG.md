@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: a freshly initialized orchestrator is now asked to register its address. The "地址登记" (address registration) line appeared only when `enter` took over without stopping at setup, so the first invocation, which always stops at "初始设置" (initial setup), never showed it, and `init` and `status` did not either; message reports therefore always fell back to a document report. While no address is registered, the orchestrator now gets the registration steps with every message and at session start.
+- `project-navigator`: `template` prints fill-in requirements before the skeleton, as `reply` does: one line per key in keyed sections such as "测试记录" (test record), with nothing else under them, and which sections can hold tables and multi-line content. Before, only the write check knew the rule, so an executor that put a table under a key had its first write blocked. The executor guide and `files.md` state the same rule.
+
 ## [0.7.1] - 2026-09-27
 
 ### Fixed

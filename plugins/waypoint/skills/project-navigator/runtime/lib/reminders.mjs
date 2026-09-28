@@ -1,6 +1,7 @@
 /**
  * @file hook 注入给会话的提醒文字: 编排会话每次收到消息与上下文压缩后的位置与禁令,
- * 提交步骤中放行的提交写法, 执行会话的身份与对齐状态, 以及分叉后沿用执行登记.
+ * 编排地址未登记时的登记做法, 提交步骤中放行的提交写法, 执行会话的身份与对齐状态,
+ * 以及分叉后沿用执行登记.
  */
 
 import { isStageCommitting } from "./commit-step.mjs";
@@ -13,6 +14,7 @@ import {
   orderFilePath,
 } from "./paths.mjs";
 import { progressValues } from "./render.mjs";
+import { ADDRESS_REGISTRATION_STEP } from "./session-notices.mjs";
 
 /**
  * 编排会话每次收到消息时重申的三条禁令.
@@ -25,13 +27,22 @@ const ORCHESTRATOR_RULES = Object.freeze([
 ]);
 
 /**
- * 生成编排会话的提醒: 当前位置与三条禁令; 处于提交步骤时, 另附放行的提交写法.
+ * @typedef {object} OrchestratorReminderOptions 编排会话提醒的输入.
+ * @property {import("./state.mjs").NavigatorState} state 当前状态.
+ * @property {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @property {boolean} isAddressRegistered 当前编排会话是否已登记编排地址.
+ */
+
+/**
+ * 生成编排会话的提醒: 当前位置与三条禁令; 编排地址未登记时, 附登记的做法;
+ * 处于提交步骤时, 另附放行的提交写法. 地址登记放在这里而不只放在 enter 的输出中:
+ * 首次调用技能时 enter 停在初始设置, 输出中没有登记一行, 之后的 init 与 status
+ * 也不输出它, 编排地址会一直不登记.
  *
- * @param {import("./state.mjs").NavigatorState} state 当前状态.
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {OrchestratorReminderOptions} options 提醒的输入.
  * @returns {string} 提醒文字.
  */
-export function orchestratorReminder(state, spec) {
+export function orchestratorReminder({ state, spec, isAddressRegistered }) {
   const values = progressValues(state, spec);
   const position = spec.format.progressKeys
     .map((key, index) => `${key} ${values[index]}`)
@@ -42,6 +53,11 @@ export function orchestratorReminder(state, spec) {
   return [
     `[project-navigator] 你是编排会话. ${position}.`,
     `禁令: ${ORCHESTRATOR_RULES.map((rule, index) => `${index + 1}. ${rule}`).join("; ")}.`,
+    ...(isAddressRegistered
+      ? []
+      : [
+          `编排地址尚未登记, 执行会话无法消息汇报. 先${ADDRESS_REGISTRATION_STEP}, 再继续.`,
+        ]),
     ...(isCommitStep ? [COMMIT_COMMAND_FORMS] : []),
   ].join("\n");
 }
@@ -49,13 +65,12 @@ export function orchestratorReminder(state, spec) {
 /**
  * 生成上下文压缩后给编排会话的提醒: 在位置与禁令之外, 提示重新查询下一动作.
  *
- * @param {import("./state.mjs").NavigatorState} state 当前状态.
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {OrchestratorReminderOptions} options 提醒的输入.
  * @returns {string} 提醒文字.
  */
-export function orchestratorResumeReminder(state, spec) {
+export function orchestratorResumeReminder(options) {
   return [
-    orchestratorReminder(state, spec),
+    orchestratorReminder(options),
     `上下文刚被压缩: 先运行 node ${PROJECT_COMMAND_PATH} status 查看最后动作与下一动作, 再继续.`,
   ].join("\n");
 }
