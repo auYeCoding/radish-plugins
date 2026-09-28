@@ -117,7 +117,7 @@
 
 ## 阶段提交
 
-初始化自检通过后, 推进阶段时上一阶段还有没入库的技能产物, 以及项目收尾运行 `finish` 时收尾记录还没入库, 下一动作要求回复 "阶段提交". 没有处理之前, `stage` 与 `order new` 都会拒绝.
+初始化自检通过后, 推进阶段时上一阶段还有没入库的技能产物, 以及项目收尾运行 `finish` 时收尾记录或完成标记还没入库, 下一动作要求回复 "阶段提交". 没有处理之前, `stage` 与 `order new` 都会拒绝.
 
 1. 用只读的 `git status --short` 与 `git branch --show-current` 查询. "完成阶段" 写下一动作中引号里的成果名; "记录改动" 写 `.navigator/`, `.claude/settings.json` 与 `.claude/rules/engineering.md` 中的改动; "其它改动" 写这三处之外的改动, 没有时写 "无"; "当前分支" 写分支名.
 2. 用户选 A 或 B: 运行 `stagecommit start`, 再调用技能 `waypoint:commit-message`, 提交消息由该技能生成并展示:

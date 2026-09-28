@@ -5,6 +5,8 @@
  * skip 的草稿格式: {"reason": "跳过原因"}. 跳过必须先得到用户认可.
  * 进入新阶段, 或在最后一个阶段确认收尾时, 当前阶段有尚未入库的技能产物, 就登记
  * 一次阶段提交. 最后一个阶段之后不再推进, 收尾记录只能由 finish 登记的阶段提交入库.
+ * finish 写下的完成标记之后也没有别的提交能带上, 所以 HEAD 中的状态文件还没有
+ * 这个标记时, 即使收尾记录已经入库, finish 同样登记阶段提交.
  */
 
 import {
@@ -13,12 +15,15 @@ import {
   requestStageCommit,
 } from "../lib/commit-step.mjs";
 import { replyStep } from "../lib/guidance.mjs";
+import { STATE_FILE } from "../lib/paths.mjs";
+import { readGitBlob } from "../lib/repo.mjs";
 import { lastStageNumber } from "../lib/spec.mjs";
 import { listUncommittedProducts } from "../lib/tracked-paths.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import {
   enterStage,
   finishProject,
+  isProjectFinished,
   setStep,
   skipStage,
 } from "../lib/workflow-plan.mjs";
@@ -49,6 +54,7 @@ export function runStage({ command, positionals, values, cwd, now }) {
       context,
       finishProject(context.state, lastStage),
       now,
+      !isFinishCommitted(context.projectRoot, lastStage),
     );
   }
   const [argument] = positionals;
@@ -87,24 +93,27 @@ export function runStage({ command, positionals, values, cwd, now }) {
 }
 
 /**
- * 保存推进后的状态. 推进之前所在的阶段有尚未入库的技能产物时, 登记一次阶段提交,
- * 下一动作是请用户选择提交范围; 未处理的阶段提交会拦住下一次推进.
+ * 保存推进后的状态. 推进之前所在的阶段有尚未入库的技能产物, 或调用方要求带上
+ * 状态文件时, 登记一次阶段提交, 下一动作是请用户选择提交范围; 未处理的阶段提交
+ * 会拦住下一次推进.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文, 其中的状态是推进之前的状态.
  * @param {import("../lib/state.mjs").NavigatorState} advanced 推进后的状态.
  * @param {string} now 当前时间.
+ * @param {boolean} [mustCommitState] 推进写下的状态必须入库, 即使没有其它产物.
  * @returns {string[]} 输出各行.
  * @throws {WorkflowError} 有未处理的阶段提交时.
  */
-function saveWithStageCommit(context, advanced, now) {
+function saveWithStageCommit(context, advanced, now, mustCommitState = false) {
   const { state, spec, projectRoot } = context;
   const commitStep = replyStep(spec, STAGE_COMMIT_REPLY_TYPE);
   assertNoStageCommit(state, commitStep);
-  const hasProducts =
-    state.stage !== null && listUncommittedProducts(projectRoot).length > 0;
+  const needsCommit =
+    state.stage !== null &&
+    (mustCommitState || listUncommittedProducts(projectRoot).length > 0);
   const saved = saveState(
     context,
-    hasProducts
+    needsCommit
       ? requestStageCommit(
           advanced,
           `阶段 ${state.stage} (${spec.stages[state.stage]}) 完成`,
@@ -114,6 +123,26 @@ function saveWithStageCommit(context, advanced, now) {
   );
   return [
     ...resultLines(saved),
-    ...(hasProducts ? [`- 下一动作: ${commitStep}`] : []),
+    ...(needsCommit ? [`- 下一动作: ${commitStep}`] : []),
   ];
+}
+
+/**
+ * 判断 HEAD 中入库的状态文件是否已记下项目完成. 仓库还没有提交, 状态文件没有
+ * 入库或不是合法 JSON 时都算没有记下.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @param {number} lastStage 最后一个阶段的编号.
+ * @returns {boolean} 已记下时返回 true.
+ */
+function isFinishCommitted(projectRoot, lastStage) {
+  const blob = readGitBlob(projectRoot, `HEAD:${STATE_FILE}`);
+  if (blob === undefined) {
+    return false;
+  }
+  try {
+    return isProjectFinished(JSON.parse(blob.toString("utf8")), lastStage);
+  } catch {
+    return false;
+  }
 }

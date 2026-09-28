@@ -1292,6 +1292,36 @@ projectTest("流程: 项目收尾时确认收尾, 收尾记录经阶段提交入
   assert.equal(project(["stage", "5"]).status, 0, "继续迭代时回到阶段 5");
 });
 
+projectTest(
+  "流程: 收尾记录已入库时确认收尾, 完成标记仍经阶段提交入库",
+  (context) => {
+    const { root, project } = context;
+    commitPaths(root, [".navigator", ".claude/settings.json"], "chore: 接入");
+    assert.equal(project(["stage", "6"]).status, 0);
+    writeThroughHook(
+      context,
+      ORCHESTRATOR,
+      ".navigator/plan/main-flow.md",
+      fill(commandSkeleton(project(["template", "main-flow"]).stdout)),
+    );
+    commitPaths(root, [".navigator"], "docs: 项目收尾");
+    assert.match(project(["status"]).stdout, /对账结果: 陌生提交/u);
+    assert.equal(project(["adopt"]).status, 0);
+    const finished = project(["finish"]);
+    assert.equal(finished.status, 0, finished.stdout);
+    assert.match(
+      finished.stdout,
+      /下一动作: 回复 "阶段提交"/u,
+      "完成标记还没入库, 仍请用户提交",
+    );
+    assert.equal(project(["stagecommit", "start"]).status, 0);
+    commitPaths(root, [".navigator"], "chore: 确认收尾");
+    const done = project(["stagecommit", "done"]);
+    assert.equal(done.status, 0, done.stdout);
+    assert.match(project(["status"]).stdout, /下一动作: 项目已确认收尾/u);
+  },
+);
+
 projectTest("流程: 记录被改动时先处理验收异常, 其它命令暂停", (context) => {
   const { root, project } = context;
   const brief = path.join(root, ".navigator", "plan", "notes.md");
