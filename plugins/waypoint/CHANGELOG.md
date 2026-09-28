@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-09-28
+
 ### Fixed
 
 - `project-navigator`: the closing records of a project can now be committed when the user confirms the closing. Stage commits were requested only when entering a stage, but the "项目收尾" (project closing) section of `milestone-reviews.md` is written after entering stage 6, the last stage; after the user chose A, the record stayed in the working tree, the next action still said to continue stage 6, `stagecommit start` found no stage commit, and the guard denied `git add`. The new `finish` command, run after A, marks the project as finished and requests a stage commit when skill files are uncommitted; the next action then says the closing is confirmed.
@@ -133,7 +135,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.2...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.3...HEAD
+[0.7.3]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.3
 [0.7.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.2
 [0.7.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.1
 [0.7.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.0
