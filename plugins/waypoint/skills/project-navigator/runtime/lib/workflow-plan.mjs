@@ -23,6 +23,12 @@ export const PROGRESS_STATUS_LABELS = Object.freeze({
 const STEP_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 /**
+ * 项目完成时最后一个阶段的步骤标识, 只由 finish 命令设置.
+ * @type {string}
+ */
+export const FINISHED_STEP = "finished";
+
+/**
  * @typedef {object} RoadmapDraft 推进路线草稿: 编排会话写在 drafts/ 中的 JSON.
  * @property {{id?: string, name: string, goal: string, metrics: string[], slices: {id?: string, name: string}[]}[]} milestones 里程及其切片, 按顺序.
  */
@@ -53,7 +59,40 @@ export function setStep(state, step) {
   if (!STEP_PATTERN.test(step)) {
     throw new WorkflowError("步骤标识只能使用小写字母, 数字与连字符.");
   }
+  if (step === FINISHED_STEP) {
+    throw new WorkflowError(
+      `步骤 ${FINISHED_STEP} 只由 finish 命令设置: 用户在 "项目收尾" 中确认收尾后运行 finish.`,
+    );
+  }
   return { ...state, step, lastAction: `步骤 ${step}` };
+}
+
+/**
+ * 确认收尾, 项目完成: 只能在最后一个阶段进行, 步骤设为 FINISHED_STEP.
+ *
+ * @param {import("./state.mjs").NavigatorState} state 当前状态.
+ * @param {number} lastStage 最后一个阶段的编号, 取自模板规格.
+ * @returns {import("./state.mjs").NavigatorState} 新状态.
+ * @throws {WorkflowError} 当前不在最后一个阶段时.
+ */
+export function finishProject(state, lastStage) {
+  if (state.stage !== lastStage) {
+    throw new WorkflowError(
+      `项目只能在阶段 ${lastStage} 确认收尾, 当前在阶段 ${state.stage ?? "无"}.`,
+    );
+  }
+  return { ...state, step: FINISHED_STEP, lastAction: "确认收尾, 项目完成" };
+}
+
+/**
+ * 判断项目是否已确认收尾.
+ *
+ * @param {import("./state.mjs").NavigatorState} state 当前状态.
+ * @param {number} lastStage 最后一个阶段的编号, 取自模板规格.
+ * @returns {boolean} 已确认收尾时返回 true.
+ */
+export function isProjectFinished(state, lastStage) {
+  return state.stage === lastStage && state.step === FINISHED_STEP;
 }
 
 /**

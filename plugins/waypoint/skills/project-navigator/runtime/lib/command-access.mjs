@@ -38,6 +38,7 @@ export const COMMAND_ACCESS = Object.freeze({
   stage: ORCHESTRATOR_ONLY,
   step: ORCHESTRATOR_ONLY,
   skip: ORCHESTRATOR_ONLY,
+  finish: ORCHESTRATOR_ONLY,
   roadmap: ORCHESTRATOR_ONLY,
   milestone: ORCHESTRATOR_ONLY,
   slice: ORCHESTRATOR_ONLY,

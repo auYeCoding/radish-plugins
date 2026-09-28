@@ -57,7 +57,7 @@ allowed-tools: Bash(node *) PowerShell(node *)
 | `status`                                                    | 查看位置, 对账结果与下一动作                                                                               |
 | `reply <编号> [--option <组号>]`                            | 取得填写要求与骨架; "下一动作" 已写出参数时照抄; 不带编号时列出全部类型与编号                              |
 | `template <种类> [--option <结构>]`                         | 取得记录文件骨架; 种类见 files.md                                                                          |
-| `stage <编号>`, `step <标识>`                               | 记录阶段与步骤                                                                                             |
+| `stage <编号>`, `step <标识>`, `finish`                     | 记录阶段与步骤; `finish` 在 "项目收尾" 中用户选 A 后运行                                                   |
 | `skip <编号> --from <草稿>`                                 | 记录用户认可的跳过: `{"reason"}`                                                                           |
 | `roadmap --from <草稿>`                                     | 更新推进路线: `{"milestones": [{"name", "goal", "metrics": [], "slices": [{"name"}]}]}`, 已有条目保留 `id` |
 | `milestone <编号> <状态>`, `slice <编号> <状态>`            | 状态为 pending, active, done                                                                               |

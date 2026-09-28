@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: the closing records of a project can now be committed when the user confirms the closing. Stage commits were requested only when entering a stage, but the "项目收尾" (project closing) section of `milestone-reviews.md` is written after entering stage 6, the last stage; after the user chose A, the record stayed in the working tree, the next action still said to continue stage 6, `stagecommit start` found no stage commit, and the guard denied `git add`. The new `finish` command, run after A, marks the project as finished and requests a stage commit when skill files are uncommitted; the next action then says the closing is confirmed.
+
 ## [0.7.2] - 2026-09-28
 
 ### Fixed

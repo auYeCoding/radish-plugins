@@ -35,9 +35,13 @@ import {
   setOrderStatus,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-orders.mjs";
 import {
+  FINISHED_STEP,
   applyRoadmap,
   enterStage,
+  finishProject,
+  isProjectFinished,
   setProgressStatus,
+  setStep,
   skipStage,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-plan.mjs";
 import {
@@ -313,6 +317,21 @@ test("阶段: 跳过必须写明原因, 编号必须在范围内", () => {
   assert.equal(skipped.skipped[0].reason, "新项目没有已有代码");
 });
 
+test("阶段: 只在最后一个阶段确认收尾, 完成标记只由确认收尾设置", () => {
+  const state = stateWithRoadmap();
+  assert.throws(() => finishProject(state, LAST_STAGE), WorkflowError);
+  assert.throws(() => setStep(state, FINISHED_STEP), WorkflowError);
+  const closing = enterStage(state, LAST_STAGE, LAST_STAGE);
+  assert.ok(!isProjectFinished(closing, LAST_STAGE));
+  const finished = finishProject(closing, LAST_STAGE);
+  assert.equal(finished.step, FINISHED_STEP);
+  assert.ok(isProjectFinished(finished, LAST_STAGE));
+  assert.ok(
+    !isProjectFinished(enterStage(finished, 5, LAST_STAGE), LAST_STAGE),
+    "继续迭代回到阶段 5 后不再是完成状态",
+  );
+});
+
 test("记录: 风险, 决策与体检编号各自连续", () => {
   const withRisk = addRisk(stateWithRoadmap(), {
     description: "第三方接口限流",
@@ -585,5 +604,13 @@ test("下一动作: 按对账结果与工单状态给出", () => {
       reconciliation: { ...consistent, kind: "mismatch" },
     }),
     /使用第 3 组选项.+没有可用的恢复来源/u,
+  );
+  const finished = finishProject(
+    enterStage(stateWithRoadmap(), LAST_STAGE, LAST_STAGE),
+    LAST_STAGE,
+  );
+  assert.match(
+    nextAction({ ...base, state: finished }),
+    /项目已确认收尾: .+运行 stage 5; 其它情况回复 "项目收尾" \(reply closing\)/u,
   );
 });
