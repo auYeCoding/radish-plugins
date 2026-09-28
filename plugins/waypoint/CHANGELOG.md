@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-09-28
+
 ### Fixed
 
 - `project-navigator`: the finished marker that `finish` writes to `state.json` is now always committed. `finish` requested a stage commit only when skill files other than `state.json` were uncommitted, so when the closing records had already been committed (for example by hand while recovering from the 0.7.2 bug), the marker stayed in the working tree with no way to commit it: the next action said the closing was confirmed, `stagecommit start` found no stage commit, and the guard denied `git add`. `finish` now also requests a stage commit while the `state.json` in `HEAD` does not yet record the project as finished.
@@ -139,7 +141,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.3...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.4...HEAD
+[0.7.4]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.4
 [0.7.3]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.3
 [0.7.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.2
 [0.7.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.1
