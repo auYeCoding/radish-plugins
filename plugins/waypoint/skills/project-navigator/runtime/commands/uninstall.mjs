@@ -2,6 +2,7 @@
  * @file uninstall 命令: 移除本技能的 hook 配置, 保留全部编排记录.
  */
 
+import { readSettledState } from "../lib/commit-settlement.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import {
   PROJECT_LOCAL_SETTINGS_FILE,
@@ -13,7 +14,7 @@ import {
   removeNavigatorPermissions,
   writeSettingsFile,
 } from "../lib/settings.mjs";
-import { INIT_UNINSTALLED, readState, writeState } from "../lib/state.mjs";
+import { INIT_UNINSTALLED, writeState } from "../lib/state.mjs";
 
 /**
  * 执行 uninstall 命令.
@@ -44,7 +45,7 @@ export function runUninstall({ cwd, now }) {
       readSettingsFile(projectRoot, PROJECT_LOCAL_SETTINGS_FILE),
     ),
   );
-  const state = readState(projectRoot);
+  const state = readSettledState(projectRoot);
   if (state !== undefined) {
     writeState(
       projectRoot,

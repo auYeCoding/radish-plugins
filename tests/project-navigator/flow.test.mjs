@@ -153,6 +153,31 @@ function writeReview(context, folder, verdict, { isDecided = true } = {}) {
 }
 
 /**
+ * 列出状态目录中相对 HEAD 尚未入库的改动, 格式同 `git status --porcelain`.
+ *
+ * @param {string} root 项目根目录.
+ * @returns {string} 改动列表; 工作区干净时为空字符串.
+ */
+function uncommittedRecords(root) {
+  return runGit(root, ["status", "--porcelain", "--", ".navigator"]);
+}
+
+/**
+ * 编排会话调用提交技能时守卫的拒绝理由; 放行时为 undefined.
+ *
+ * @param {FlowContext} context 测试上下文.
+ * @returns {string | undefined} 拒绝理由.
+ */
+function commitSkillDenial({ hook }) {
+  return hook({
+    session_id: ORCHESTRATOR,
+    hook_event_name: "PreToolUse",
+    tool_name: "Skill",
+    tool_input: { skill: "waypoint:commit-message" },
+  }).output?.hookSpecificOutput?.permissionDecisionReason;
+}
+
+/**
  * 写入草稿文件并返回其相对路径. 草稿不纳入快照, 直接写入.
  *
  * @param {string} root 项目根目录.
@@ -608,9 +633,21 @@ projectTest("流程: 执行会话登记, 对齐, 回执, 验收与提交", (cont
   assert.match(incomplete.stdout, /\.claude\/settings\.json/u);
   const head = commitPaths(root, [".claude/settings.json"], "chore: 补交配置");
   assert.equal(project(["order", "set", "committed"]).status, 0);
+  assert.equal(uncommittedRecords(root), "", "提交完成后不改写状态文件");
+  assert.ok(
+    commitSkillDenial(context) !== undefined,
+    "提交完成后不再放行提交技能",
+  );
   const after = project(["status"]).stdout;
   assert.match(after, /对账结果: 一致/u);
   assert.match(after, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));
+  assert.match(after, /当前工单: 无 \(上一张 0001 已结束, committed\)/u);
+  assert.equal(project(["slice", "0001", "done"]).status, 0);
+  const saved = JSON.parse(
+    readFileSync(path.join(root, ".navigator", "state.json"), "utf8"),
+  );
+  assert.equal(saved.lastCommit, head, "下一次写入带上结算后的状态");
+  assert.equal(saved.order, null);
 });
 
 projectTest(
@@ -1098,6 +1135,12 @@ projectTest("流程: 提交后未记录时, 下次进入自动纳入自己的提
   ).stdout;
   assert.match(entered, /发现自己的提交, 已自动纳入/u);
   assert.match(entered, /当前工单: 无 \(上一张 0001 已结束, committed\)/u);
+  assert.equal(
+    uncommittedRecords(root),
+    "",
+    "自动纳入按提交结算, 不改写状态文件",
+  );
+  assert.match(project(["status"]).stdout, /对账结果: 一致/u);
 });
 
 projectTest(
@@ -1278,9 +1321,26 @@ projectTest("流程: 项目收尾时确认收尾, 收尾记录经阶段提交入
     /提交 "阶段 6 \(收尾\) 完成" 的成果/u,
   );
   assert.equal(project(["stagecommit", "start"]).status, 0);
-  commitPaths(root, [".navigator"], "docs: 项目收尾");
+  const head = commitPaths(root, [".navigator"], "docs: 项目收尾");
   const done = project(["stagecommit", "done"]);
   assert.equal(done.status, 0, done.stdout);
+  assert.equal(
+    uncommittedRecords(root),
+    "",
+    "收尾之后再没有提交, 状态文件不能留在工作区",
+  );
+  assert.ok(
+    commitSkillDenial(context) !== undefined,
+    "收尾提交完成后不再放行提交技能",
+  );
+  const entered = runCommand(
+    PLUGIN_COMMAND,
+    ["enter", "--session", ORCHESTRATOR],
+    root,
+  ).stdout;
+  assert.match(entered, /对账结果: 一致/u);
+  assert.match(entered, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));
+  assert.equal(uncommittedRecords(root), "", "进入时不改写状态文件");
   const status = project(["status"]).stdout;
   assert.match(status, /下一动作: 项目已确认收尾/u);
   assert.doesNotMatch(status, /继续阶段 6/u);
@@ -1318,6 +1378,7 @@ projectTest(
     commitPaths(root, [".navigator"], "chore: 确认收尾");
     const done = project(["stagecommit", "done"]);
     assert.equal(done.status, 0, done.stdout);
+    assert.equal(uncommittedRecords(root), "", "完成标记入库后工作区干净");
     assert.match(project(["status"]).stdout, /下一动作: 项目已确认收尾/u);
   },
 );

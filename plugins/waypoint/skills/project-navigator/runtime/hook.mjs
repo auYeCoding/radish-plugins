@@ -30,6 +30,7 @@ import path from "node:path";
 
 import { RESEARCH_FRAME, buildReviewBrief } from "./lib/briefs.mjs";
 import { orderTestCommands } from "./lib/code-checks.mjs";
+import { readSettledState } from "./lib/commit-settlement.mjs";
 import { isCommitInProgress, isStageCommitting } from "./lib/commit-step.mjs";
 import {
   ALIGNMENT_REPLY_TYPE,
@@ -91,7 +92,7 @@ import {
   readOrchestrators,
 } from "./lib/sessions.mjs";
 import { findReply, loadSpec } from "./lib/spec.mjs";
-import { INIT_UNINSTALLED, readState } from "./lib/state.mjs";
+import { INIT_UNINSTALLED } from "./lib/state.mjs";
 import { checkWriting, formatFinding } from "./lib/writing-checks.mjs";
 
 /**
@@ -206,15 +207,15 @@ function main() {
 }
 
 /**
- * 读取状态文件; 文件损坏时返回 undefined, 此时 hook 不做任何限制,
- * 让恢复命令能够运行.
+ * 读取状态文件并按提交结算记录结算, 提交完成之后守卫不再放行提交; 文件损坏时
+ * 返回 undefined, 此时 hook 不做任何限制, 让恢复命令能够运行.
  *
  * @param {string} projectRoot 项目根目录.
  * @returns {import("./lib/state.mjs").NavigatorState | undefined} 状态.
  */
 function readStateOrUndefined(projectRoot) {
   try {
-    return readState(projectRoot);
+    return readSettledState(projectRoot);
   } catch (error) {
     if (error instanceof SyntaxError) {
       return undefined;

@@ -1,13 +1,14 @@
 /**
  * @file 提交步骤: 工单验收后的提交, 以及初始化与阶段完成后的阶段提交.
  *
- * 提交步骤中 HEAD 会前进, 而 lastCommit 要等提交完成的命令才更新; 这期间提交
- * 历史与记录不一致是预期的, 改变状态的命令不把它当成对账异常.
+ * 提交步骤中 HEAD 会前进, 而 lastCommit 要等提交完成的命令结算后才更新; 这期间
+ * 提交历史与记录不一致是预期的, 改变状态的命令不把它当成对账异常. 结算不改写
+ * 状态文件, 见 commit-settlement.mjs.
  *
  * 阶段提交的流转: 初始化自检通过, 或推进阶段时有尚未入库的技能产物, 登记为
  * awaiting (等用户在 "阶段提交" 中选择); 用户选择提交后转为 committing, 经
- * commit-message 提交, 完成后清除登记并把 lastCommit 设为 HEAD; 用户选择暂不
- * 提交时直接清除登记.
+ * commit-message 提交, 完成后结算: 清除登记并把 lastCommit 设为 HEAD; 用户选择
+ * 暂不提交时直接清除登记.
  */
 
 import { WorkflowError } from "./workflow-error.mjs";
@@ -92,7 +93,7 @@ export function startStageCommit(state) {
 }
 
 /**
- * 提交完成: 清除阶段提交, 把 lastCommit 设为 HEAD.
+ * 提交完成后的状态: 清除阶段提交, 把 lastCommit 设为完成提交的 HEAD.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
  * @param {string} head 提交后的 HEAD.

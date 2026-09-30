@@ -5,6 +5,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { readSettledState } from "../lib/commit-settlement.mjs";
 import { isCommitInProgress } from "../lib/commit-step.mjs";
 import { COMMIT_SKILL } from "../lib/guard.mjs";
 import { ANOMALY_GUIDES, replyStep } from "../lib/guidance.mjs";
@@ -32,7 +33,7 @@ import {
   takeSnapshot,
 } from "../lib/snapshots.mjs";
 import { loadSpec } from "../lib/spec.mjs";
-import { INIT_ACTIVE, readState, writeState } from "../lib/state.mjs";
+import { INIT_ACTIVE, writeState } from "../lib/state.mjs";
 import { COMMITTED_PATHSPECS } from "../lib/tracked-paths.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 
@@ -55,10 +56,11 @@ export const SNAPSHOT_MODES = Object.freeze({
  */
 
 /**
- * 打开已初始化且防护生效的项目. 先把待并入快照的写入并入快照, 再核对记录:
- * 对账异常尚未处理, 状态目录在最近的快照之后被其它程序改动过 (例如 `git reset`
- * 回退了记录), 或提交历史出现了编排之外的变化 (例如用户手动提交) 时拒绝,
- * 以免命令在被回退或被改动的记录上继续推进. 处理异常的命令允许在异常时打开.
+ * 打开已初始化且防护生效的项目, 状态按提交结算记录结算. 先把待并入快照的写入
+ * 并入快照, 再核对记录: 对账异常尚未处理, 状态目录在最近的快照之后被其它程序
+ * 改动过 (例如 `git reset` 回退了记录), 或提交历史出现了编排之外的变化 (例如
+ * 用户手动提交) 时拒绝, 以免命令在被回退或被改动的记录上继续推进. 处理异常的
+ * 命令允许在异常时打开.
  *
  * @param {string} cwd 会话工作目录.
  * @param {{allowAnomaly?: boolean}} [options] 是否允许在对账异常时打开.
@@ -70,7 +72,7 @@ export function openProject(cwd, { allowAnomaly = false } = {}) {
   if (projectRoot === undefined) {
     throw new WorkflowError("当前目录不是 Git 仓库.");
   }
-  const state = readState(projectRoot);
+  const state = readSettledState(projectRoot);
   if (state === undefined || state.init.status !== INIT_ACTIVE) {
     throw new WorkflowError("项目尚未完成初始化, 请先运行 init 并通过自检.");
   }
@@ -108,7 +110,7 @@ export function openProjectForRecovery(cwd) {
 }
 
 /**
- * 读取状态文件; 文件不存在或不是合法 JSON 时返回 undefined.
+ * 读取状态文件并按提交结算记录结算; 文件不存在或不是合法 JSON 时返回 undefined.
  *
  * @param {string} projectRoot 项目根目录.
  * @returns {import("../lib/state.mjs").NavigatorState | undefined} 状态.
@@ -116,7 +118,7 @@ export function openProjectForRecovery(cwd) {
  */
 export function readStateIfValid(projectRoot) {
   try {
-    return readState(projectRoot);
+    return readSettledState(projectRoot);
   } catch (error) {
     if (error instanceof SyntaxError) {
       return undefined;

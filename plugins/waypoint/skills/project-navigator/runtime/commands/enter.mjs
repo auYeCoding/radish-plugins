@@ -10,6 +10,11 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import {
+  COMMIT_STEP_KINDS,
+  settleCommitStep,
+} from "../lib/commit-settlement.mjs";
+import { isCommitInProgress, isStageCommitting } from "../lib/commit-step.mjs";
 import { checkEnvironment } from "../lib/environment.mjs";
 import { ANOMALY_GUIDES, nextAction, replyStep } from "../lib/guidance.mjs";
 import {
@@ -241,25 +246,42 @@ function describeProgress({
 
 /**
  * 写入进入时的状态变化: 纳入自己的提交, 标记或清除对账异常.
- * 对账异常时不拍快照, 以免新快照掩盖异常.
+ * 对账异常时不拍快照, 以免新快照掩盖异常. 提交步骤中发现自己的提交时 (例如提交后
+ * 会话中断, 没有运行提交完成的命令), 按这个提交结算, 不改写已随提交入库的状态文件.
  *
  * @param {object} options 参数.
  * @param {import("./support.mjs").ProjectContext} options.context 项目上下文.
  * @param {import("../lib/reconcile.mjs").ReconcileResult} options.reconciliation 对账结果.
  * @param {boolean} options.isAnomaly 对账是否异常.
  * @param {string} options.now 当前时间.
- * @returns {import("../lib/state.mjs").NavigatorState} 写入后的状态; 没有变化时为原状态.
+ * @returns {import("../lib/state.mjs").NavigatorState} 写入或结算后的状态; 没有变化时为原状态.
  */
 function persistEntry({ context, reconciliation, isAnomaly, now }) {
   const { state } = context;
-  const adopted =
-    reconciliation.kind === "own" && reconciliation.head !== undefined
-      ? adoptCommit(
-          state,
-          reconciliation.head,
-          `纳入提交 ${shortHash(reconciliation.head)}`,
-        )
-      : state;
+  const isOwn =
+    reconciliation.kind === "own" && reconciliation.head !== undefined;
+  if (
+    isOwn &&
+    isCommitInProgress(state) &&
+    state.pendingAnomaly === undefined
+  ) {
+    return settleCommitStep({
+      projectRoot: context.projectRoot,
+      state,
+      kind: isStageCommitting(state)
+        ? COMMIT_STEP_KINDS.stage
+        : COMMIT_STEP_KINDS.order,
+      commit: reconciliation.head,
+      now,
+    });
+  }
+  const adopted = isOwn
+    ? adoptCommit(
+        state,
+        reconciliation.head,
+        `纳入提交 ${shortHash(reconciliation.head)}`,
+      )
+    : state;
   const anomaly = isAnomaly ? reconciliation.kind : undefined;
   const flagged =
     adopted.pendingAnomaly === anomaly

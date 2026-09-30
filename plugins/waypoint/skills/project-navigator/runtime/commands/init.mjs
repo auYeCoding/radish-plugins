@@ -11,6 +11,7 @@
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { readSettledState } from "../lib/commit-settlement.mjs";
 import { requestStageCommit } from "../lib/commit-step.mjs";
 import { checkEnvironment } from "../lib/environment.mjs";
 import {
@@ -53,7 +54,6 @@ import {
   INIT_ACTIVE,
   INIT_PENDING,
   createInitialState,
-  readState,
   writeState,
 } from "../lib/state.mjs";
 import {
@@ -136,7 +136,7 @@ function installNavigator(projectRoot, sessionId, now) {
     return ignoredPathLines(ignored);
   }
   const version = runtimeVersion();
-  const existing = readState(projectRoot);
+  const existing = readSettledState(projectRoot);
   createDirectories(projectRoot);
   copyRuntime(projectRoot, version);
   copyExecutorGuide(projectRoot);
@@ -201,7 +201,7 @@ function installSettings(projectRoot) {
  * @returns {string[]} 输出各行.
  */
 function verifyProbe(projectRoot, now) {
-  const state = readState(projectRoot);
+  const state = readSettledState(projectRoot);
   if (state === undefined) {
     return ["- 自检结果: 未通过, 尚未初始化, 请先运行 init"];
   }
