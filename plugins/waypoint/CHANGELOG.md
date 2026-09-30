@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-30
+
 ### Added
 
 - `project-navigator`: a "项目完成" (project complete) reply for a completed project whose records are all committed. It shows the last record commit, the working tree, and how far the branch is ahead of the remote, with options to continue iterating, push to the remote, or do nothing.
@@ -160,7 +162,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.5...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.8.0...HEAD
+[0.8.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.8.0
 [0.7.5]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.5
 [0.7.4]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.4
 [0.7.3]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.3
