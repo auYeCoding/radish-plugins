@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-09-29
+
 ### Fixed
 
 - `project-navigator`: finishing a commit step no longer leaves `state.json` modified in the working tree. `stagecommit start` and `order set committing` write `state.json`, the commit includes it, and `stagecommit done` or `order set committed` then rewrote the same file to record the new commit, a hash that cannot be known before the commit exists. The change was normally carried by the next commit, but after the project closing no commit follows, so a finished project kept an uncommitted `state.json`. Finishing a commit step now records which commit completed it in the local registry (`.git/navigator/commit-settlement.json`) instead of rewriting `state.json`; commands and hooks read the state as settled, and the settled state is written with the next state change. A project that already has the leftover change clears it with the stage commit that follows the upgrade.
@@ -145,7 +147,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.4...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.7.5...HEAD
+[0.7.5]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.5
 [0.7.4]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.4
 [0.7.3]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.3
 [0.7.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.2
