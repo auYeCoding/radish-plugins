@@ -1342,14 +1342,82 @@ projectTest("流程: 项目收尾时确认收尾, 收尾记录经阶段提交入
   assert.match(entered, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));
   assert.equal(uncommittedRecords(root), "", "进入时不改写状态文件");
   const status = project(["status"]).stdout;
-  assert.match(status, /下一动作: 项目已确认收尾/u);
-  assert.doesNotMatch(status, /继续阶段 6/u);
-  assert.doesNotMatch(
-    project(["finish"]).stdout,
-    /阶段提交/u,
-    "再次确认收尾时没有新的产物, 不请用户提交",
-  );
+  assert.match(status, /下一动作: 项目已完成, 没有待办: 回复 "项目完成"/u);
+  assert.doesNotMatch(status, /继续阶段 6|回复 "项目收尾"/u);
+  const again = project(["finish"]);
+  assert.equal(again.status, 0, again.stdout);
+  assert.match(again.stdout, /状态没有改动/u);
+  assert.doesNotMatch(again.stdout, /阶段提交/u, "没有新的改动, 不请用户提交");
+  assert.equal(uncommittedRecords(root), "", "再次确认收尾不写状态文件");
   assert.equal(project(["stage", "5"]).status, 0, "继续迭代时回到阶段 5");
+});
+
+projectTest(
+  "流程: 收尾之后状态文件被改写时, finish 登记阶段提交, 提交后工作区收敛",
+  (context) => {
+    const { root, project } = context;
+    commitPaths(root, [".navigator", ".claude/settings.json"], "chore: 接入");
+    assert.equal(project(["stage", "6"]).status, 0);
+    assert.equal(project(["finish"]).status, 0);
+    assert.equal(project(["stagecommit", "start"]).status, 0);
+    commitPaths(root, [".navigator"], "docs: 项目收尾");
+    assert.equal(project(["stagecommit", "done"]).status, 0);
+    writeFileSync(path.join(root, "README.md"), "# 收尾后改动\n", "utf8");
+    const manual = commitPaths(root, ["README.md"], "docs: 收尾后手动提交");
+    assert.match(project(["status"]).stdout, /对账结果: 陌生提交/u);
+    assert.equal(project(["adopt"]).status, 0);
+    assert.notEqual(uncommittedRecords(root), "", "纳入手动提交会改写状态");
+    assert.match(
+      project(["status"]).stdout,
+      /记录还有未入库的改动: 运行 finish/u,
+    );
+    const finished = project(["finish"]);
+    assert.equal(finished.status, 0, finished.stdout);
+    assert.match(finished.stdout, /下一动作: 回复 "阶段提交"/u);
+    assert.match(
+      project(["status"]).stdout,
+      /提交 "项目收尾后的记录更新" 的成果/u,
+    );
+    assert.equal(project(["stagecommit", "start"]).status, 0);
+    const head = commitPaths(root, [".navigator"], "chore: 收尾后的记录");
+    assert.equal(project(["stagecommit", "done"]).status, 0);
+    assert.equal(uncommittedRecords(root), "", "阶段提交之后工作区干净");
+    const status = project(["status"]).stdout;
+    assert.match(status, /对账结果: 一致/u);
+    assert.match(status, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));
+    assert.notEqual(head, manual);
+    assert.match(status, /回复 "项目完成"/u);
+    assert.match(project(["finish"]).stdout, /状态没有改动/u);
+    assert.equal(uncommittedRecords(root), "", "之后再运行 finish 也不写状态");
+  },
+);
+
+projectTest("流程: 编排会话只在项目完成且记录都已入库后推送", (context) => {
+  const { root, project, hook } = context;
+  const push = (command) =>
+    hook({
+      session_id: ORCHESTRATOR,
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command },
+    }).output?.hookSpecificOutput?.permissionDecisionReason;
+  commitPaths(root, [".navigator", ".claude/settings.json"], "chore: 接入");
+  assert.equal(project(["stage", "6"]).status, 0);
+  assert.match(push("git push") ?? "", /请用户自己运行 git push/u);
+  assert.equal(project(["finish"]).status, 0);
+  assert.equal(project(["stagecommit", "start"]).status, 0);
+  commitPaths(root, [".navigator"], "docs: 项目收尾");
+  assert.equal(project(["stagecommit", "done"]).status, 0);
+  assert.equal(push("git push"), undefined, "项目完成后放行推送");
+  assert.equal(push("git push origin master"), undefined);
+  assert.match(push("git push --force") ?? "", /请用户自己运行 git push/u);
+  assert.match(push("git push && git status") ?? "", /复合命令/u);
+  writeFileSync(path.join(root, ".navigator", "plan", "notes.md"), "改动\n");
+  assert.match(
+    push("git push") ?? "",
+    /请用户自己运行 git push/u,
+    "记录未入库",
+  );
 });
 
 projectTest(
@@ -1379,7 +1447,7 @@ projectTest(
     const done = project(["stagecommit", "done"]);
     assert.equal(done.status, 0, done.stdout);
     assert.equal(uncommittedRecords(root), "", "完成标记入库后工作区干净");
-    assert.match(project(["status"]).stdout, /下一动作: 项目已确认收尾/u);
+    assert.match(project(["status"]).stdout, /下一动作: 项目已完成/u);
   },
 );
 

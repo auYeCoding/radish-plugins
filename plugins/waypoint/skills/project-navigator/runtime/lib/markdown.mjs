@@ -72,6 +72,22 @@ export function parseMarkdown(source) {
 }
 
 /**
+ * 把指定行替换为空行, 行号保持不变; 换行符统一为 `\n`, 与 parseMarkdown 的行号一致.
+ * 用于把不参加写作规则检查的内容从全文中去掉.
+ *
+ * @param {string} source Markdown 文本.
+ * @param {ReadonlySet<number>} lines 要替换的行号, 从 1 开始.
+ * @returns {string} 替换后的文本.
+ */
+export function blankLines(source, lines) {
+  return source
+    .replace(/\r\n?/gu, "\n")
+    .split("\n")
+    .map((line, index) => (lines.has(index + 1) ? "" : line))
+    .join("\n");
+}
+
+/**
  * 判断匹配到的开启围栏是否有效: 反引号围栏的信息串中不能再含反引号.
  *
  * @param {RegExpExecArray} opening 开启围栏的匹配结果.

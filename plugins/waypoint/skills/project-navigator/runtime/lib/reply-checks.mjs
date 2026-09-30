@@ -14,7 +14,7 @@ import {
 } from "./layout.mjs";
 import { parseMarkdown } from "./markdown.mjs";
 import { PLACEHOLDER, progressValues } from "./render.mjs";
-import { findReply } from "./spec.mjs";
+import { findReply, isFreeformSection } from "./spec.mjs";
 
 /**
  * 选项行的格式: "A. 选项文字".
@@ -170,7 +170,8 @@ function checkSections(sections, reply, spec, state) {
 }
 
 /**
- * 判断节中的条目是否允许出现: 代码块只在允许启动提示词的节中出现, 且语言标记正确.
+ * 判断节中的条目是否允许出现: 自由正文中可以有任何代码块; 其它节的代码块只在
+ * 允许启动提示词的节中出现, 且语言标记正确.
  *
  * @param {import("./markdown.mjs").MarkdownItem} item 条目.
  * @param {import("./spec.mjs").SectionSpec} sectionSpec 节规格.
@@ -178,7 +179,7 @@ function checkSections(sections, reply, spec, state) {
  * @returns {boolean} 允许时返回 true.
  */
 function isAllowedInSection(item, sectionSpec, spec) {
-  if (item.kind !== "block") {
+  if (item.kind !== "block" || isFreeformSection(sectionSpec)) {
     return true;
   }
   return (

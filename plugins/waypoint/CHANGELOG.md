@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: a "项目完成" (project complete) reply for a completed project whose records are all committed. It shows the last record commit, the working tree, and how far the branch is ahead of the remote, with options to continue iterating, push to the remote, or do nothing.
+- `project-navigator`: a "自由答复" (free-form answer) reply for requests outside the workflow, such as an explanation or an issue report for the maintainers. Its single section is written in the format the user asks for, may contain code blocks, and is not sent back under the writing rules; the progress section, options, and human summary are still checked.
+
+### Changed
+
+- `project-navigator`: after the project is complete and its records are all committed, the orchestrator may run `git push` without force options. At other times outside the commit step, pushes are still denied, and the denial now says when pushing is allowed and that the user can run it.
+
+### Fixed
+
+- `project-navigator`: `state.json` no longer ends up modified again after the project closing. The next action after the closing still asked for "项目收尾" (project closing), whose option A runs `finish` again; that `finish` requested no stage commit but wrote the settled state back into `state.json`, and adopting a manual commit wrote it again, so the working tree never became clean. After completion, the next action is now "项目完成"; `finish` writes nothing when the records are all committed, and requests the stage commit "项目收尾后的记录更新" (records updated after closing) when they are not. A project that already has the leftover change is told to run `finish` and commits it through that stage commit.
+
 ## [0.7.5] - 2026-09-29
 
 ### Fixed

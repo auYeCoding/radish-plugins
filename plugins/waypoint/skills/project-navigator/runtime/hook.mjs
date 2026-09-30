@@ -43,6 +43,10 @@ import {
   orderReadBy,
   registerExecutor,
 } from "./lib/executors.mjs";
+import {
+  blankFreeformSections,
+  hasFreeformSection,
+} from "./lib/freeform-sections.mjs";
 import { WRITE_TOOLS, decideToolUse } from "./lib/guard.mjs";
 import {
   APPROVAL_REPLY_TYPE,
@@ -62,7 +66,7 @@ import {
   projectRelativePath,
 } from "./lib/paths.mjs";
 import { flushPendingWrites, markPendingWrite } from "./lib/pending-writes.mjs";
-import { headCommit } from "./lib/repo.mjs";
+import { headCommit, listUncommittedPaths } from "./lib/repo.mjs";
 import {
   appendPrompt,
   readExecutorRecord,
@@ -91,8 +95,10 @@ import {
   orchestratorMarker,
   readOrchestrators,
 } from "./lib/sessions.mjs";
-import { findReply, loadSpec } from "./lib/spec.mjs";
+import { findReply, lastStageNumber, loadSpec } from "./lib/spec.mjs";
 import { INIT_UNINSTALLED } from "./lib/state.mjs";
+import { COMMITTED_PATHSPECS } from "./lib/tracked-paths.mjs";
+import { isProjectFinished } from "./lib/workflow-plan.mjs";
 import { checkWriting, formatFinding } from "./lib/writing-checks.mjs";
 
 /**
@@ -305,6 +311,9 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
     context: {
       orderStatus: state.order?.status,
       isStageCommitting: isStageCommitting(state),
+      isProjectFinished:
+        isProjectFinished(state, lastStageNumber(spec)) &&
+        (state.stageCommit ?? null) === null,
       authorizedTests: testCommands,
       evidenceTools: state.evidenceTools,
       ...executorGuardState(record, state),
@@ -322,6 +331,8 @@ function handlePreToolUse({ input, projectRoot, state, role, sessionId, now }) {
     },
     readFile: (relativePath) => readProjectFile(projectRoot, relativePath),
     readRecentPrompts: () => readRecentPrompts(projectRoot),
+    hasUncommittedRecords: () =>
+      listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS).length > 0,
     spec,
   });
   if (decision.isProbe === true) {
@@ -608,7 +619,7 @@ function orchestratorReplyProblems(
 }
 
 /**
- * 列出编排会话回复的版式与写作问题.
+ * 列出编排会话回复的版式与写作问题. 摘录的工单内容与自由正文不按写作规则检查.
  *
  * @param {object} options 参数.
  * @param {string} options.text 回复全文.
@@ -629,8 +640,12 @@ function orchestratorLayoutProblems({ text, reply, spec, projectRoot, state }) {
     orderText === undefined
       ? []
       : checkOrderExcerpt({ text, reply, orderText });
+  const authored = excerpt ? blankOrderExcerpt(text, reply) : text;
   const writing = checkWriting({
-    text: excerpt ? blankOrderExcerpt(text, reply) : text,
+    text:
+      reply !== undefined && hasFreeformSection(reply)
+        ? blankFreeformSections(authored, reply)
+        : authored,
     spec,
     maxLines: undefined,
   })

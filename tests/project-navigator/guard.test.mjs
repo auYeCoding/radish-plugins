@@ -124,6 +124,7 @@ const BASE_CONTEXT = Object.freeze({
  * @property {Partial<import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardContext>} [context] 覆盖的状态上下文.
  * @property {string} [previous] 写入目标的当前内容.
  * @property {string[]} [prompts] 编排会话最近收到的用户消息.
+ * @property {boolean} [uncommittedRecords] 记录中是否有未入库的改动.
  * @property {"allow" | "deny"} expected 预期判定.
  * @property {RegExp} [reason] 拒绝理由必须匹配的内容.
  * @property {boolean} [isProbe] 是否预期为自检探测.
@@ -374,6 +375,38 @@ const ORCHESTRATOR_CASES = Object.freeze([
     tool: "Bash",
     input: { command: "git push --force" },
     context: { orderStatus: "committing" },
+    expected: "deny",
+  },
+  {
+    name: "编排中途推送",
+    role: "orchestrator",
+    tool: "Bash",
+    input: { command: "git push" },
+    expected: "deny",
+  },
+  {
+    name: "项目完成且记录都已入库后推送",
+    role: "orchestrator",
+    tool: "Bash",
+    input: { command: "git push origin main" },
+    context: { isProjectFinished: true },
+    expected: "allow",
+  },
+  {
+    name: "项目完成后强制推送",
+    role: "orchestrator",
+    tool: "Bash",
+    input: { command: "git push --force-with-lease" },
+    context: { isProjectFinished: true },
+    expected: "deny",
+  },
+  {
+    name: "项目完成但记录未入库时推送",
+    role: "orchestrator",
+    tool: "Bash",
+    input: { command: "git push" },
+    context: { isProjectFinished: true },
+    uncommittedRecords: true,
     expected: "deny",
   },
   {
@@ -1032,6 +1065,7 @@ function decide(testCase) {
     context: { ...BASE_CONTEXT, ...testCase.context },
     readFile: () => testCase.previous,
     readRecentPrompts: () => testCase.prompts ?? [],
+    hasUncommittedRecords: () => testCase.uncommittedRecords === true,
     spec: SPEC,
   });
 }

@@ -8,7 +8,7 @@
  */
 
 import { KEY_LINE_PATTERN } from "./layout.mjs";
-import { parseMarkdown } from "./markdown.mjs";
+import { blankLines, parseMarkdown } from "./markdown.mjs";
 import { PLACEHOLDER } from "./render.mjs";
 
 /**
@@ -113,16 +113,14 @@ export function checkOrderExcerpt({ text, reply, orderText }) {
  */
 export function blankOrderExcerpt(text, reply) {
   const bodies = readSectionBodies(text);
-  const blanked = new Set(
-    orderSourceSections(reply).flatMap(
-      (section) => bodies.get(section.title)?.lines ?? [],
+  return blankLines(
+    text,
+    new Set(
+      orderSourceSections(reply).flatMap(
+        (section) => bodies.get(section.title)?.lines ?? [],
+      ),
     ),
   );
-  return text
-    .replace(/\r\n?/gu, "\n")
-    .split("\n")
-    .map((line, index) => (blanked.has(index + 1) ? "" : line))
-    .join("\n");
 }
 
 /**

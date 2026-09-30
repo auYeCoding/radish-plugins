@@ -18,10 +18,12 @@ import * as prettier from "prettier";
 
 import { SHARED_COMMANDS } from "../plugins/waypoint/skills/project-navigator/runtime/lib/command-access.mjs";
 import { KEY_SECTION_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/file-guide.mjs";
+import { FREEFORM_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/freeform-sections.mjs";
 import {
   OPTION_LETTERS,
   renderOptionBlock,
 } from "../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
+import { isFreeformSection } from "../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { renderTable } from "../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
 import { UNIT_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/text-units.mjs";
 import { describeWritingRules } from "../plugins/waypoint/skills/project-navigator/runtime/lib/writing-rules.mjs";
@@ -276,7 +278,7 @@ function replySummary(title, reply, spec) {
 }
 
 /**
- * 描述一个节: 标题, 键名 (含骨架预填的值) 或表格, 是否放启动提示词.
+ * 描述一个节: 标题, 键名 (含骨架预填的值) 或表格, 是否放启动提示词, 是否为自由正文.
  *
  * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").SectionSpec} section 节规格.
  * @returns {string} 描述.
@@ -289,7 +291,8 @@ function sectionLabel(section) {
   const table =
     section.table === undefined ? "" : ` (${tableLabel(section.table)})`;
   const launch = section.allowLaunchPrompt === true ? " (放启动提示词)" : "";
-  return `${section.title}${keys}${table}${launch}`;
+  const freeform = isFreeformSection(section) ? ` (${FREEFORM_RULE})` : "";
+  return `${section.title}${keys}${table}${launch}${freeform}`;
 }
 
 /**

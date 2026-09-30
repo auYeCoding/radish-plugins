@@ -23,6 +23,7 @@ import { SPEC_FILE } from "./paths.mjs";
  * @property {TableSpec} [table] 节中必须有的表格; 与 keys 不同时使用.
  * @property {boolean} [allowLaunchPrompt] 是否允许放启动提示词代码块.
  * @property {string} [source] 内容来源; 为 "order" 时正文摘录自当前工单文件的同名节, 不由编排会话撰写.
+ * @property {boolean} [freeform] 是否为自由正文: 按用户要求的格式撰写, 可以放代码块, 不按写作规则打回.
  */
 
 /**
@@ -124,6 +125,16 @@ export function resolveReplyType(spec, nameOrId) {
   return Object.entries(spec.replies).find(
     ([, reply]) => reply.id === nameOrId,
   )?.[0];
+}
+
+/**
+ * 判断节是否为自由正文.
+ *
+ * @param {SectionSpec} section 节规格.
+ * @returns {boolean} 是自由正文时返回 true.
+ */
+export function isFreeformSection(section) {
+  return section.freeform === true;
 }
 
 /**

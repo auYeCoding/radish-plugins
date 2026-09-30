@@ -5,12 +5,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { blankFreeformSections } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/freeform-sections.mjs";
 import { checkReply } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/reply-checks.mjs";
 import {
   PLACEHOLDER,
   renderReplySkeleton,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
+import { checkWriting } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/writing-checks.mjs";
 
 /**
  * 模板规格.
@@ -103,6 +105,36 @@ test("校验: 节中贴代码", () => {
     "## 仓库情况\n\n```js\nconsole.log(1)\n```\n",
   );
   assert.ok(check(text).some((problem) => problem.includes("不能贴代码")));
+});
+
+test("校验: 自由正文可以放代码块与三级标题, 其它节仍不能贴代码", () => {
+  const body = "### 现象\n\n```text\nM .navigator/state.json\n```\n";
+  const freeform = filledReply("自由答复").replace(
+    `## 答复内容\n\n${FILLER}\n`,
+    `## 答复内容\n\n${FILLER}\n\n${body}`,
+  );
+  assert.ok(freeform.includes(body));
+  assert.deepEqual(check(freeform), []);
+  const other = filledReply("首次接入").replace(
+    "## 仓库情况\n",
+    `## 仓库情况\n\n${body}`,
+  );
+  assert.ok(check(other).some((problem) => problem.includes("不能贴代码")));
+});
+
+test("写作规则: 自由正文不检查, 人类总结仍然检查", () => {
+  const word = SPEC.writing.jargon.words[0];
+  const text = filledReply("自由答复")
+    .replace(`## 答复内容\n\n${FILLER}\n`, `## 答复内容\n\n报告提到${word}.\n`)
+    .replace(/```text\n(.+)\n/u, `\`\`\`text\n$1\n总结提到${word}.\n`);
+  const lines = checkWriting({
+    text: blankFreeformSections(text, SPEC.replies["自由答复"]),
+    spec: SPEC,
+    maxLines: undefined,
+  })
+    .filter((finding) => finding.label === SPEC.writing.jargon.label)
+    .map((finding) => text.split("\n")[finding.line - 1]);
+  assert.deepEqual(lines, [`总结提到${word}.`]);
 });
 
 test("校验: 改动固定选项", () => {
