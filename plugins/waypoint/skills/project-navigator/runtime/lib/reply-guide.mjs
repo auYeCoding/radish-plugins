@@ -6,7 +6,9 @@
  * 与校验使用同一份阈值与词表. 输出格式与人类总结一条也供 template 的填写要求使用.
  */
 
+import { FREEFORM_RULE } from "./freeform-sections.mjs";
 import { PLACEHOLDER } from "./render.mjs";
+import { isFreeformSection } from "./spec.mjs";
 import { UNIT_RULE } from "./text-units.mjs";
 import { describeWritingRules } from "./writing-rules.mjs";
 
@@ -46,9 +48,22 @@ const WRITING_CHECKED_ROLE = "orchestrator";
 export function renderReplyGuide({ type, role, spec }) {
   return wrapGuide([
     `- 回复从下面的 "# ${type}" 写起, 前面不加引导语. 只替换 "${PLACEHOLDER}", 标题, 键名, 当前进展与选项块原样保留.`,
+    ...freeformLines(spec.replies[type]),
     summaryRule(spec.format),
     ...(role === WRITING_CHECKED_ROLE ? writingLines(spec.writing) : []),
   ]);
+}
+
+/**
+ * 回复中自由正文节的写法; 没有自由正文节时为空.
+ *
+ * @param {import("./spec.mjs").ReplySpec} reply 回复规格.
+ * @returns {string[]} 各行.
+ */
+function freeformLines(reply) {
+  return reply.sections
+    .filter(isFreeformSection)
+    .map((section) => `- "## ${section.title}" ${FREEFORM_RULE}.`);
 }
 
 /**

@@ -648,8 +648,14 @@ test("下一动作: 按对账结果与工单状态给出", () => {
     enterStage(stateWithRoadmap(), LAST_STAGE, LAST_STAGE),
     LAST_STAGE,
   );
+  const complete = nextAction({ ...base, state: finished });
   assert.match(
-    nextAction({ ...base, state: finished }),
-    /项目已确认收尾: .+运行 stage 5; 其它情况回复 "项目收尾" \(reply closing\)/u,
+    complete,
+    /项目已完成, 没有待办: 回复 "项目完成" \(reply complete\).+运行 stage 5.+git push/u,
+  );
+  assert.doesNotMatch(complete, /项目收尾/u, "收尾之后不再回到确认收尾");
+  assert.match(
+    nextAction({ ...base, state: finished, hasUncommittedRecords: true }),
+    /记录还有未入库的改动: 运行 finish, 按输出回复 "阶段提交"/u,
   );
 });

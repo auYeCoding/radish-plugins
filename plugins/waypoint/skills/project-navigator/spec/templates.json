@@ -545,6 +545,37 @@
         }
       ]
     },
+    "项目完成": {
+      "id": "complete",
+      "role": "orchestrator",
+      "sections": [
+        {
+          "title": "完成情况",
+          "keys": ["记录提交", "工作区域", "远程推送"]
+        }
+      ],
+      "optionSets": [
+        {
+          "title": "后续安排",
+          "choices": [
+            "继续迭代, 新开里程.",
+            "推送远程, 保持完成.",
+            "暂无安排, 保持完成."
+          ]
+        }
+      ]
+    },
+    "自由答复": {
+      "id": "freeform",
+      "role": "orchestrator",
+      "sections": [{ "title": "答复内容", "freeform": true }],
+      "optionSets": [
+        {
+          "title": "后续安排",
+          "choices": ["回到流程, 继续推进.", "还有问题, 继续答复."]
+        }
+      ]
+    },
     "体检报告": {
       "id": "checkup",
       "role": "orchestrator",

@@ -33,6 +33,7 @@ import {
   countTrackedFiles,
   findIgnoredPaths,
   headCommit,
+  listUncommittedPaths,
   readGitBlob,
   shortHash,
 } from "../lib/repo.mjs";
@@ -45,14 +46,16 @@ import {
 } from "../lib/sessions.mjs";
 import { hasAllNavigatorHooks, readSettingsFile } from "../lib/settings.mjs";
 import { listSnapshots } from "../lib/snapshots.mjs";
-import { loadSpec } from "../lib/spec.mjs";
+import { lastStageNumber, loadSpec } from "../lib/spec.mjs";
 import { INIT_ACTIVE, INIT_PENDING, INIT_UNINSTALLED } from "../lib/state.mjs";
 import {
+  COMMITTED_PATHSPECS,
   requiredTrackedPaths,
   summarizeIgnoredPaths,
 } from "../lib/tracked-paths.mjs";
 import { compareVersions, runtimeVersion } from "../lib/version.mjs";
 import { adoptCommit } from "../lib/workflow-orders.mjs";
+import { isProjectFinished } from "../lib/workflow-plan.mjs";
 import { SNAPSHOT_MODES, readStateIfValid, saveState } from "./support.mjs";
 
 /**
@@ -237,6 +240,9 @@ function describeProgress({
       hasReceipt,
       orderApproval:
         order === null ? undefined : readApprovalStatus(projectRoot, order),
+      hasUncommittedRecords:
+        isProjectFinished(current, lastStageNumber(spec)) &&
+        listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS).length > 0,
       isNewSession: shouldClaim && isNewSession,
       restoreTarget,
       spec,

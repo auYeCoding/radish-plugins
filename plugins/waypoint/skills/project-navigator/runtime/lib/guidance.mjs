@@ -22,6 +22,12 @@ import { isProjectFinished } from "./workflow-plan.mjs";
 const ISSUE_REPLY_TYPE = "工单发布";
 
 /**
+ * 项目已确认收尾, 记录都已入库之后的回复类型.
+ * @type {string}
+ */
+export const COMPLETE_REPLY_TYPE = "项目完成";
+
+/**
  * 审阅状态: 用户已认可当前内容.
  * @type {string}
  */
@@ -78,6 +84,7 @@ export const ANOMALY_GUIDES = Object.freeze({
  * @property {import("./reconcile.mjs").ReconcileResult} reconciliation 对账结果.
  * @property {boolean} hasReceipt 当前工单的回执文件是否存在.
  * @property {string} [orderApproval] 当前工单的审阅状态, 取值见 order-approval.mjs 的 APPROVAL_STATUSES; 没有工单时省略.
+ * @property {boolean} [hasUncommittedRecords] 状态目录与插件管理的项目配置中是否有未入库的改动; 只在项目已确认收尾时需要, 省略时视为没有.
  * @property {boolean} isNewSession 本会话是否刚刚接管编排.
  * @property {string | undefined} restoreTarget 恢复记录时建议使用的提交.
  * @property {import("./spec.mjs").TemplateSpec} spec 模板规格, 用于写出回复类型的编号.
@@ -123,7 +130,9 @@ export function nextAction(input) {
     return replyStep(spec, "恢复进度");
   }
   if (isProjectFinished(state, lastStageNumber(spec))) {
-    return `项目已确认收尾: 用户提出新需求或要继续迭代时, 按需求变更流程新开里程, 更新推进路线后运行 stage 5; 其它情况${replyStep(spec, "项目收尾")}`;
+    return input.hasUncommittedRecords === true
+      ? `项目已确认收尾, 但记录还有未入库的改动: 运行 finish, 按输出${replyStep(spec, STAGE_COMMIT_REPLY_TYPE)}`
+      : `项目已完成, 没有待办: ${replyStep(spec, COMPLETE_REPLY_TYPE)}; 用户选 A 或提出新需求时, 按需求变更流程新开里程, 更新推进路线后运行 stage 5; 选 B 时运行 git push (不带强制参数), 再回复 "${COMPLETE_REPLY_TYPE}"; 选 C 时不做任何操作`;
   }
   return state.order === null
     ? `继续阶段 ${state.stage} 的步骤 ${state.step}`

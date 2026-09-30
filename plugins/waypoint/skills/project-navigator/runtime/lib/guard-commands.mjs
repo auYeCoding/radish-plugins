@@ -117,6 +117,19 @@ export const COMMIT_COMMAND_FORMS =
   "提交步骤只放行以下写法: 暂存用 `git add -- <路径...>`; 提交消息经标准输入传给 `git commit -F -`, Bash 写成 heredoc (`git commit -F - <<'EOF'`, 消息, `EOF`), PowerShell 写成首行 `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`, 其后 `@'`, 消息, `'@ | git commit -F -`; 只提交部分路径时在 `git commit -F -` 之后加 `-- <路径...>`; 推送用不带强制参数的 `git push`. 不用 `-m`, 也不用 `-F <文件>`.";
 
 /**
+ * 推送命令的形式: 紧跟 git 的子命令为 push.
+ * @type {RegExp}
+ */
+const PUSH_COMMAND_PATTERN = /^git\s+push(\s|$)/u;
+
+/**
+ * 编排会话在提交步骤之外推送, 且项目尚未完成时的拒绝理由.
+ * @type {string}
+ */
+const PUSH_REASON =
+  "编排会话只在两种时候推送: 提交步骤中随提交一起推送, 以及项目已确认收尾, 记录都已入库之后, 用不带强制参数的 `git push`. 现在不属于这两种情况; 需要立即推送时, 请用户自己运行 git push.";
+
+/**
  * 编排会话运行复合命令时的拒绝理由.
  * @type {string}
  */
@@ -194,13 +207,15 @@ const REVIEWER_COMMAND_REASON =
  * @typedef {object} CommandContext 判定命令时需要的状态.
  * @property {string[]} authorizedTests 用户已授权的测试命令.
  * @property {boolean} isCommitStep 是否处于提交步骤 (工单已验收通过).
+ * @property {() => boolean} [canPush] 提交步骤之外能否推送: 项目已确认收尾且记录都已入库. 只在命令是推送时调用, 省略时视为不能.
  * @property {boolean} [canVerifyEvidence] 是否可以运行核对源码证据的插件命令 (只有验收子代理可以).
  */
 
 /**
  * 判定编排会话 (主会话) 的一条命令是否放行. 提交步骤中被拒绝的复合命令与
  * 暂存, 提交, 推送命令, 拒绝理由附上放行的写法, 让模型换成正确写法, 而不是
- * 误以为不能提交.
+ * 误以为不能提交. 项目完成之后不再有提交步骤, 不带强制参数的推送单独放行;
+ * 其它时候推送被拒, 理由写明何时能推送.
  *
  * @param {string} command 命令全文.
  * @param {CommandContext} context 判定上下文.
@@ -213,6 +228,15 @@ export function checkOrchestratorCommand(command, context) {
   }
   if (context.isCommitStep && isAllowedCommitCommand(trimmed)) {
     return undefined;
+  }
+  if (
+    !context.isCommitStep &&
+    PUSH_COMMAND_PATTERN.test(trimmed) &&
+    !COMPOUND_PATTERN.test(trimmed)
+  ) {
+    return isPlainPush(trimmed) && context.canPush?.() === true
+      ? undefined
+      : PUSH_REASON;
   }
   if (COMPOUND_PATTERN.test(trimmed)) {
     return context.isCommitStep
@@ -372,6 +396,20 @@ function isReadOnlyGit(command) {
 }
 
 /**
+ * 判断命令是否为单条, 不带强制参数的推送.
+ *
+ * @param {string} command 去掉首尾空白的命令.
+ * @returns {boolean} 是时返回 true.
+ */
+function isPlainPush(command) {
+  return (
+    PUSH_COMMAND_PATTERN.test(command) &&
+    !COMPOUND_PATTERN.test(command) &&
+    !FORBIDDEN_COMMIT_FLAGS.test(` ${command} `)
+  );
+}
+
+/**
  * 判断命令是否为提交步骤允许的 git 命令: 暂存, 提交, 推送 (不含禁止参数),
  * 以及 commit-message 技能传入提交消息的两种写法 (Bash heredoc 与 PowerShell 管道).
  *
@@ -383,8 +421,8 @@ function isAllowedCommitCommand(command) {
     return false;
   }
   if (
-    /^git\s+(add|push)(\s|$)/u.test(command) &&
-    !COMPOUND_PATTERN.test(command)
+    (/^git\s+add(\s|$)/u.test(command) && !COMPOUND_PATTERN.test(command)) ||
+    isPlainPush(command)
   ) {
     return true;
   }

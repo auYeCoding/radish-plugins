@@ -114,6 +114,7 @@ const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
  * @typedef {object} GuardContext 判定时需要的状态.
  * @property {string | undefined} orderStatus 当前工单状态.
  * @property {boolean} [isStageCommitting] 阶段提交是否正在提交.
+ * @property {boolean} [isProjectFinished] 项目是否已确认收尾, 且没有待处理的阶段提交.
  * @property {string[]} authorizedTests 当前工单可以运行的测试命令: 代码检查命令与用户授权的测试.
  * @property {string[]} evidenceTools 用户授权验收子代理调用的 MCP 取证工具.
  * @property {string | undefined} executorFolder 执行会话绑定的工单文件夹名.
@@ -134,6 +135,7 @@ const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
  * @property {GuardContext} context 状态上下文.
  * @property {(relativePath: string) => string | undefined} readFile 读取项目内文件当前内容.
  * @property {() => string[]} readRecentPrompts 读取编排会话最近收到的用户消息.
+ * @property {() => boolean} [hasUncommittedRecords] 查询状态目录与插件管理的项目配置中是否有未入库的改动; 只在需要时调用, 省略时视为没有.
  * @property {import("./spec.mjs").TemplateSpec} spec 模板规格.
  */
 
@@ -189,6 +191,9 @@ function decideOrchestratorTool(input) {
       checkOrchestratorCommand(String(toolInput.command ?? ""), {
         authorizedTests: context.authorizedTests,
         isCommitStep: isCommitStep(context),
+        canPush: () =>
+          context.isProjectFinished === true &&
+          input.hasUncommittedRecords?.() !== true,
       }),
     );
   }

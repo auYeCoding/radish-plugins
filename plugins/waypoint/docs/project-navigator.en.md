@@ -63,6 +63,7 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
 3. Each "头脑风暴" (brainstorming) round asks at most three questions, often with candidate answers and a recommended one. Answer by number. The skill asks for your consent before converging.
 4. The skill writes the project brief and replies with "产出确认" (confirm output). The main flow and roadmap that follow are confirmed the same way.
 5. Whenever a new stage begins while records from the previous stage are still uncommitted, the skill first replies with "阶段提交", with the same options as after initialization. Until you answer, the skill neither enters another stage nor creates a work order. When you choose `A` in stage 6's "项目收尾" (project closing) to confirm the closing, the closing records go through a "阶段提交" as well.
+6. Once the closing records are committed, the skill replies with "项目完成" (project complete), showing the last record commit, the working tree, and how far the branch is ahead of the remote. You can continue iterating, push to the remote, or leave it as is. Later invocations reply with "项目完成" again and no longer ask you to confirm the closing.
 
 ### Selection and the first work order
 
@@ -260,6 +261,14 @@ The executor writes the tool and where to look in the receipt's "取证记录" (
 **I chose to commit only, but the orchestrator says it has no permission to commit?**
 
 In the commit step, the hooks allow only a few fixed forms: `git add -- <paths...>`, `git commit -F -` with the message on standard input, and `git push` without force options. `-m` and `-F <file>` are denied, and the denial gives the allowed forms, so the orchestrator switches to one of them; you do not need to commit by hand.
+
+**Can the orchestrator push to the remote after the project is closed?**
+
+Yes. Once the project is complete and all records are committed, choose B in "项目完成" and the orchestrator runs `git push` without force options. In the middle of orchestration it only pushes together with a commit in the commit step; at other times, run `git push` yourself.
+
+**Can the orchestrator write something outside the workflow, such as an issue report for the plugin maintainers?**
+
+Yes. Just ask. The orchestrator replies with "自由答复" (free-form answer) and writes the content under "答复内容" in the format you asked for, code blocks included. Choose `A` afterwards to go back to the workflow.
 
 **The work order is already issued. Can I still change it?**
 
