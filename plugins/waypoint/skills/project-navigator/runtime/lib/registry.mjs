@@ -2,7 +2,7 @@
  * @file 运行期登记信息的读写, 位于 Git 公共目录下的 `navigator/`.
  *
  * 这里存放不入库, 也不应随回退丢失的信息: 编排会话与执行会话的登记, 工单审阅
- * 记录, 自检请求与心跳, 编排会话最近收到的用户消息. Git 目录不受 `reset`,
+ * 记录, 提交结算记录, 自检请求与心跳, 编排会话最近收到的用户消息. Git 目录不受 `reset`,
  * `checkout`, `clean` 影响. hook 每次事件都会读这些文件, 所以一律原子写入.
  */
 
@@ -11,6 +11,7 @@ import path from "node:path";
 
 import { writeJsonAtomically } from "./atomic-file.mjs";
 import {
+  COMMIT_SETTLEMENT_FILE,
   ORCHESTRATOR_REGISTRY_FILE,
   ORDER_APPROVAL_FILE,
   PROBE_HEARTBEAT_FILE,
@@ -66,6 +67,14 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/u;
  * @property {string} digest 审阅时工单文件内容的摘要.
  * @property {"awaiting" | "approved"} status 等待用户选择, 或用户已选 "内容无误, 发布工单.".
  * @property {string} updatedAt 最后更新时间.
+ */
+
+/**
+ * @typedef {object} CommitSettlementRecord 一次提交步骤的结算.
+ * @property {string} stateDigest 结算时状态文件内容的摘要; 状态文件改动后记录失效.
+ * @property {"order" | "stage"} kind 完成的是工单提交还是阶段提交.
+ * @property {string} commit 完成提交步骤的提交.
+ * @property {string} settledAt 结算时间.
  */
 
 /**
@@ -157,6 +166,32 @@ export function writeOrderApproval(worktreeRoot, record) {
  */
 export function removeOrderApproval(worktreeRoot) {
   rmSync(orderApprovalPath(worktreeRoot), { force: true });
+}
+
+/**
+ * 读取提交结算记录.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @returns {CommitSettlementRecord | undefined} 结算记录; 没有时为 undefined.
+ */
+export function readCommitSettlement(worktreeRoot) {
+  return readJsonIfExists(
+    path.join(registryDirectory(worktreeRoot), COMMIT_SETTLEMENT_FILE),
+  );
+}
+
+/**
+ * 写入提交结算记录, 替换上一次的记录.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @param {CommitSettlementRecord} record 结算记录.
+ * @returns {void}
+ */
+export function writeCommitSettlement(worktreeRoot, record) {
+  writeJsonAtomically(
+    path.join(registryDirectory(worktreeRoot), COMMIT_SETTLEMENT_FILE),
+    record,
+  );
 }
 
 /**

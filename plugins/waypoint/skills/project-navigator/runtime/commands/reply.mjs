@@ -7,6 +7,7 @@
 
 import { buildLaunchPrompt } from "../lib/briefs.mjs";
 import { issueBlocker } from "../lib/code-checks.mjs";
+import { readSettledState } from "../lib/commit-settlement.mjs";
 import { hasOrderExcerpt, orderExcerptBodies } from "../lib/order-excerpt.mjs";
 import { readOrderText } from "../lib/order-approval.mjs";
 import { orderFilePath } from "../lib/paths.mjs";
@@ -15,7 +16,6 @@ import { renderReplySkeleton } from "../lib/render.mjs";
 import { renderReplyGuide } from "../lib/reply-guide.mjs";
 import { orderAcceptanceBlockers } from "../lib/review-record.mjs";
 import { loadSpec, resolveReplyType } from "../lib/spec.mjs";
-import { readState } from "../lib/state.mjs";
 import { renderTable } from "../lib/table.mjs";
 
 /**
@@ -71,7 +71,8 @@ export function runReply({ cwd, type, optionSet }) {
     );
   }
   const projectRoot = findRepositoryRoot(cwd);
-  const state = projectRoot === undefined ? undefined : readState(projectRoot);
+  const state =
+    projectRoot === undefined ? undefined : readSettledState(projectRoot);
   const order = state?.order ?? null;
   if (
     projectRoot !== undefined &&

@@ -12,6 +12,10 @@ import path from "node:path";
 
 import { issueBlocker } from "../lib/code-checks.mjs";
 import {
+  COMMIT_STEP_KINDS,
+  settleCommitStep,
+} from "../lib/commit-settlement.mjs";
+import {
   COMMITTING_ORDER_STATUS,
   STAGE_COMMIT_REPLY_TYPE,
   assertNoStageCommit,
@@ -53,6 +57,18 @@ import {
  * @type {string}
  */
 const ISSUED_STATUS = "issued";
+
+/**
+ * 已提交状态.
+ * @type {string}
+ */
+const COMMITTED_ORDER_STATUS = "committed";
+
+/**
+ * 工单提交完成后要运行的命令.
+ * @type {string}
+ */
+const COMMITTED_COMMAND = `order set ${COMMITTED_ORDER_STATUS}`;
 
 /**
  * 发布工单的回复类型.
@@ -175,8 +191,8 @@ function changeStatus(context, status, now) {
   if (status === COMMITTING_ORDER_STATUS && order !== null) {
     assertReviewKeyFilled(context, DEFERRED_REVIEW_KEYS.commitChoice);
   }
-  if (status === "committed") {
-    assertRecordsCommitted(context.projectRoot, "order set committed");
+  if (status === COMMITTED_ORDER_STATUS) {
+    return settleOrderCommit(context, now);
   }
   const next = setOrderStatus(
     context.state,
@@ -201,6 +217,32 @@ function changeStatus(context, status, now) {
     lines.push(rejectionAction(context.spec, state, order));
   }
   return lines;
+}
+
+/**
+ * 工单提交完成: 记录与插件管理的配置必须已全部入库, 然后按 HEAD 结算工单提交.
+ * 状态文件已随提交入库, 不再改写, 以免工作区留下未入库的改动.
+ *
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @param {string} now 当前时间.
+ * @returns {string[]} 输出各行.
+ * @throws {WorkflowError} 仓库还没有提交, 仍有未入库的记录, 或工单不在提交步骤中时.
+ */
+function settleOrderCommit(context, now) {
+  const head = headCommit(context.projectRoot);
+  if (head === undefined) {
+    throw new WorkflowError("仓库没有 HEAD 提交, 无法记录提交.");
+  }
+  assertRecordsCommitted(context.projectRoot, COMMITTED_COMMAND);
+  return resultLines(
+    settleCommitStep({
+      projectRoot: context.projectRoot,
+      state: context.state,
+      kind: COMMIT_STEP_KINDS.order,
+      commit: head,
+      now,
+    }),
+  );
 }
 
 /**

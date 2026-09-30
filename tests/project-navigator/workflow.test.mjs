@@ -7,6 +7,14 @@ import { test } from "node:test";
 
 import { buildLaunchPrompt } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/briefs.mjs";
 import {
+  COMMIT_STEP_KINDS,
+  completeCommitStep,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/commit-settlement.mjs";
+import {
+  requestStageCommit,
+  startStageCommit,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/commit-step.mjs";
+import {
   applyAlignmentAnswer,
   executorGuardState,
   executorMarker,
@@ -263,6 +271,37 @@ test("工单: 纳入提交时, 正在提交的工单视为已提交", () => {
   const plain = adoptCommit(stateWithIssuedOrder(), COMMITS.next, "纳入提交");
   assert.equal(plain.order.status, "issued");
   assert.equal(plain.lastCommit, COMMITS.next);
+});
+
+test("提交结算: 按种类完成工单提交或阶段提交, 种类与状态不符时拒绝", () => {
+  const committing = setOrderStatus(
+    setOrderStatus(
+      setOrderStatus(stateWithIssuedOrder(), "reviewing", COMMITS.base),
+      "accepted",
+      COMMITS.base,
+    ),
+    "committing",
+    COMMITS.base,
+  );
+  const order = completeCommitStep(
+    committing,
+    COMMIT_STEP_KINDS.order,
+    COMMITS.next,
+  );
+  assert.equal(order.order, null);
+  assert.equal(order.orders.at(-1).status, "committed");
+  assert.equal(order.lastCommit, COMMITS.next);
+  const stage = completeCommitStep(
+    startStageCommit(requestStageCommit(stateWithRoadmap(), "阶段 1 完成")),
+    COMMIT_STEP_KINDS.stage,
+    COMMITS.next,
+  );
+  assert.equal(stage.stageCommit, null);
+  assert.equal(stage.lastCommit, COMMITS.next);
+  assert.throws(
+    () => completeCommitStep(committing, COMMIT_STEP_KINDS.stage, COMMITS.next),
+    WorkflowError,
+  );
 });
 
 test("工单: 授权测试命令去掉空行与首尾空白", () => {

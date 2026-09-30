@@ -344,6 +344,11 @@ test("命令行: 仓库还没有提交时, 初始化之后的阶段提交完成�
       "chore: 首次提交",
     );
     assert.equal(project(["stagecommit", "done"]).status, 0);
+    assert.equal(
+      runGit(root, ["status", "--porcelain", "--", ".navigator"]),
+      "",
+      "首次提交完成后状态文件不留在工作区",
+    );
     const status = project(["status"]).stdout;
     assert.match(status, /对账结果: 一致/u);
     assert.match(status, new RegExp(`记录提交: ${head.slice(0, 7)}`, "u"));

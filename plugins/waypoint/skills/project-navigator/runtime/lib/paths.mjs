@@ -179,6 +179,13 @@ export const ORCHESTRATOR_REGISTRY_FILE = "orchestrator.json";
 export const ORDER_APPROVAL_FILE = "order-approval.json";
 
 /**
+ * 提交结算记录在运行期登记目录中的文件名: 哪一份状态文件的提交步骤由哪个提交
+ * 完成. 提交完成的命令写这里, 不改写已随提交入库的状态文件.
+ * @type {string}
+ */
+export const COMMIT_SETTLEMENT_FILE = "commit-settlement.json";
+
+/**
  * 待并入快照的写入在运行期登记目录中的子目录名: 每次写入状态目录留下一个标记,
  * 等同一次工具调用的其它 hook (例如格式化) 结束后再并入快照.
  * @type {string}

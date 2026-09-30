@@ -9,13 +9,13 @@
  * restore 与 adopt 都只在用户于 "验收异常" 中作出选择后执行.
  */
 
+import { readSettledState } from "../lib/commit-settlement.mjs";
 import { headCommit, shortHash } from "../lib/repo.mjs";
 import {
   listSnapshots,
   restoreSnapshot,
   takeSnapshot,
 } from "../lib/snapshots.mjs";
-import { readState } from "../lib/state.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import { adoptCommit } from "../lib/workflow-orders.mjs";
 import {
@@ -81,7 +81,7 @@ function restore(recovery, commit, now) {
   const { projectRoot, state, spec } = recovery;
   takeSnapshot(projectRoot, { now, head: headCommit(projectRoot) });
   const count = restoreSnapshot(projectRoot, commit);
-  const restored = readState(projectRoot);
+  const restored = readSettledState(projectRoot);
   if (restored === undefined) {
     throw new WorkflowError(`提交 ${shortHash(commit)} 中没有状态文件.`);
   }
