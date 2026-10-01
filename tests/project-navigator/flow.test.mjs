@@ -686,6 +686,60 @@ projectTest(
 );
 
 projectTest(
+  "流程: 执行会话对齐后可以在项目配置中接线项目的 hook, 升级时保留",
+  (context) => {
+    const { root, hook } = context;
+    issueFirstOrder(context);
+    hook({
+      session_id: EXECUTOR,
+      hook_event_name: "UserPromptSubmit",
+      prompt: launchPrompt(context),
+    });
+    const settingsFile = path.join(root, ".claude", "settings.json");
+    const installed = JSON.parse(readFileSync(settingsFile, "utf8"));
+    const projectGroup = {
+      matcher: "Write|Edit",
+      hooks: [{ type: "command", command: 'node ".claude/hooks/verify.mjs"' }],
+    };
+    const wired = `${JSON.stringify(
+      {
+        ...installed,
+        hooks: {
+          ...installed.hooks,
+          PostToolUse: [...installed.hooks.PostToolUse, projectGroup],
+        },
+      },
+      null,
+      2,
+    )}\n`;
+    const denial = (content) =>
+      hook({
+        session_id: EXECUTOR,
+        hook_event_name: "PreToolUse",
+        tool_name: "Write",
+        tool_input: { file_path: settingsFile, content },
+      }).output?.hookSpecificOutput?.permissionDecisionReason;
+    assert.match(denial(wired) ?? "", /开工对齐尚未完成/u);
+    alignExecutor(context);
+    assert.match(
+      denial(
+        `${JSON.stringify({ hooks: { PostToolUse: [projectGroup] } })}\n`,
+      ) ?? "",
+      /改动了 hooks 之外的字段: permissions/u,
+      "去掉放行规则与防护 hook 的写入被拦下",
+    );
+    assert.equal(denial(wired), undefined, "只追加项目的 hook 时放行");
+    writeFileSync(settingsFile, wired, "utf8");
+    runCommand(PLUGIN_COMMAND, ["init", "--session", ORCHESTRATOR], root);
+    assert.deepEqual(
+      JSON.parse(readFileSync(settingsFile, "utf8")).hooks.PostToolUse,
+      [...installed.hooks.PostToolUse, projectGroup],
+      "再次运行 init 保留项目的 hook, 不重复安装本技能的 hook",
+    );
+  },
+);
+
+projectTest(
   "流程: 开工对齐前有一句过程说明时, 用户选 A 后可以写业务文件",
   (context) => {
     const { project, hook } = context;
@@ -962,6 +1016,15 @@ projectTest(
     ).stdout;
     assert.match(entered, /编排会话编号: session-orchestrator/u);
     assert.match(entered, /地址登记: /u);
+    const bare = project([
+      "address",
+      "set",
+      "--from",
+      writeDraft(root, "bare-address.json", { address: "编排会话" }),
+    ]);
+    assert.equal(bare.status, 1, "不带编号的地址在同名会话之间无法区分");
+    assert.match(bare.stdout, /含方括号中的编号/u);
+    assert.match(project(["status"]).stdout, /编排地址: 未登记/u);
     const draft = writeDraft(root, "address.json", {
       address: "编排会话 [e6b1dd]",
     });

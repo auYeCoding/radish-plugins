@@ -184,6 +184,24 @@ export function hasAllNavigatorHooks(settings) {
 }
 
 /**
+ * 取出配置中含有本技能 hook 的分组, 按事件归类; 没有这类分组的事件不出现.
+ * 其它程序改动配置时, 守卫用它核对本技能的分组是否原样保留.
+ *
+ * @param {Record<string, any>} settings 配置对象.
+ * @returns {Record<string, Record<string, any>[]>} 事件名到本技能分组的映射.
+ */
+export function selectNavigatorHookGroups(settings) {
+  return Object.fromEntries(
+    Object.entries(settings.hooks ?? {})
+      .map(([event, groups]) => [
+        event,
+        groups.filter((group) => groupHasNavigatorHook(group)),
+      ])
+      .filter(([, groups]) => groups.length > 0),
+  );
+}
+
+/**
  * 返回替换了某个字段的新对象; 新值为空对象或空数组时删除该字段.
  *
  * @param {Record<string, any>} source 原对象.
