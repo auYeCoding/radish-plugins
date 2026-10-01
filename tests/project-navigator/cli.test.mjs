@@ -40,6 +40,48 @@ import {
  */
 const SESSION_ID = "session-orchestrator";
 
+/**
+ * 模拟旧版本项目时写入的版本号.
+ * @type {string}
+ */
+const OLD_VERSION = "0.0.1";
+
+/**
+ * 项目中运行脚本副本的版本文件, 相对于项目根目录.
+ * @type {string}
+ */
+const VERSION_FILE = ".navigator/bin/runtime-version.json";
+
+/**
+ * 旧版本副本中残留的文件, 相对于项目根目录; 升级会整目录替换, 残留文件随之消失.
+ * @type {string}
+ */
+const STALE_FILE = ".navigator/bin/runtime/stale.mjs";
+
+/**
+ * 把已初始化的项目改成旧版本的样子: 版本文件与状态文件都记为旧版本, 副本中多出
+ * 一个新版本没有的文件.
+ *
+ * @param {string} root 仓库根目录.
+ * @returns {string} 降级之前的版本号.
+ */
+function downgradeProject(root) {
+  const versionFile = path.join(root, VERSION_FILE);
+  const stateFile = path.join(root, ".navigator", "state.json");
+  const current = JSON.parse(readFileSync(versionFile, "utf8")).version;
+  writeFileSync(versionFile, JSON.stringify({ version: OLD_VERSION }), "utf8");
+  writeFileSync(
+    stateFile,
+    JSON.stringify({
+      ...JSON.parse(readFileSync(stateFile, "utf8")),
+      skillVersion: OLD_VERSION,
+    }),
+    "utf8",
+  );
+  writeFileSync(path.join(root, STALE_FILE), "export {};\n", "utf8");
+  return current;
+}
+
 test("命令行: 非 Git 目录中 enter 提示先初始化仓库, 且退出码为 0", () => {
   const directory = createTemporaryDirectory();
   try {
@@ -491,6 +533,122 @@ test("命令行: 项目规则忽略整个状态目录时, init 报告规则并�
       existsSync(path.join(root, ".claude", "settings.json")),
       false,
     );
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 运行脚本较旧时下一动作写出技能目录中的完整升级命令, 照抄即可升级", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    const { project, hook } = initializeProject(root, SESSION_ID);
+    const current = downgradeProject(root);
+    const entered = runCommand(
+      PLUGIN_COMMAND,
+      ["enter", "--session", SESSION_ID],
+      root,
+    ).stdout;
+    assert.ok(
+      entered.includes(`较旧 (${OLD_VERSION}), 需要升级到 ${current}`),
+      entered,
+    );
+    assert.match(entered, /回复 "初始设置", 使用第 1 组选项/u);
+    assert.match(entered, /不能换成 \.navigator\/bin\/ 下的副本/u);
+    const command = /node "([^"]+)" init --session "([^"]+)"/u.exec(entered);
+    assert.ok(command, entered);
+    assert.equal(path.resolve(command[1]), path.resolve(PLUGIN_COMMAND));
+    assert.equal(command[2], SESSION_ID);
+
+    const upgraded = runCommand(
+      command[1],
+      ["init", "--session", command[2]],
+      root,
+    );
+    assert.equal(upgraded.status, 0, upgraded.stdout);
+    assert.match(upgraded.stdout, /设置结果: 已升级/u);
+    assert.ok(upgraded.stdout.includes(`技能版本: ${current}`));
+    assert.equal(
+      JSON.parse(readFileSync(path.join(root, VERSION_FILE), "utf8")).version,
+      current,
+    );
+    assert.equal(
+      existsSync(path.join(root, STALE_FILE)),
+      false,
+      "升级整目录替换运行脚本",
+    );
+    hook({
+      session_id: SESSION_ID,
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: path.join(root, PROBE_FILE), content: "x" },
+    });
+    assert.match(project(["init", "--verify"]).stdout, /自检结果: 通过/u);
+    const status = project(["status"]).stdout;
+    assert.ok(status.includes(`已初始化, 版本 ${current}`), status);
+    assert.doesNotMatch(status, /较旧/u);
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 用项目中的副本运行 init 被拒绝, 项目没有改动", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    const { project } = initializeProject(root, SESSION_ID);
+    downgradeProject(root);
+    const stateFile = path.join(root, ".navigator", "state.json");
+    const before = readFileSync(stateFile, "utf8");
+    const refused = project(["init", "--session", SESSION_ID]);
+    assert.equal(refused.status, 1, refused.stdout);
+    assert.match(refused.stdout, /init 只能用技能目录中的脚本运行/u);
+    assert.ok(refused.stdout.includes(`副本 (版本 ${OLD_VERSION})`));
+    assert.ok(
+      refused.stdout.includes(
+        `node "<技能目录>/runtime/navigator.mjs" init --session "${SESSION_ID}"`,
+      ),
+      refused.stdout,
+    );
+    assert.doesNotMatch(refused.stdout, /已升级/u);
+    assert.equal(readFileSync(stateFile, "utf8"), before, "状态文件没有改动");
+    assert.equal(
+      JSON.parse(readFileSync(path.join(root, VERSION_FILE), "utf8")).version,
+      OLD_VERSION,
+    );
+    assert.ok(existsSync(path.join(root, STALE_FILE)), "副本没有被替换");
+  } finally {
+    repository.cleanup();
+  }
+});
+
+test("命令行: 防护配置缺失时, 下一动作同样写出修复用的 init 命令", () => {
+  const repository = createTemporaryRepository();
+  const root = repository.root;
+  try {
+    const { project } = initializeProject(root, SESSION_ID);
+    rmSync(path.join(root, ".claude", "settings.json"));
+    const entered = runCommand(
+      PLUGIN_COMMAND,
+      ["enter", "--session", SESSION_ID],
+      root,
+    ).stdout;
+    assert.match(entered, /防护配置: 未安装/u);
+    assert.match(entered, /初始化不完整, 防护配置需要修复/u);
+    const command = /node "([^"]+)" init --session "([^"]+)"/u.exec(entered);
+    assert.ok(command, entered);
+    assert.equal(path.resolve(command[1]), path.resolve(PLUGIN_COMMAND));
+    const status = project(["status"]).stdout;
+    assert.match(
+      status,
+      /按技能内容 "初始设置" 第 2 步的命令运行 init/u,
+      "副本写不出技能目录, 指向技能内容中的命令",
+    );
+    assert.equal(
+      runCommand(command[1], ["init", "--session", command[2]], root).status,
+      0,
+    );
+    assert.ok(existsSync(path.join(root, ".claude", "settings.json")));
   } finally {
     repository.cleanup();
   }

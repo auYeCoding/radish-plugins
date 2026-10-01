@@ -6,6 +6,9 @@
  * 核对心跳, 确认 hook 在当前会话中已经生效. 写入之前先检查状态目录中必须入库的
  * 路径是否会被项目的忽略规则漏掉. 自检通过时有尚未入库的技能产物, 就登记一次
  * 阶段提交 (空仓库的首次提交也由此完成).
+ *
+ * 第一步只能由技能目录中的脚本运行, 项目中的副本拒绝运行 (原因见
+ * lib/runtime-source.mjs); 第二步由项目中的副本运行.
  */
 
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -38,6 +41,7 @@ import {
   findIgnoredPaths,
   headCommit,
 } from "../lib/repo.mjs";
+import { installCommand, isProjectCopy } from "../lib/runtime-source.mjs";
 import {
   claimOrchestratorSession,
   ensureOrchestratorRecord,
@@ -62,6 +66,7 @@ import {
   summarizeIgnoredPaths,
 } from "../lib/tracked-paths.mjs";
 import { runtimeVersion } from "../lib/version.mjs";
+import { WorkflowError } from "../lib/workflow-error.mjs";
 
 /**
  * 状态目录中需要预先创建的空目录.
@@ -97,6 +102,7 @@ const NAVIGATOR_GITIGNORE = [
  * @param {boolean} options.isVerify 是否只确认自检结果.
  * @param {string} options.now 当前时间, ISO 格式.
  * @returns {string[]} 输出各行.
+ * @throws {WorkflowError} 用项目中的副本运行第一步时.
  */
 export function runInit({ cwd, sessionId, isVerify, now }) {
   const environment = checkEnvironment(cwd);
@@ -112,9 +118,15 @@ export function runInit({ cwd, sessionId, isVerify, now }) {
       `- 运行环境: Node.js ${environment.nodeVersion} 版本过低, 需要 22 或更高版本`,
     ];
   }
-  return isVerify
-    ? verifyProbe(environment.repositoryRoot, now)
-    : installNavigator(environment.repositoryRoot, sessionId, now);
+  if (isVerify) {
+    return verifyProbe(environment.repositoryRoot, now);
+  }
+  if (isProjectCopy(environment.repositoryRoot)) {
+    throw new WorkflowError(
+      `init 只能用技能目录中的脚本运行. 这条命令运行的是项目中的副本 (版本 ${runtimeVersion()}), 副本不能初始化, 修复或升级项目, 项目没有任何改动. 改为运行 ${installCommand(environment.repositoryRoot, sessionId)}: 技能目录是技能内容开头 "Base directory for this skill" 一行给出的路径, 完整的命令见技能内容 "初始设置" 第 2 步.`,
+    );
+  }
+  return installNavigator(environment.repositoryRoot, sessionId, now);
 }
 
 /**
@@ -312,9 +324,6 @@ function createDirectories(projectRoot) {
  */
 function copyRuntime(projectRoot, version) {
   const binDirectory = navigatorPath(projectRoot, "bin");
-  if (path.resolve(binDirectory) === path.resolve(SKILL_ROOT)) {
-    return;
-  }
   for (const directory of RUNTIME_COPY_DIRECTORIES) {
     const target = path.join(binDirectory, directory);
     rmSync(target, { recursive: true, force: true });

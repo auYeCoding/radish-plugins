@@ -5,8 +5,8 @@
  * skip 的草稿格式: {"reason": "跳过原因"}. 跳过必须先得到用户认可.
  * 进入新阶段, 或在最后一个阶段确认收尾时, 当前阶段有尚未入库的技能产物, 就登记
  * 一次阶段提交. 最后一个阶段之后不再推进, 收尾记录只能由 finish 登记的阶段提交入库.
- * finish 写下的完成标记之后也没有别的提交能带上, 所以 HEAD 中的状态文件还没有
- * 这个标记时, 即使收尾记录已经入库, finish 同样登记阶段提交.
+ * 确认收尾的 finish 总会在状态文件中写下完成标记, 之后没有别的提交能带上它, 所以
+ * 每次确认收尾都登记阶段提交, 即使收尾记录已经入库.
  *
  * 项目已确认收尾后, 写入的状态同样没有后续提交能带走. 这时再运行 finish: 记录
  * (含状态文件) 有未入库的改动就登记阶段提交, 例如收尾后处理验收异常时写下的状态;
@@ -19,8 +19,7 @@ import {
   requestStageCommit,
 } from "../lib/commit-step.mjs";
 import { COMPLETE_REPLY_TYPE, replyStep } from "../lib/guidance.mjs";
-import { STATE_FILE } from "../lib/paths.mjs";
-import { listUncommittedPaths, readGitBlob } from "../lib/repo.mjs";
+import { listUncommittedPaths } from "../lib/repo.mjs";
 import { lastStageNumber } from "../lib/spec.mjs";
 import {
   COMMITTED_PATHSPECS,
@@ -73,7 +72,7 @@ export function runStage({ command, positionals, values, cwd, now }) {
       ? settleFinishedRecords(context, now)
       : saveWithStageCommit(context, finishProject(context.state, lastStage), {
           now,
-          mustCommitState: !isFinishCommitted(context.projectRoot, lastStage),
+          mustCommitState: true,
         });
   }
   const [argument] = positionals;
@@ -175,24 +174,4 @@ function saveWithStageCommit(
     ...resultLines(saved),
     ...(needsCommit ? [`- 下一动作: ${commitStep}`] : []),
   ];
-}
-
-/**
- * 判断 HEAD 中入库的状态文件是否已记下项目完成. 仓库还没有提交, 状态文件没有
- * 入库或不是合法 JSON 时都算没有记下.
- *
- * @param {string} projectRoot 项目根目录.
- * @param {number} lastStage 最后一个阶段的编号.
- * @returns {boolean} 已记下时返回 true.
- */
-function isFinishCommitted(projectRoot, lastStage) {
-  const blob = readGitBlob(projectRoot, `HEAD:${STATE_FILE}`);
-  if (blob === undefined) {
-    return false;
-  }
-  try {
-    return isProjectFinished(JSON.parse(blob.toString("utf8")), lastStage);
-  } catch {
-    return false;
-  }
 }

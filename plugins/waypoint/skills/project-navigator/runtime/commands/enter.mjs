@@ -38,6 +38,7 @@ import {
   shortHash,
 } from "../lib/repo.mjs";
 import { readApprovalStatus } from "../lib/order-approval.mjs";
+import { installStep } from "../lib/runtime-source.mjs";
 import { ADDRESS_REGISTRATION_STEP } from "../lib/session-notices.mjs";
 import {
   claimOrchestratorSession,
@@ -126,6 +127,7 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
     isHookInstalled,
     isNodeSupported: environment.isNodeSupported,
     projectRoot,
+    sessionId,
     spec,
   });
   if (blocker !== undefined) {
@@ -384,13 +386,15 @@ function describeInit(state) {
 /**
  * 找出阻止进入编排的问题, 并给出下一动作. 必须入库的路径被忽略规则漏掉时也要停下:
  * 否则新写的记录会悄悄漏提交. 这一项放在升级检查之后, 旧版本写的状态目录
- * `.gitignore` 由升级改正.
+ * `.gitignore` 由升级改正. 初始化, 修复与升级的下一动作都写出完整的 init 命令:
+ * 只说 "运行 init" 时, 编排会话会用项目中的副本运行, 什么也升级不了.
  *
  * @param {object} options 判断参数.
  * @param {import("../lib/state.mjs").NavigatorState | undefined} options.state 状态.
  * @param {boolean} options.isHookInstalled hook 是否已全部安装.
  * @param {boolean} options.isNodeSupported Node.js 版本是否满足要求.
  * @param {string} options.projectRoot 项目根目录.
+ * @param {string | undefined} options.sessionId 调用方的会话编号.
  * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
  * @returns {string | undefined} 下一动作; 没有问题时为 undefined.
  */
@@ -399,23 +403,24 @@ function findBlocker({
   isHookInstalled,
   isNodeSupported,
   projectRoot,
+  sessionId,
   spec,
 }) {
-  const setup = replyStep(spec, "初始设置", SETUP_OPTION);
   if (!isNodeSupported) {
     return `${replyStep(spec, "初始设置", SETUP_BLOCKED_OPTION)}, 提示先安装 Node.js 22 或更高版本`;
   }
+  const setup = `${replyStep(spec, "初始设置", SETUP_OPTION)}, 用户选 A 后${installStep(projectRoot, sessionId)}`;
   if (state === undefined || state.init.status === INIT_UNINSTALLED) {
     return setup;
   }
   if (!isHookInstalled) {
-    return `初始化不完整: ${setup}, 用户选 A 后运行 init 修复`;
+    return `初始化不完整, 防护配置需要修复: ${setup}`;
   }
   if (state.init.status === INIT_PENDING) {
     return `完成自检: 用 Write 工具写入 ${path.join(projectRoot, PROBE_FILE)} (预期被拒绝), 再运行 node ${PROJECT_COMMAND_PATH} init --verify`;
   }
   if (compareVersions(state.skillVersion, runtimeVersion()) < 0) {
-    return `项目中的运行脚本较旧 (${state.skillVersion}), ${setup}, 用户选 A 后运行 init 升级`;
+    return `项目中的运行脚本较旧 (${state.skillVersion}), 需要升级到 ${runtimeVersion()}: ${setup}`;
   }
   const ignored = findIgnoredPaths(projectRoot, requiredTrackedPaths(spec));
   if (ignored.length > 0) {
