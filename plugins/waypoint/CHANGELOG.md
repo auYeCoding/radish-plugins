@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-01
+
 ### Changed
 
 - `project-navigator`: executor sessions (after alignment) and ordinary sessions can now wire a project's own hooks in `.claude/settings.json`. The guard used to deny every change to this file, so a work order that needed a hook, such as running the code checks after an edit, ended with the executor handing the snippet to the user to merge by hand. The guard now checks the content of the write: only the `hooks` field may change, the plugin's own hook groups must stay as they are, and a new hook must be a group of its own. Changes to other settings (such as permission rules), to `.claude/settings.local.json`, to `.claude/rules/engineering.md`, and command-line writes are still denied, and the denial says what may be changed.
@@ -182,7 +184,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.8.1...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.9.0...HEAD
+[0.9.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.9.0
 [0.8.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.8.1
 [0.8.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.8.0
 [0.7.5]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.7.5
