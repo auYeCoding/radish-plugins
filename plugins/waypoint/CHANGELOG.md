@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `project-navigator`: executor sessions (after alignment) and ordinary sessions can now wire a project's own hooks in `.claude/settings.json`. The guard used to deny every change to this file, so a work order that needed a hook, such as running the code checks after an edit, ended with the executor handing the snippet to the user to merge by hand. The guard now checks the content of the write: only the `hooks` field may change, the plugin's own hook groups must stay as they are, and a new hook must be a group of its own. Changes to other settings (such as permission rules), to `.claude/settings.local.json`, to `.claude/rules/engineering.md`, and command-line writes are still denied, and the denial says what may be changed.
+- `project-navigator`: the executor guide has a section "受保护的文件" (protected files) listing what an executor cannot change under `.claude/` and how to wire a hook, and the work order instructions tell the orchestrator which of these changes a work order may ask for. The guide used to mention the restriction only in passing, and overstated it as the whole `.claude/` directory.
+- `project-navigator`: `address set` refuses an orchestrator address without the ref in square brackets, such as a bare "编排会话".
+
+### Fixed
+
+- `project-navigator`: a message report now reaches the orchestrator when other sessions on the machine share its name. The registered address already carried the session's ref, as in "编排会话 [b76883]", but the executor guide said to send to the session name and to fall back to a document report whenever more than one session had that name, so with one orchestrator per project the message report was given up almost every time and the user had to go back to the orchestrator and choose A. The executor now checks that a ListAgents row matches the registered address exactly and sends to the full address; it falls back only when no address is registered, no row matches (the orchestrator session was closed or restarted), or sending fails.
+
 ## [0.8.1] - 2026-10-01
 
 ### Changed

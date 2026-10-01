@@ -10,6 +10,7 @@ import {
   GENERATED_FILES,
   NAVIGATOR_DIRECTORY,
   PROBE_FILE,
+  PROJECT_SETTINGS_FILE,
   PROTECTED_CONFIG_FILES,
   isUnderDirectory,
   orderArtifactsPath,
@@ -21,6 +22,10 @@ import {
   RECLAIM_GUIDE,
   SUPERSEDED_NOTICE,
 } from "./session-notices.mjs";
+import {
+  SETTINGS_EDIT_RULE,
+  findSettingsEditProblem,
+} from "./settings-edits.mjs";
 import { USER_TESTS_FILE_KIND, checkUserOutputs } from "./user-tests.mjs";
 
 /**
@@ -35,6 +40,13 @@ const RECORD_EXTENSION = ".md";
  */
 const EXECUTOR_UNALIGNED_REASON =
   '开工对齐尚未完成: 请先按 "开工对齐" 版式回复, 等用户选择 "A. 继续执行." 后再改动业务文件或证据文件.';
+
+/**
+ * 执行会话绑定的工单已不在执行中时, 改动文件的拒绝理由.
+ * @type {string}
+ */
+const EXECUTOR_INACTIVE_REASON =
+  "本会话绑定的工单已不在执行中 (已提交, 已作废, 验收中, 受阻待修改或被撤回修改), 不能再改动文件. 请回到编排会话确认下一步; 工单重新发布后, 先重新开工对齐.";
 
 /**
  * 执行会话写本工单回执与证据文件之外的编排记录时的拒绝理由.
@@ -68,9 +80,11 @@ export function decideProjectWrite(request) {
     return { ...deny("初始化自检: 探测写入已被守卫拦下."), isProbe: true };
   }
   if (isProtected(relativePath)) {
-    return deny(
-      `${relativePath} 是防护配置或插件脚本, 只能由插件的 init 与 uninstall 命令修改.`,
-    );
+    return canWireHooks(request)
+      ? decideHookWiring(request)
+      : deny(
+          `${relativePath} 是防护配置或插件脚本, 只能由插件的 init 与 uninstall 命令修改.`,
+        );
   }
   switch (request.role) {
     case "orchestrator":
@@ -82,6 +96,45 @@ export function decideProjectWrite(request) {
         ? deny(nonOrchestratorRecordReason(request.role))
         : allow();
   }
+}
+
+/**
+ * 判断一次对受保护文件的写入是否可以按 "接线项目 hook" 核对内容: 目标是项目
+ * 配置文件, 且会话不是编排会话. 编排会话不改 `.navigator/` 以外的文件.
+ *
+ * @param {WriteRequest} request 写入请求.
+ * @returns {boolean} 可以按内容核对时返回 true.
+ */
+function canWireHooks(request) {
+  return (
+    request.role !== "orchestrator" &&
+    relativePathsEqual(request.relativePath, PROJECT_SETTINGS_FILE)
+  );
+}
+
+/**
+ * 判定对项目配置文件的写入: 只放行 `hooks` 字段内的改动, 且本技能的分组原样保留.
+ * 执行会话另外要满足写业务文件的条件 (工单在执行中, 已开工对齐).
+ *
+ * @param {WriteRequest} request 写入请求.
+ * @returns {import("./guard.mjs").GuardDecision} 判定结果.
+ */
+function decideHookWiring(request) {
+  const { relativePath } = request;
+  if (request.role === "executor") {
+    const business = decideExecutorBusinessWrite(request.context);
+    if (business.decision === "deny") {
+      return business;
+    }
+  }
+  const previous = request.readFile(relativePath);
+  const problem = findSettingsEditProblem(
+    previous,
+    reconstructContent(request.toolName, request.toolInput, previous),
+  );
+  return problem === undefined
+    ? allow()
+    : deny(`${relativePath} 的改动已拦下: ${problem}. ${SETTINGS_EDIT_RULE}`);
 }
 
 /**
@@ -135,13 +188,21 @@ function decideOrchestratorWrite(request) {
  */
 function decideExecutorWrite(request) {
   const { relativePath, context } = request;
+  return context.isOrderActive &&
+    isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)
+    ? decideExecutorRecordWrite(request)
+    : decideExecutorBusinessWrite(context);
+}
+
+/**
+ * 判定执行会话能否写业务文件: 工单在执行中, 且已开工对齐.
+ *
+ * @param {import("./guard.mjs").GuardContext} context 状态上下文.
+ * @returns {import("./guard.mjs").GuardDecision} 判定结果.
+ */
+function decideExecutorBusinessWrite(context) {
   if (!context.isOrderActive) {
-    return deny(
-      "本会话绑定的工单已不在执行中 (已提交, 已作废, 验收中, 受阻待修改或被撤回修改), 不能再改动文件. 请回到编排会话确认下一步; 工单重新发布后, 先重新开工对齐.",
-    );
-  }
-  if (isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)) {
-    return decideExecutorRecordWrite(request);
+    return deny(EXECUTOR_INACTIVE_REASON);
   }
   return context.isAligned ? allow() : deny(EXECUTOR_UNALIGNED_REASON);
 }

@@ -53,6 +53,11 @@
 | 相关材料   | 简报, 决策, 主线流程中相关条目的路径                                                                                                                                                                     |
 | 执行流程   | 写 "按执行手册 `.navigator/guide/executor.md` 的执行流程", 有特殊顺序时补充                                                                                                                              |
 
+工单涉及 `.claude/` 下的文件时 (例如接线 Claude Code hook), 按守卫的边界写工单:
+
+- 执行会话可以写 `.claude/` 下项目自己的文件, 也可以在 `.claude/settings.json` 的 `hooks` 字段中加入项目的 hook; 守卫核对插件的分组与 `hooks` 之外的字段原样保留.
+- 执行会话不能改 `.claude/settings.json` 中 `hooks` 之外的设置, `.claude/settings.local.json` 与 `.claude/rules/engineering.md`. 工单不要求这些改动; 确实需要时写进 "不做的事", 注明由用户手工完成.
+
 ### 收回执
 
 - 回执是否写入以 `status` 输出的 "工单状态" 一行为准, 不用其它命令查看工单文件夹.

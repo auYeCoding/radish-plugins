@@ -8,6 +8,10 @@ import { test } from "node:test";
 
 import { RESEARCH_FRAME } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/briefs.mjs";
 import { decideToolUse } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs";
+import {
+  mergeNavigatorHooks,
+  mergeNavigatorPermissions,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/settings.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 
 /**
@@ -98,6 +102,55 @@ function userTestsFile(outputs) {
 }
 
 /**
+ * 项目配置文件, 相对于项目根目录.
+ * @type {string}
+ */
+const SETTINGS_FILE = ".claude/settings.json";
+
+/**
+ * 初始化之后的项目配置: 只有本技能的 hook 与放行规则.
+ * @type {Record<string, any>}
+ */
+const INSTALLED_SETTINGS = mergeNavigatorPermissions(mergeNavigatorHooks({}));
+
+/**
+ * 项目自己的 hook 分组: 改完文件后运行代码检查.
+ * @type {Record<string, any>}
+ */
+const PROJECT_HOOK_GROUP = Object.freeze({
+  matcher: "Write|Edit",
+  hooks: [{ type: "command", command: 'node ".claude/hooks/verify.mjs"' }],
+});
+
+/**
+ * 把配置对象写成配置文件的全文.
+ *
+ * @param {Record<string, any>} settings 配置对象.
+ * @returns {string} 文件全文.
+ */
+function settingsText(settings) {
+  return `${JSON.stringify(settings, null, 2)}\n`;
+}
+
+/**
+ * 在初始化之后的配置中, 为工具调用后事件追加项目自己的 hook 分组.
+ *
+ * @returns {Record<string, any>} 新配置.
+ */
+function settingsWithProjectHook() {
+  return {
+    ...INSTALLED_SETTINGS,
+    hooks: {
+      ...INSTALLED_SETTINGS.hooks,
+      PostToolUse: [
+        ...INSTALLED_SETTINGS.hooks.PostToolUse,
+        PROJECT_HOOK_GROUP,
+      ],
+    },
+  };
+}
+
+/**
  * 默认的状态上下文: 当前工单已发布, 执行会话已对齐, 已授权 npm test 与一个取证工具.
  * @type {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardContext}
  */
@@ -173,6 +226,16 @@ const ORCHESTRATOR_CASES = Object.freeze([
     tool: "Write",
     target: "src/app.js",
     expected: "deny",
+  },
+  {
+    name: "在项目配置中追加项目的 hook",
+    role: "orchestrator",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: { content: settingsText(settingsWithProjectHook()) },
+    expected: "deny",
+    reason: /只能由插件的 init 与 uninstall 命令修改/u,
   },
   {
     name: "写状态文件",
@@ -762,6 +825,161 @@ const EXECUTOR_CASES = Object.freeze([
     expected: "deny",
   },
   {
+    name: "执行会话在项目配置中追加项目的 hook",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: { content: settingsText(settingsWithProjectHook()) },
+    expected: "allow",
+  },
+  {
+    name: "执行会话用 Edit 在项目配置中追加新事件的 hook",
+    role: "executor",
+    tool: "Edit",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: {
+      old_string: '  "hooks": {',
+      new_string: `  "hooks": {\n    "Notification": [${JSON.stringify(PROJECT_HOOK_GROUP)}],`,
+    },
+    expected: "allow",
+  },
+  {
+    name: "执行会话对齐前改项目配置",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: { content: settingsText(settingsWithProjectHook()) },
+    context: { isAligned: false },
+    expected: "deny",
+    reason: /开工对齐尚未完成/u,
+  },
+  {
+    name: "执行会话在工单结束后改项目配置",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: { content: settingsText(settingsWithProjectHook()) },
+    context: { isOrderActive: false },
+    expected: "deny",
+    reason: /已不在执行中/u,
+  },
+  {
+    name: "执行会话删掉项目配置中本技能的 hook",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: {
+      content: settingsText({
+        ...INSTALLED_SETTINGS,
+        hooks: { PostToolUse: [PROJECT_HOOK_GROUP] },
+      }),
+    },
+    expected: "deny",
+    reason: /改动了本技能的 hook 分组.+只改 hooks 字段/u,
+  },
+  {
+    name: "执行会话把项目的 hook 塞进本技能的分组",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: {
+      content: settingsText({
+        ...INSTALLED_SETTINGS,
+        hooks: {
+          ...INSTALLED_SETTINGS.hooks,
+          Stop: INSTALLED_SETTINGS.hooks.Stop.map((group) => ({
+            ...group,
+            hooks: [...group.hooks, ...PROJECT_HOOK_GROUP.hooks],
+          })),
+        },
+      }),
+    },
+    expected: "deny",
+    reason: /改动了本技能的 hook 分组/u,
+  },
+  {
+    name: "执行会话改项目配置中的放行规则",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: {
+      content: settingsText({
+        ...settingsWithProjectHook(),
+        permissions: { allow: ["Bash(*)"] },
+      }),
+    },
+    expected: "deny",
+    reason: /改动了 hooks 之外的字段: permissions/u,
+  },
+  {
+    name: "执行会话在项目配置中停用全部 hook",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: {
+      content: settingsText({ ...INSTALLED_SETTINGS, disableAllHooks: true }),
+    },
+    expected: "deny",
+    reason: /改动了 hooks 之外的字段: disableAllHooks/u,
+  },
+  {
+    name: "执行会话把项目配置写成结构不对的内容",
+    role: "executor",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: {
+      content: settingsText({
+        ...INSTALLED_SETTINGS,
+        hooks: { PreToolUse: [{ hooks: "node" }] },
+      }),
+    },
+    expected: "deny",
+    reason: /hooks 字段的结构不对/u,
+  },
+  {
+    name: "执行会话用找不到原文的 Edit 改项目配置",
+    role: "executor",
+    tool: "Edit",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: { old_string: "不存在的片段", new_string: "{}" },
+    expected: "deny",
+    reason: /无法确定写入后的内容/u,
+  },
+  {
+    name: "执行会话改本机配置",
+    role: "executor",
+    tool: "Write",
+    target: ".claude/settings.local.json",
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: { content: settingsText(settingsWithProjectHook()) },
+    expected: "deny",
+    reason: /只能由插件的 init 与 uninstall 命令修改/u,
+  },
+  {
+    name: "执行会话写项目自己的 hook 脚本",
+    role: "executor",
+    tool: "Write",
+    target: ".claude/hooks/verify.mjs",
+    expected: "allow",
+  },
+  {
+    name: "执行会话用命令覆盖项目配置",
+    role: "executor",
+    tool: "Bash",
+    input: { command: "cp merged.json .claude/settings.json" },
+    expected: "deny",
+  },
+  {
     name: "执行会话提交",
     role: "executor",
     tool: "Bash",
@@ -974,7 +1192,25 @@ const OTHER_CASES = Object.freeze([
     name: "其它会话改项目配置",
     role: "other",
     tool: "Edit",
-    target: ".claude/settings.json",
+    target: SETTINGS_FILE,
+    expected: "deny",
+  },
+  {
+    name: "其它会话在项目配置中追加项目的 hook",
+    role: "other",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(INSTALLED_SETTINGS),
+    input: { content: settingsText(settingsWithProjectHook()) },
+    expected: "allow",
+  },
+  {
+    name: "其它会话删掉项目配置中本技能的 hook",
+    role: "other",
+    tool: "Write",
+    target: SETTINGS_FILE,
+    previous: settingsText(settingsWithProjectHook()),
+    input: { content: settingsText({ hooks: {} }) },
     expected: "deny",
   },
   {
