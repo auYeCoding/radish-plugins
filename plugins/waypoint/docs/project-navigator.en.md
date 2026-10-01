@@ -96,6 +96,12 @@ Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks a
 - On initialization and on every invocation, the skill checks the plugin's files against all of Git's ignore rules (the project's `.gitignore` files at every level, plus the machine-local and global excludes). If a rule ignores `.navigator/` as a whole, or the configuration under `.claude/`, the skill stops and names the rule, so you can change it before continuing.
 - After each work order commit and each stage commit, any file under `.navigator/` or in the plugin-managed configuration that is still uncommitted is listed, and the commit is complete only after a follow-up commit.
 
+### After a plugin update
+
+The project keeps a copy of the runtime scripts in `.navigator/bin/`, and a plugin update does not replace it by itself. The next time you invoke the skill after updating the plugin, it says the scripts in the project are older and replies with "初始设置" (setup). When you choose A, the skill replaces the copy with the new scripts from the plugin, repeats the self-check, and asks you to commit the upgrade through "阶段提交" (stage commit); all records are kept.
+
+If the skill still says the scripts are older when you invoke it again after the upgrade, the upgrade did not take effect: invoke `/waypoint:project-navigator init` to upgrade again. This could happen with 0.8.0 and earlier.
+
 ## Roles
 
 | Role                 | Who                                                 | What it does                                                                                              |

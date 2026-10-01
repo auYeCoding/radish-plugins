@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: upgrading an initialized project now really replaces the runtime scripts. The next action on entry said only "run init", and the orchestrator ran `init` from the copy in `.navigator/bin/` instead of the script in the skill directory; the copy skipped the copying because its source was itself, and still printed "已升级" (upgraded) with the old version. The project stayed on the old scripts with no further notice, so fixes released later never took effect: a project left at 0.7.4 kept returning to "项目收尾" (project closing) after the closing, kept a modified `state.json`, and had no "自由答复" (free-form answer) reply, all of which 0.7.5 and 0.8.0 had fixed. The next action on entry now prints the full command with the path of the skill directory and the session id, and the project copy refuses to run `init` (except the self-check, `init --verify`), stating the correct command and changing nothing. A project in this state is upgraded by invoking `/waypoint:project-navigator init` again.
+
+### Changed
+
+- `project-navigator`: confirming the project closing with `finish` always requests a stage commit. It used to skip the request when the `state.json` in `HEAD` already recorded the project as finished, a case the completed-project handling added in 0.8.0 covers.
+
 ## [0.8.0] - 2026-09-30
 
 ### Added
