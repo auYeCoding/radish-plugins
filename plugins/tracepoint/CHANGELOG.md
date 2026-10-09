@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
 ### Changed
 
 - `review` skill: `/tracepoint:review` now starts by describing the problems hit in the current session. The agent writes each one out as facts (skill and task, what it saw, which rule it followed, what it did, how the result differs from what you expected) for you to verify, and records it under `.tracepoint/defects/`; when you point out an inaccuracy it corrects both the description and the record. Before, the skill only read records that already existed, so calling it right after a problem showed nothing unless the hook had prompted a record earlier.
@@ -26,5 +28,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Unit and coexistence tests under `tests/tracepoint/`.
 - Guides in Simplified Chinese and English.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/tracepoint--v0.1.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/tracepoint--v0.2.0...HEAD
+[0.2.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/tracepoint--v0.2.0
 [0.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/tracepoint--v0.1.0
