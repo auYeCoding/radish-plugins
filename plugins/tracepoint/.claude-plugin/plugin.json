@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "tracepoint",
   "displayName": "TracePoint",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reverse-engineering workflow discipline for Claude Code: a per-target case file, evidence-and-verification rules, a protected-code methodology, tool preparation, and a skill self-iteration loop.",
   "author": {
     "name": "auYeCoding",
