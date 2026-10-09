@@ -19,7 +19,7 @@
     "gen:docs": "node scripts/gen-navigator-docs.mjs"
   },
   "devDependencies": {
-    "@anthropic-ai/claude-code": "^2.1.283",
+    "@anthropic-ai/claude-code": "^2.1.289",
     "prettier": "^3.9.9"
   }
 }
