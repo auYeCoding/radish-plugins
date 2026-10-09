@@ -6,6 +6,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  describeDefect,
+  describeGroup,
   groupDefects,
   looksLikeCorrection,
   normalizeDefect,
@@ -82,4 +84,36 @@ test("promotablePatterns 要求复现, 跨任务与时效都达标", () => {
     defect({ task: "t2", at: "2026-01-02T00:00:00Z" }),
   ]);
   assert.equal(promotablePatterns(stale, options).length, 0);
+});
+
+test("describeDefect 首行是时间, 技能与任务, 其后只列填了的事实", () => {
+  const lines = describeDefect(
+    defect({ sawWhat: "函数已在案卷里", didWhat: "又反编译了一遍" }),
+  );
+  assert.deepEqual(lines, [
+    "2026-10-08T00:00:00Z | analyze | t1",
+    "看到: 函数已在案卷里",
+    "做了: 又反编译了一遍",
+  ]);
+});
+
+test("describeDefect 对空记录给出占位说明", () => {
+  assert.deepEqual(describeDefect(normalizeDefect({})), [
+    "(未注明时间, 技能与任务)",
+    "(这条记录没有写任何事实)",
+  ]);
+});
+
+test("describeGroup 在统计行之后逐条列出带序号的记录", () => {
+  const [group] = groupDefects([
+    defect({ task: "t1", sawWhat: "函数已在案卷里" }),
+    defect({ task: "t2", rule: "动手前先查案卷" }),
+  ]);
+  assert.deepEqual(describeGroup(group), [
+    "- repeat-analysis: 2 条, 跨 2 个任务, 涉及技能 analyze",
+    "  1. 2026-10-08T00:00:00Z | analyze | t1",
+    "     看到: 函数已在案卷里",
+    "  2. 2026-10-08T00:00:00Z | analyze | t2",
+    "     依据: 动手前先查案卷",
+  ]);
 });

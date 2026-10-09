@@ -1,6 +1,7 @@
 /**
  * @file review-defects.mjs 的端到端行为测试: 子进程跑脚本, 核对它读
- * `.tracepoint/defects/` 的 JSON, 空目录与损坏文件的处理, 以及达阈值模式的呈现.
+ * `.tracepoint/defects/` 的 JSON, 空目录与损坏文件的处理, 逐条列出记录的事实,
+ * 以及达阈值模式的呈现.
  */
 
 import assert from "node:assert/strict";
@@ -87,4 +88,30 @@ test("读出缺陷, 跳过损坏文件, 达阈值的模式被列出", () => {
   assert.match(out, /共 3 条缺陷记录/u);
   assert.match(out, /repeat-analysis/u);
   assert.match(out, /达到提升阈值/u);
+});
+
+test("未达阈值的记录也逐条列出事实供核实", () => {
+  const dir = makeDefectsDir();
+  writeFileSync(
+    path.join(dir, "only.json"),
+    JSON.stringify({
+      plugin: "tracepoint",
+      skill: "analyze",
+      rule: "动手前先查案卷",
+      patternKey: "repeat-analysis",
+      sawWhat: "函数已在案卷里",
+      didWhat: "又反编译了一遍",
+      result: "重复了已有结论",
+      task: "t1",
+      at: "2026-10-08T00:00:00Z",
+    }),
+    "utf8",
+  );
+  const out = runReview();
+  assert.match(out, /1\. 2026-10-08T00:00:00Z \| analyze \| t1/u);
+  assert.match(out, /看到: 函数已在案卷里/u);
+  assert.match(out, /依据: 动手前先查案卷/u);
+  assert.match(out, /做了: 又反编译了一遍/u);
+  assert.match(out, /结果: 重复了已有结论/u);
+  assert.match(out, /未达阈值不提请改技能/u);
 });

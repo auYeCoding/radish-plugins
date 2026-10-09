@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  describeDefect,
+  describeGroup,
   groupDefects,
   looksLikeCorrection,
   normalizeDefect,
@@ -82,4 +84,36 @@ test("promotablePatterns 要求复现, 跨任务与时效都达标", () => {
     defect({ task: "t2", at: "2026-01-02T00:00:00Z" }),
   ]);
   assert.equal(promotablePatterns(stale, options).length, 0);
+});
+
+test("describeDefect 首行是时间, 技能与任务, 其后只列填了的事实", () => {
+  const lines = describeDefect(
+    defect({ sawWhat: "改动只涉及文档", didWhat: "scope 写成了 parser" }),
+  );
+  assert.deepEqual(lines, [
+    "2026-10-08T00:00:00Z | commit-message | t1",
+    "看到: 改动只涉及文档",
+    "做了: scope 写成了 parser",
+  ]);
+});
+
+test("describeDefect 对空记录给出占位说明", () => {
+  assert.deepEqual(describeDefect(normalizeDefect({})), [
+    "(未注明时间, 技能与任务)",
+    "(这条记录没有写任何事实)",
+  ]);
+});
+
+test("describeGroup 在统计行之后逐条列出带序号的记录", () => {
+  const [group] = groupDefects([
+    defect({ task: "t1", sawWhat: "改动只涉及文档" }),
+    defect({ task: "t2", rule: "scope 沿用仓库历史" }),
+  ]);
+  assert.deepEqual(describeGroup(group), [
+    "- stale-scope: 2 条, 跨 2 个任务, 涉及技能 commit-message",
+    "  1. 2026-10-08T00:00:00Z | commit-message | t1",
+    "     看到: 改动只涉及文档",
+    "  2. 2026-10-08T00:00:00Z | commit-message | t2",
+    "     依据: scope 沿用仓库历史",
+  ]);
 });
