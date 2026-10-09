@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-09
+
 ### Changed
 
 - `project-navigator`: `/waypoint:review` now works in every session of an initialized project. The guard lets an orchestration session write defect records (JSON files under `.waypoint/defects/`) and run the read-only summary script `review-defects.mjs`, and lets an executor session write defect records at any time instead of only while its work order is active and aligned. Before, an orchestration session could only describe the problem: saving the record and running the summary were both denied. Everything else the guard denies is unchanged, and the orchestrator's subagents still cannot write. A project initialized with an earlier version needs the `init` command shown on entry to pick this up.
@@ -204,7 +206,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.11.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.12.0...HEAD
+[0.12.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.12.0
 [0.11.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.11.0
 [0.10.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.10.0
 [0.9.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.9.0
