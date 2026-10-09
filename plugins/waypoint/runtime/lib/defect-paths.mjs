@@ -13,6 +13,14 @@ import path from "node:path";
 export const DEFECT_DIR_NAME = ".waypoint";
 
 /**
+ * 缺陷收件目录在点目录中的子目录名: 每条缺陷记录是其中的一个 JSON 文件.
+ * project-navigator 的守卫按 `<点目录>/<本目录>` 放行缺陷记录的写入, 它的运行脚本
+ * 复制进项目后不能引用本文件, 另有一份常量 (`DEFECT_INBOX_DIRECTORY`), 由测试核对.
+ * @type {string}
+ */
+export const DEFECT_INBOX_NAME = "defects";
+
+/**
  * 从起始目录向上逐级查找最近的缺陷点目录.
  *
  * @param {string} startDir 起始目录 (通常是会话工作目录).

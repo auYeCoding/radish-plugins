@@ -6,8 +6,13 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 
+import {
+  DEFECT_DIR_NAME,
+  DEFECT_INBOX_NAME,
+} from "../../plugins/waypoint/runtime/lib/defect-paths.mjs";
 import { RESEARCH_FRAME } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/briefs.mjs";
 import { decideToolUse } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs";
+import { DEFECT_INBOX_DIRECTORY } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/paths.mjs";
 import {
   mergeNavigatorHooks,
   mergeNavigatorPermissions,
@@ -562,6 +567,66 @@ const ORCHESTRATOR_CASES = Object.freeze([
     },
     expected: "deny",
   },
+  {
+    name: "写技能自迭代的缺陷记录",
+    role: "orchestrator",
+    tool: "Write",
+    target: ".waypoint/defects/2026-10-09-stale-scope.json",
+    input: { content: "{}" },
+    expected: "allow",
+  },
+  {
+    name: "在缺陷收件目录写非 JSON 文件",
+    role: "orchestrator",
+    tool: "Write",
+    target: ".waypoint/defects/notes.md",
+    expected: "deny",
+    reason: /缺陷记录 \.waypoint\/defects\/\*\.json 除外/u,
+  },
+  {
+    name: "写缺陷收件目录之外的点目录文件",
+    role: "orchestrator",
+    tool: "Write",
+    target: ".waypoint/config.json",
+    expected: "deny",
+  },
+  {
+    name: "运行缺陷汇总脚本",
+    role: "orchestrator",
+    tool: "Bash",
+    input: {
+      command: "node C:/plugins/waypoint/runtime/tools/review-defects.mjs",
+    },
+    expected: "allow",
+  },
+  {
+    name: "运行带引号路径与参数的缺陷汇总脚本",
+    role: "orchestrator",
+    tool: "PowerShell",
+    input: {
+      command:
+        'node "C:\\My Plugins\\waypoint\\runtime\\tools\\review-defects.mjs" --min-count 2',
+    },
+    expected: "allow",
+  },
+  {
+    name: "把缺陷汇总脚本的输出重定向到文件",
+    role: "orchestrator",
+    tool: "Bash",
+    input: {
+      command:
+        "node C:/plugins/waypoint/runtime/tools/review-defects.mjs > src/out.txt",
+    },
+    expected: "deny",
+  },
+  {
+    name: "运行插件目录中的其它脚本",
+    role: "orchestrator",
+    tool: "Bash",
+    input: { command: "node C:/plugins/waypoint/runtime/tools/other.mjs" },
+    expected: "deny",
+    reason: /只运行三类命令.+缺陷汇总脚本/u,
+  },
 ]);
 
 /**
@@ -719,6 +784,26 @@ const SUBAGENT_CASES = Object.freeze([
     isSubagent: true,
     agentType: "waypoint:navigator-reader",
     tool: EVIDENCE_TOOL,
+    expected: "deny",
+  },
+  {
+    name: "子代理写缺陷记录",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "Write",
+    target: ".waypoint/defects/a.json",
+    expected: "deny",
+  },
+  {
+    name: "验收子代理运行缺陷汇总脚本",
+    role: "orchestrator",
+    isSubagent: true,
+    agentType: "waypoint:navigator-reviewer",
+    tool: "Bash",
+    input: {
+      command: "node C:/plugins/waypoint/runtime/tools/review-defects.mjs",
+    },
     expected: "deny",
   },
 ]);
@@ -1094,6 +1179,31 @@ const EXECUTOR_CASES = Object.freeze([
     },
     expected: "deny",
   },
+  {
+    name: "执行会话在工单结束后写缺陷记录",
+    role: "executor",
+    tool: "Write",
+    target: ".waypoint/defects/a.json",
+    context: { isOrderActive: false, isAligned: false },
+    expected: "allow",
+  },
+  {
+    name: "执行会话对齐前写缺陷记录",
+    role: "executor",
+    tool: "Write",
+    target: ".waypoint/defects/a.json",
+    context: { isAligned: false },
+    expected: "allow",
+  },
+  {
+    name: "执行会话运行缺陷汇总脚本",
+    role: "executor",
+    tool: "Bash",
+    input: {
+      command: "node C:/plugins/waypoint/runtime/tools/review-defects.mjs",
+    },
+    expected: "allow",
+  },
 ]);
 
 /**
@@ -1276,6 +1386,13 @@ const OTHER_CASES = Object.freeze([
     expected: "deny",
   },
   { name: "其它会话联网", role: "other", tool: "WebSearch", expected: "allow" },
+  {
+    name: "其它会话写缺陷记录",
+    role: "other",
+    tool: "Write",
+    target: ".waypoint/defects/a.json",
+    expected: "allow",
+  },
 ]);
 
 /**
@@ -1325,6 +1442,14 @@ for (const testCase of [
     }
   });
 }
+
+test("守卫: 放行的缺陷收件目录与自迭代脚本读取的目录一致", () => {
+  assert.equal(
+    DEFECT_INBOX_DIRECTORY,
+    `${DEFECT_DIR_NAME}/${DEFECT_INBOX_NAME}`,
+    "project-navigator 的 DEFECT_INBOX_DIRECTORY 必须等于 waypoint 的点目录名加收件子目录名; 改了一处要同步另一处.",
+  );
+});
 
 test("守卫: 写入类工具缺少目标路径时按项目之外处理", () => {
   const decision = decide({

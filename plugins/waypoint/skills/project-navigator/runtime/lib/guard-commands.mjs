@@ -2,7 +2,8 @@
  * @file 命令行守卫: 编排会话的命令白名单, 以及执行会话与其它会话的命令禁令.
  *
  * 编排会话只允许三类命令: 插件自带的命令行脚本, 只读的 git 命令, 用户已授权的
- * 测试命令; 到了提交步骤, 再放行提交所需的 git 命令. 验收子代理另外可以运行
+ * 测试命令; 到了提交步骤, 再放行提交所需的 git 命令. 另外放行技能自迭代的缺陷
+ * 汇总脚本, 它只读缺陷记录并打印. 验收子代理另外可以运行
  * 核对源码证据的插件命令. 含有管道, 重定向, 命令串联等 shell 元字符的命令
  * 一律视为复合命令, 除非与已授权的测试命令逐字相同. 执行会话与其它会话只能
  * 运行只读的插件命令, 改变编排状态的插件命令只有编排会话能运行.
@@ -31,6 +32,15 @@ const COMPOUND_PATTERN = /[;&|<>`\n\r]|\$\(/u;
  */
 const NAVIGATOR_COMMAND_PATTERN =
   /^node\s+(?:"[^"]*[\\/]runtime[\\/]navigator\.mjs"|[^"\s]*[\\/]runtime[\\/]navigator\.mjs)(\s|$)/u;
+
+/**
+ * 技能自迭代的缺陷汇总脚本的调用形式: node 加上以
+ * runtime/tools/review-defects.mjs 结尾的路径. 脚本位于插件目录, 由
+ * `/waypoint:review` 给出完整命令; 它只读缺陷收件目录并打印汇总, 不写任何文件.
+ * @type {RegExp}
+ */
+const DEFECT_REVIEW_COMMAND_PATTERN =
+  /^node\s+(?:"[^"]*[\\/]runtime[\\/]tools[\\/]review-defects\.mjs"|[^"\s]*[\\/]runtime[\\/]tools[\\/]review-defects\.mjs)(\s|$)/u;
 
 /**
  * 命令中出现的插件命令调用: 由 node 运行 `navigator.mjs`, 其后第一个词是命令名.
@@ -156,7 +166,7 @@ const REVIEWER_COMPOUND_REASON =
  * @type {string}
  */
 const ORCHESTRATOR_COMMAND_REASON =
-  "编排会话只运行三类命令: 插件命令 (node .navigator/bin/runtime/navigator.mjs ...), 只读 git 命令, 用户已授权的测试命令. 装依赖, 构建, 运行业务脚本都属于实现, 请发布工单交给执行会话.";
+  "编排会话只运行三类命令: 插件命令 (node .navigator/bin/runtime/navigator.mjs ...), 只读 git 命令, 用户已授权的测试命令; 另可照 /waypoint:review 给出的写法运行缺陷汇总脚本. 装依赖, 构建, 运行业务脚本都属于实现, 请发布工单交给执行会话.";
 
 /**
  * 会改写文件的命令特征, 用于粗查是否试图用命令行改写受保护的路径.
@@ -243,7 +253,11 @@ export function checkOrchestratorCommand(command, context) {
       ? `${ORCHESTRATOR_COMPOUND_REASON} ${COMMIT_COMMAND_FORMS}`
       : ORCHESTRATOR_COMPOUND_REASON;
   }
-  if (NAVIGATOR_COMMAND_PATTERN.test(trimmed) || isReadOnlyGit(trimmed)) {
+  if (
+    NAVIGATOR_COMMAND_PATTERN.test(trimmed) ||
+    DEFECT_REVIEW_COMMAND_PATTERN.test(trimmed) ||
+    isReadOnlyGit(trimmed)
+  ) {
     return undefined;
   }
   if (context.isCommitStep && COMMIT_STEP_GIT_PATTERN.test(trimmed)) {

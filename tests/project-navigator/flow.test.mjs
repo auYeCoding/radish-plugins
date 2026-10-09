@@ -8,9 +8,11 @@
  */
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { PLACEHOLDER } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
 import {
@@ -34,6 +36,17 @@ const ORCHESTRATOR = "session-orchestrator";
  * @type {string}
  */
 const EXECUTOR = "session-executor";
+
+/**
+ * waypoint 技能自迭代的缺陷汇总脚本, 位于插件目录, 不随 init 复制进项目.
+ * @type {string}
+ */
+const DEFECT_REVIEW_SCRIPT = fileURLToPath(
+  new URL(
+    "../../plugins/waypoint/runtime/tools/review-defects.mjs",
+    import.meta.url,
+  ),
+);
 
 /**
  * 填写骨架中占位符时使用的文字.
@@ -409,6 +422,50 @@ function writeTranscript(root, name, contexts) {
   );
   return file;
 }
+
+projectTest(
+  "流程: 编排会话能写缺陷记录并运行缺陷汇总脚本, 写业务文件仍被拒",
+  (context) => {
+    const { root, project, hook } = context;
+    writeThroughHook(
+      context,
+      ORCHESTRATOR,
+      ".waypoint/defects/2026-10-09-reply-bounced.json",
+      JSON.stringify({
+        plugin: "waypoint",
+        skill: "project-navigator",
+        patternKey: "reply-bounced",
+        sawWhat: "回复被打回两次",
+        task: "demo",
+        at: "2026-10-09T00:00:00Z",
+      }),
+    );
+    const review = hook({
+      session_id: ORCHESTRATOR,
+      hook_event_name: "PreToolUse",
+      tool_name: "Bash",
+      tool_input: { command: `node "${DEFECT_REVIEW_SCRIPT}"` },
+    });
+    assert.equal(
+      review.output,
+      undefined,
+      review.output?.hookSpecificOutput?.permissionDecisionReason,
+    );
+    const summary = spawnSync(process.execPath, [DEFECT_REVIEW_SCRIPT, root], {
+      encoding: "utf8",
+    });
+    assert.match(summary.stdout, /reply-bounced: 1 条/u);
+    assert.match(summary.stdout, /看到: 回复被打回两次/u);
+    const business = hook({
+      session_id: ORCHESTRATOR,
+      hook_event_name: "PreToolUse",
+      tool_name: "Write",
+      tool_input: { file_path: path.join(root, "src", "app.js"), content: "" },
+    });
+    assert.equal(business.output.hookSpecificOutput.permissionDecision, "deny");
+    assert.doesNotMatch(project(["status"]).stdout, /状态目录与快照不符/u);
+  },
+);
 
 projectTest("流程: 路线与工单发布, 回复骨架带启动提示词", (context) => {
   const { root, project, hook } = context;

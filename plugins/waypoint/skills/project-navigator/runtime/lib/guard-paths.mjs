@@ -6,6 +6,7 @@ import { reconstructContent } from "./edits.mjs";
 import { checkFile, findFileSpec } from "./file-checks.mjs";
 import {
   BIN_DIRECTORY,
+  DEFECT_INBOX_DIRECTORY,
   DRAFTS_DIRECTORY,
   GENERATED_FILES,
   NAVIGATOR_DIRECTORY,
@@ -33,6 +34,12 @@ import { USER_TESTS_FILE_KIND, checkUserOutputs } from "./user-tests.mjs";
  * @type {string}
  */
 const RECORD_EXTENSION = ".md";
+
+/**
+ * 缺陷记录文件的扩展名: 缺陷收件目录下只放行这种文件.
+ * @type {string}
+ */
+const DEFECT_RECORD_EXTENSION = ".json";
 
 /**
  * 执行会话在开工对齐之前改动业务文件或证据文件时的拒绝理由.
@@ -160,9 +167,12 @@ function decideOrchestratorWrite(request) {
   if (request.isSubagent) {
     return deny("编排会话派出的子代理只能读, 不能写任何文件.");
   }
+  if (isDefectRecord(relativePath)) {
+    return allow();
+  }
   if (!isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)) {
     return deny(
-      "编排会话不写业务代码, 也不改 .navigator/ 以外的文件; 需要改动时请发布工单, 交给执行会话.",
+      `编排会话不写业务代码, 也不改 .navigator/ 以外的文件 (/waypoint:review 的缺陷记录 ${DEFECT_INBOX_DIRECTORY}/*${DEFECT_RECORD_EXTENSION} 除外); 需要改动时请发布工单, 交给执行会话.`,
     );
   }
   if (isUnderDirectory(relativePath, DRAFTS_DIRECTORY)) {
@@ -181,13 +191,16 @@ function decideOrchestratorWrite(request) {
 
 /**
  * 判定执行会话的写入: 只能写本工单回执, 本工单的证据文件与业务文件;
- * 对齐之前不能写证据文件与业务文件.
+ * 对齐之前不能写证据文件与业务文件. 缺陷记录不是业务文件, 任何时候都能写.
  *
  * @param {WriteRequest} request 写入请求.
  * @returns {import("./guard.mjs").GuardDecision} 判定结果.
  */
 function decideExecutorWrite(request) {
   const { relativePath, context } = request;
+  if (isDefectRecord(relativePath)) {
+    return allow();
+  }
   return context.isOrderActive &&
     isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)
     ? decideExecutorRecordWrite(request)
@@ -287,6 +300,20 @@ function denyWithProblems(header, problems) {
       header,
       ...problems.map((problem, index) => `${index + 1}. ${problem}`),
     ].join("\n"),
+  );
+}
+
+/**
+ * 判断路径是否为技能自迭代的缺陷记录: 缺陷收件目录下的 JSON 文件. 它记的是
+ * 技能本身的问题, 不是业务代码也不是编排记录, 所以各种身份的主会话都能写.
+ *
+ * @param {string} relativePath 项目相对路径.
+ * @returns {boolean} 是缺陷记录时返回 true.
+ */
+function isDefectRecord(relativePath) {
+  return (
+    isUnderDirectory(relativePath, DEFECT_INBOX_DIRECTORY) &&
+    relativePath.toLowerCase().endsWith(DEFECT_RECORD_EXTENSION)
   );
 }
 

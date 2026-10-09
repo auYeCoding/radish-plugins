@@ -112,6 +112,15 @@ export const PROTECTED_CONFIG_FILES = Object.freeze([
 ]);
 
 /**
+ * waypoint 技能自迭代的缺陷收件目录, 相对于项目根目录. 缺陷记录由
+ * `/waypoint:review` 写入, 不属于编排记录, 也不进快照. 目录名与插件的
+ * `runtime/lib/defect-paths.mjs` 一致: 运行脚本复制进项目之后不能引用插件目录中的
+ * 文件, 所以这里另写一份, 两边是否一致由测试核对.
+ * @type {string}
+ */
+export const DEFECT_INBOX_DIRECTORY = ".waypoint/defects";
+
+/**
  * 推进路线文件, 相对于项目根目录; 由脚本从状态文件整份生成.
  * @type {string}
  */
