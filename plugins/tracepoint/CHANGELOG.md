@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-09
+
 ### Added
 
 - Plugin scaffold and manifest for `tracepoint`, registered in the marketplace.
@@ -15,8 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Plugin hook: injects the case-file summary at session start and after compaction, a short anchor each turn, and records MCP tool calls into the case file for deduplication; on a correction it prompts the agent to log a defect record. It denies no tool call, is gated on `.tracepoint/` (fully silent otherwise), and injects nothing inside subagents.
 - Case file at `.tracepoint/case.json` with atomic writes, plus a defect inbox at `.tracepoint/defects/`.
 - Tools: `discover-mcp.mjs` (discovers reverse-engineering MCP servers from the configuration, not just `PATH`), `check-case.mjs` (verifies every conclusion carries location evidence; zero conclusions fails), and `review-defects.mjs` (aggregates defect records and lists patterns that reach the promotion threshold).
-- Generic self-iteration library (`runtime/lib/self-iteration.mjs`) reusable by other plugins in the bundle.
+- Generic self-iteration library (`runtime/lib/self-iteration.mjs`), vendored per plugin and kept identical to WayPoint's copy so each plugin installs standalone.
 - Unit and coexistence tests under `tests/tracepoint/`.
 - Guides in Simplified Chinese and English.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/commits/main/plugins/tracepoint
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/tracepoint--v0.1.0...HEAD
+[0.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/tracepoint--v0.1.0
