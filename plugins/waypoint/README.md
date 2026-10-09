@@ -38,6 +38,10 @@ WayPoint 是一个提供实用工作流技能的 [Claude Code](https://code.clau
 - 请停用其它生成提交消息的技能, 例如 `~/.claude/skills` 中的个人技能. 否则请求提交消息时, Claude 可能在两者之间任选其一.
 - 项目初始化 `project-navigator` 之后, 防护 hook 对该项目中的所有会话生效. 例如普通会话不能修改 `.navigator/` 下的记录, 也不能运行改变编排状态的插件命令; 不再需要时运行 `/waypoint:project-navigator uninstall`.
 
+## 技能自迭代
+
+WayPoint 会在你纠正它的结果时帮助迭代技能. 用过 `commit-message` 或 `repo-init` 后, 如果你指出结果有问题, 插件的只观察 hook 会提示把事实记成一条缺陷 (写进目标项目的 `.waypoint/defects/`, 只在真记时才出现这个点目录); 之后运行 `/waypoint:review` 汇总: 对反复出现 (跨任务, 近期) 的模式按固定分类表归因, 给出改法建议, **是否改技能由你决定**. `project-navigator` 的技能缺陷不在编排会话弹提示, 你发现时可手动记一条, 同样由 `/waypoint:review` 复查. 这套逻辑各插件内置一份, 与同一插件包里的其它插件 (如 TracePoint) 各自独立, 互不重复记录.
+
 ## 安装
 
 见插件市场 README 中的 [安装](../../README.md#安装) 一节.
