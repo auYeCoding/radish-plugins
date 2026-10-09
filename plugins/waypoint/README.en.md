@@ -38,6 +38,10 @@ To drive a larger project from scratch, run `/waypoint:project-navigator <your r
 - Disable any other skill that writes commit messages, such as a personal skill in `~/.claude/skills`. Otherwise Claude may pick either skill when you ask for a commit message.
 - Once `project-navigator` is initialized in a project, its guard hooks apply to every session in that project. For example, ordinary sessions cannot edit the records under `.navigator/` or run plugin commands that change the orchestration state. Run `/waypoint:project-navigator uninstall` when you no longer need it.
 
+## Skill self-iteration
+
+WayPoint helps you iterate its skills when you correct their results. After you use `commit-message` or `repo-init`, if you point out that the result is wrong, the plugin's observe-only hook suggests logging the facts as a defect record (under `.waypoint/defects/` in the target project; the dot-directory appears only when you actually log one). Running `/waypoint:review` then aggregates them: recurring patterns (across tasks, recent) are attributed by a fixed taxonomy with suggested changes, and **whether to change a skill is your call**. `project-navigator`'s skill defects are not prompted in its orchestration sessions; log one by hand when you spot it, and the same `/waypoint:review` reviews it. This logic is vendored per plugin, independent of other plugins in the bundle (such as TracePoint), with no double-recording.
+
 ## Installation
 
 See [Installation](../../README.en.md#installation) in the marketplace README.

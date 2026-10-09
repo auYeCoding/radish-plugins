@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `review` skill (`/waypoint:review`): user-invoked skill self-iteration for WayPoint. Aggregates fact-only defect records from `.waypoint/defects/`, attributes recurring patterns by a fixed taxonomy, and raises them for the user to decide whether to iterate the skills; it never changes a skill on its own.
+- A plugin-level hook that observes only and denies nothing. After a `/waypoint:commit-message` or `/waypoint:repo-init` call it records a session-level signal (in a temp directory, never in the user's project); when that same session is then corrected, it injects one line suggesting a defect record for `/waypoint:review`. It is silent otherwise and in subagents. project-navigator's orchestration sessions are not triggered; its own skill defects are logged by hand for the same review.
+- Generic self-iteration library (`runtime/lib/self-iteration.mjs`), vendored per plugin and kept identical to tracepoint's copy so each plugin installs standalone.
+
 ## [0.9.0] - 2026-10-01
 
 ### Changed

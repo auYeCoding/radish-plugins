@@ -1,0 +1,42 @@
+{
+  "description": "TracePoint: inject the reverse-engineering case file at session start and after compaction, keep a per-turn anchor, and record MCP analysis calls into the case file. Injection and recording only; never denies a tool call.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/hook.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/hook.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "mcp__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/hook.mjs"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

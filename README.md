@@ -4,17 +4,19 @@
 
 [![Validate](https://github.com/auYeCoding/radish-plugins/actions/workflows/validate.yml/badge.svg)](https://github.com/auYeCoding/radish-plugins/actions/workflows/validate.yml)
 [![WayPoint version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FauYeCoding%2Fradish-plugins%2Fmain%2Fplugins%2Fwaypoint%2F.claude-plugin%2Fplugin.json&query=%24.version&label=waypoint)](plugins/waypoint/CHANGELOG.md)
+[![TracePoint version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FauYeCoding%2Fradish-plugins%2Fmain%2Fplugins%2Ftracepoint%2F.claude-plugin%2Fplugin.json&query=%24.version&label=tracepoint)](plugins/tracepoint/CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **radish-plugins** 是一个 [Claude Code](https://code.claude.com) 实用插件市场, 帮你处理日常开发中的琐事. 由 auYeCoding 维护, 会陆续加入新的插件和技能.
 
 ## 插件列表
 
-| 插件                                      | 技能                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 文档                                   |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
-| [WayPoint](plugins/waypoint) (`waypoint`) | [`commit-message`](plugins/waypoint/docs/commit-message.md): 根据真实的 Git 改动生成符合 Conventional Commits 的简体中文提交消息, 并按需提交或推送.<br>[`repo-init`](plugins/waypoint/docs/repo-init.md): 初始化 Git 仓库, 编写逐条附中文注释的 `.gitignore`, `.editorconfig` 与 `.gitattributes`.<br>[`project-navigator`](plugins/waypoint/docs/project-navigator.md): 引导大型项目从一句需求走到立项, 选型, 骨架与逐个切片的交付, 只做规划与验收, 实现交给另开的会话. | [插件说明](plugins/waypoint/README.md) |
+| 插件                                            | 技能                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 文档                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| [WayPoint](plugins/waypoint) (`waypoint`)       | [`commit-message`](plugins/waypoint/docs/commit-message.md): 根据真实的 Git 改动生成符合 Conventional Commits 的简体中文提交消息, 并按需提交或推送.<br>[`repo-init`](plugins/waypoint/docs/repo-init.md): 初始化 Git 仓库, 编写逐条附中文注释的 `.gitignore`, `.editorconfig` 与 `.gitattributes`.<br>[`project-navigator`](plugins/waypoint/docs/project-navigator.md): 引导大型项目从一句需求走到立项, 选型, 骨架与逐个切片的交付, 只做规划与验收, 实现交给另开的会话. | [插件说明](plugins/waypoint/README.md)   |
+| [TracePoint](plugins/tracepoint) (`tracepoint`) | [`analyze`](plugins/tracepoint/docs/analyze.md): 逆向工作流纪律 — 开案卷, 工具就位, 结论带位置证据, 以反汇编为准, 查重与预算, 使分析不重复不空转不提前收工.<br>[`protected-code`](plugins/tracepoint/docs/protected-code.md): 分析带保护代码 (加壳, 虚拟机, 控制流混淆, 反调试) 的通用方法, 先识别保护类型再决定走静态还是动态.                                                                                                                                          | [插件说明](plugins/tracepoint/README.md) |
 
-点击技能名可查看该技能的详细介绍与使用方法. WayPoint 生成的提交消息, 规则文件注释与项目记录都使用简体中文.
+点击技能名可查看该技能的详细介绍与使用方法. WayPoint 生成的提交消息, 规则文件注释与项目记录都使用简体中文; TracePoint 的案卷, 缺陷记录与技能正文也使用简体中文.
 
 ## 使用前提
 

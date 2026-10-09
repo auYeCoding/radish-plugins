@@ -15,6 +15,7 @@
 | `project-navigator` 的规格, 运行脚本或文档源文件 | 见 [project-navigator 维护文档](plugins/waypoint/docs/project-navigator-maintaining.md#修改流程)             |
 | 新增技能                                         | 见 [新增技能](#新增技能)                                                                                     |
 | 新增插件                                         | 见 [新增插件](#新增插件)                                                                                     |
+| 任一插件的 `runtime/lib/self-iteration.mjs`      | 另一个插件里的同名副本 (tracepoint 与 waypoint 各内置一份, 逻辑体必须一致, 各有单元测试)                     |
 | 插件的对外表现                                   | 发版: 提升 `plugin.json` 中的 `version`, 否则用户收不到更新                                                  |
 | CI 任务名 (`validate.yml`)                       | GitHub 分支规则中的必需检查名, 否则所有 PR 都无法合并                                                        |
 | 横幅图展示的内容 (如技能列表)                    | 重新生成 PNG, 并在 GitHub 设置中重新上传社交预览图                                                           |
@@ -71,6 +72,8 @@
 - **`commit-message` 不调用 `repo-init`, 也不执行 `git init`**, 只提示用户先初始化.
 - **`SKILL.md` 不设置 `allowed-tools`.** 只读的 git 命令本来就免确认; `git add`, `git commit`, `git push` 保留权限确认, 作为误触发时的安全网. 唯一的例外是 `project-navigator`, 原因见它的 [维护文档](plugins/waypoint/docs/project-navigator-maintaining.md#设计决策).
 - **`project-navigator` 的设计决策与排查手册写在它自己的维护文档中**, 修改它之前先读 [project-navigator 维护文档](plugins/waypoint/docs/project-navigator-maintaining.md).
+- **waypoint 的自迭代捕获用插件级 hook, 只观察不拒绝.** project-navigator 的守卫 hook 装在项目级 (由 `init` 显式安装), 因为它拒绝操作, 放插件级会让装了插件的所有项目受限; waypoint 的自迭代 hook (`hooks/hooks.json`) 不拒绝任何操作, 故可放插件级. 它只在 "本会话用过 commit-message 或 repo-init 后又被纠正" 时注入一行提示, 平时静默, 子代理里不触发; project-navigator 的使用不记信号, 所以不会由它触发 (若同一会话先用过上述简单技能再被纠正, 仍可能提示, 实际影响小), navigator 的技能缺陷靠手动 `/waypoint:review`.
+- **自迭代运行库各插件内置一份.** `runtime/lib/self-iteration.mjs` 是无状态纯逻辑, tracepoint 与 waypoint 各有一份完全相同的副本, 因为插件独立安装时不能引用其它插件或市场层的文件 (见上条 "技能不能引用插件目录以外的文件"). 改一份必须同步另一份.
 - **提交消息经标准输入以 UTF-8 传给 `git commit -F -`.** Windows PowerShell 5.1 的管道默认不是 UTF-8, 需先设置 `$OutputEncoding`, 否则中文会乱码.
 - **提交消息严禁任何署名 trailer**, 这条规则不接受用户豁免.
 
