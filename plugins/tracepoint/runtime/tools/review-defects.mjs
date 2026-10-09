@@ -1,6 +1,7 @@
 /**
  * @file 缺陷复查: 读 `.tracepoint/defects/` 下的缺陷记录, 按模式键去重
- * 计数, 列出达到提升阈值的模式供用户迭代技能. 只读与统计, 不改技能, 不下根因结论.
+ * 计数, 逐条列出记录的事实供用户核实, 并标出达到提升阈值的模式供用户迭代技能.
+ * 只读与统计, 不改技能, 不下根因结论.
  *
  * 用法: node <本文件> [起始目录] [--min-count N] [--min-tasks N] [--within-days N].
  * 从起始目录向上找 `.tracepoint/`, 读其 defects/ 子目录里的 *.json.
@@ -11,6 +12,7 @@ import path from "node:path";
 
 import { findCaseDir } from "../lib/paths.mjs";
 import {
+  describeGroup,
   groupDefects,
   normalizeDefect,
   promotablePatterns,
@@ -27,7 +29,7 @@ const DEFAULT_THRESHOLD = Object.freeze({
 });
 
 /**
- * 入口: 读缺陷, 分组, 打印统计与达阈值的模式.
+ * 入口: 读缺陷, 分组, 打印统计, 每条记录的事实与达阈值的模式.
  *
  * @returns {void}
  */
@@ -51,11 +53,8 @@ function main() {
   const lines = [
     `共 ${defects.length} 条缺陷记录, ${groups.length} 个模式.`,
     "",
-    "全部模式 (按条数):",
-    ...groups.map(
-      (group) =>
-        `- ${group.patternKey}: ${group.count} 条, 跨 ${group.tasks.length} 个任务, 涉及技能 ${group.skills.join("/") || "未注明"}`,
-    ),
+    "全部模式与记录 (按条数):",
+    ...groups.flatMap(describeGroup),
     "",
     `达到提升阈值的模式 (复现>=${threshold.minCount}, 跨任务>=${threshold.minTasks}, ${threshold.withinDays} 天内):`,
     ...(promotable.length === 0

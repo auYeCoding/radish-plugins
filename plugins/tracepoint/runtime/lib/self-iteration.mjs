@@ -1,6 +1,7 @@
 /**
  * @file 技能自迭代的通用逻辑: 判断用户消息是否像一次纠正, 规整缺陷记录, 按模式键
- * 去重计数, 判断哪些模式达到提升阈值. 纯逻辑, 不读写文件, 不绑定具体插件或收件目录.
+ * 去重计数, 判断哪些模式达到提升阈值, 把记录排成供人核实的文字. 纯逻辑, 不读写文件,
+ * 不绑定具体插件或收件目录.
  *
  * 本文件是各插件内置一份的副本 (见仓库 MAINTAINING 的同步登记): tracepoint 与
  * waypoint 各有一份完全相同的逻辑体, 因为插件独立安装时不能引用其它插件的文件.
@@ -140,6 +141,81 @@ export function promotablePatterns(
       .filter((time) => !Number.isNaN(time));
     return latest.some((time) => time >= cutoff);
   });
+}
+
+/**
+ * 一条缺陷记录里逐条呈现的事实字段与其标签, 按呈现顺序排列.
+ * @type {ReadonlyArray<readonly [keyof DefectRecord, string]>}
+ */
+const FACT_FIELDS = Object.freeze([
+  ["sawWhat", "看到"],
+  ["rule", "依据"],
+  ["didWhat", "做了"],
+  ["result", "结果"],
+]);
+
+/**
+ * 记录没有注明时间, 技能与任务时, 首行用的占位文字.
+ * @type {string}
+ */
+const UNLABELED_RECORD = "(未注明时间, 技能与任务)";
+
+/**
+ * 记录里一个事实字段都没填时, 代替事实行的说明.
+ * @type {string}
+ */
+const NO_FACTS_NOTE = "(这条记录没有写任何事实)";
+
+/**
+ * 分组里每条记录首行的缩进.
+ * @type {string}
+ */
+const RECORD_INDENT = "  ";
+
+/**
+ * 分组里每条记录事实行的缩进, 与首行序号之后的文字对齐.
+ * @type {string}
+ */
+const FACT_INDENT = "     ";
+
+/**
+ * 把一条缺陷记录排成供人核实的若干行: 首行是时间, 技能与任务, 其后每个填了的事实
+ * 一行. 只照录记录里的内容, 不补全也不归因.
+ *
+ * @param {DefectRecord} record 缺陷记录.
+ * @returns {string[]} 可直接打印的行.
+ */
+export function describeDefect(record) {
+  const heading = [record.at, record.skill, record.task]
+    .filter((part) => part !== "")
+    .join(" | ");
+  const facts = FACT_FIELDS.filter(([field]) => record[field] !== "").map(
+    ([field, label]) => `${label}: ${record[field]}`,
+  );
+  return [
+    heading === "" ? UNLABELED_RECORD : heading,
+    ...(facts.length === 0 ? [NO_FACTS_NOTE] : facts),
+  ];
+}
+
+/**
+ * 把一个分组排成供人核实的若干行: 首行是模式键与统计, 其后逐条列出记录的事实.
+ *
+ * @param {DefectGroup} group 分组.
+ * @returns {string[]} 可直接打印的行.
+ */
+export function describeGroup(group) {
+  const skills = group.skills.length === 0 ? "未注明" : group.skills.join("/");
+  return [
+    `- ${group.patternKey}: ${group.count} 条, 跨 ${group.tasks.length} 个任务, 涉及技能 ${skills}`,
+    ...group.records.flatMap((record, index) => {
+      const [heading, ...facts] = describeDefect(record);
+      return [
+        `${RECORD_INDENT}${index + 1}. ${heading}`,
+        ...facts.map((fact) => `${FACT_INDENT}${fact}`),
+      ];
+    }),
+  ];
 }
 
 /**

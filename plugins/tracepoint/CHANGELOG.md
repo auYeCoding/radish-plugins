@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `review` skill: `/tracepoint:review` now starts by describing the problems hit in the current session. The agent writes each one out as facts (skill and task, what it saw, which rule it followed, what it did, how the result differs from what you expected) for you to verify, and records it under `.tracepoint/defects/`; when you point out an inaccuracy it corrects both the description and the record. Before, the skill only read records that already existed, so calling it right after a problem showed nothing unless the hook had prompted a record earlier.
+- `review-defects.mjs` lists the facts of every record under its pattern, and the skill relays them to you. Before, it printed only a count per pattern, so the records of patterns below the promotion threshold were never shown.
+
 ## [0.1.0] - 2026-10-09
 
 ### Added
