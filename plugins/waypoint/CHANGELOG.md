@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-09
+
 ### Changed
 
 - `review` skill: `/waypoint:review` now starts by describing the problems hit in the current session. The agent writes each one out as facts (skill and task, what it saw, which rule it followed, what it did, how the result differs from what you expected) for you to verify, and records it under `.waypoint/defects/`; when you point out an inaccuracy it corrects both the description and the record. This covers `project-navigator` as well, though an orchestration session cannot save the record and says so. Before, the skill only read records that already existed, so calling it right after a problem showed nothing unless the hook had prompted a record earlier.
@@ -197,7 +199,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.10.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.11.0...HEAD
+[0.11.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.11.0
 [0.10.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.10.0
 [0.9.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.9.0
 [0.8.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.8.1
