@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `project-navigator`: `/waypoint:review` now works in every session of an initialized project. The guard lets an orchestration session write defect records (JSON files under `.waypoint/defects/`) and run the read-only summary script `review-defects.mjs`, and lets an executor session write defect records at any time instead of only while its work order is active and aligned. Before, an orchestration session could only describe the problem: saving the record and running the summary were both denied. Everything else the guard denies is unchanged, and the orchestrator's subagents still cannot write. A project initialized with an earlier version needs the `init` command shown on entry to pick this up.
+- `review` skill: in a `project-navigator` orchestration session it replies with the "自由答复" type, and when the project's runtime is too old to allow the two steps it says so instead of retrying another way. The README no longer says that nothing can be saved there, and suggests ignoring `.waypoint/` in `.gitignore`.
+
 ## [0.11.0] - 2026-10-09
 
 ### Changed

@@ -72,7 +72,7 @@
 - **`commit-message` 不调用 `repo-init`, 也不执行 `git init`**, 只提示用户先初始化.
 - **`SKILL.md` 不设置 `allowed-tools`.** 只读的 git 命令本来就免确认; `git add`, `git commit`, `git push` 保留权限确认, 作为误触发时的安全网. 唯一的例外是 `project-navigator`, 原因见它的 [维护文档](plugins/waypoint/docs/project-navigator-maintaining.md#设计决策).
 - **`project-navigator` 的设计决策与排查手册写在它自己的维护文档中**, 修改它之前先读 [project-navigator 维护文档](plugins/waypoint/docs/project-navigator-maintaining.md).
-- **waypoint 的自迭代捕获用插件级 hook, 只观察不拒绝.** project-navigator 的守卫 hook 装在项目级 (由 `init` 显式安装), 因为它拒绝操作, 放插件级会让装了插件的所有项目受限; waypoint 的自迭代 hook (`hooks/hooks.json`) 不拒绝任何操作, 故可放插件级. 它只在 "本会话用过 commit-message 或 repo-init 后又被纠正" 时注入一行提示, 平时静默, 子代理里不触发; project-navigator 的使用不记信号, 所以不会由它触发 (若同一会话先用过上述简单技能再被纠正, 仍可能提示, 实际影响小), navigator 的技能缺陷靠手动 `/waypoint:review`.
+- **waypoint 的自迭代捕获用插件级 hook, 只观察不拒绝.** project-navigator 的守卫 hook 装在项目级 (由 `init` 显式安装), 因为它拒绝操作, 放插件级会让装了插件的所有项目受限; waypoint 的自迭代 hook (`hooks/hooks.json`) 不拒绝任何操作, 故可放插件级. 它只在 "本会话用过 commit-message 或 repo-init 后又被纠正" 时注入一行提示, 平时静默, 子代理里不触发; project-navigator 的使用不记信号, 所以不会由它触发 (若同一会话先用过上述简单技能再被纠正, 仍可能提示, 实际影响小), navigator 的技能缺陷由用户调用 `/waypoint:review` 记录, 它的守卫为此放行缺陷记录的写入与汇总脚本 (见其维护文档的 "会话与边界").
 - **自迭代运行库各插件内置一份.** `runtime/lib/self-iteration.mjs` 是无状态纯逻辑, tracepoint 与 waypoint 各有一份完全相同的副本, 因为插件独立安装时不能引用其它插件或市场层的文件 (见上条 "技能不能引用插件目录以外的文件"). 改一份必须同步另一份.
 - **提交消息经标准输入以 UTF-8 传给 `git commit -F -`.** Windows PowerShell 5.1 的管道默认不是 UTF-8, 需先设置 `$OutputEncoding`, 否则中文会乱码.
 - **提交消息严禁任何署名 trailer**, 这条规则不接受用户豁免.
@@ -155,14 +155,15 @@
 
 仓库迁移或改名时, 以下位置需要逐一替换. 可以用编辑器全局搜索确认没有遗漏.
 
-| 名称                                 | 出现位置                                                                                                                                                                                                                                                       |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 仓库地址 `auYeCoding/radish-plugins` | 两份根 README (徽章与链接), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `plugin.json` 的 `homepage` 与 `repository`, `.github/ISSUE_TEMPLATE/` 下的文件, PR 模板                                                                                         |
-| 用户名 `auYeCoding`                  | `marketplace.json` 的 `owner`, `plugin.json` 的 `author`, `.github/CODEOWNERS`, `LICENSE`                                                                                                                                                                      |
-| 市场名 `radish-plugins`              | `marketplace.json` 的 `name`, README 中的安装, 更新与卸载命令, `CONTRIBUTING.md` 的本地测试, 横幅源文件                                                                                                                                                        |
-| 插件名 `waypoint`                    | `marketplace.json`, `plugin.json`, README 的插件表, 命令与版本徽章地址, `CONTRIBUTING.md` 的示例, issue 模板的示例, 横幅源文件, `project-navigator` 守卫中的子代理与技能名 (`runtime/lib/guard.mjs`), 提示文字中的技能命令 (`runtime/lib/session-notices.mjs`) |
-| 状态目录名 `.navigator`              | `project-navigator` 的 `runtime/lib/paths.mjs`, 放行规则 (`runtime/lib/settings.mjs`), 参考文件与文档                                                                                                                                                          |
-| 行为准则联系邮箱                     | `CODE_OF_CONDUCT.md`                                                                                                                                                                                                                                           |
+| 名称                                 | 出现位置                                                                                                                                                                                                                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 仓库地址 `auYeCoding/radish-plugins` | 两份根 README (徽章与链接), `CONTRIBUTING.md`, `SECURITY.md`, `package.json`, `plugin.json` 的 `homepage` 与 `repository`, `.github/ISSUE_TEMPLATE/` 下的文件, PR 模板                                                                                                     |
+| 用户名 `auYeCoding`                  | `marketplace.json` 的 `owner`, `plugin.json` 的 `author`, `.github/CODEOWNERS`, `LICENSE`                                                                                                                                                                                  |
+| 市场名 `radish-plugins`              | `marketplace.json` 的 `name`, README 中的安装, 更新与卸载命令, `CONTRIBUTING.md` 的本地测试, 横幅源文件                                                                                                                                                                    |
+| 插件名 `waypoint`                    | `marketplace.json`, `plugin.json`, README 的插件表, 命令与版本徽章地址, `CONTRIBUTING.md` 的示例, issue 模板的示例, 横幅源文件, `project-navigator` 守卫中的子代理与技能名 (`runtime/lib/guard.mjs`), 提示文字中的技能命令 (`runtime/lib/session-notices.mjs`)             |
+| 状态目录名 `.navigator`              | `project-navigator` 的 `runtime/lib/paths.mjs`, 放行规则 (`runtime/lib/settings.mjs`), 参考文件与文档                                                                                                                                                                      |
+| 缺陷目录 `.waypoint/defects`         | waypoint 的 `runtime/lib/defect-paths.mjs` (点目录名与收件子目录名), hook 提示 (`hooks/hook.mjs`), `skills/review/SKILL.md`, 插件 README; `project-navigator` 守卫放行的路径 (`runtime/lib/paths.mjs` 的 `DEFECT_INBOX_DIRECTORY`, 与前者是否一致由 `guard.test.mjs` 核对) |
+| 行为准则联系邮箱                     | `CODE_OF_CONDUCT.md`                                                                                                                                                                                                                                                       |
 
 ## 本地开发与测试
 

@@ -10,7 +10,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { findDefectDir } from "../lib/defect-paths.mjs";
+import { DEFECT_INBOX_NAME, findDefectDir } from "../lib/defect-paths.mjs";
 import {
   describeGroup,
   groupDefects,
@@ -40,7 +40,7 @@ function main() {
     process.stdout.write("没有找到 .waypoint/ 点目录, 无缺陷可复查.\n");
     return;
   }
-  const defects = readDefects(path.join(defectDir, "defects"));
+  const defects = readDefects(path.join(defectDir, DEFECT_INBOX_NAME));
   if (defects.length === 0) {
     process.stdout.write("缺陷收件目录为空, 没有待复查的记录.\n");
     return;
