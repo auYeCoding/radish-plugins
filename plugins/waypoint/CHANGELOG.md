@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-08
+
 ### Changed
 
 - `project-navigator`: a selection now answers one question, whether the chosen library can do each requirement listed in the order, and is reviewed in one round. The selection receipt has a new "需求核对" (requirement check) table with one row per requirement, the answer "能" (yes) or "不能" (no), and its basis: source evidence, or a temporary test the executor writes under the order's `artifacts/` when the source does not show it. The "能力核实" source table may now contain only its header. The reviewer checks only the requirement table, fetching source with `evidence` or rerunning the tests, and skips the wiring check. Other statements in the receipt need no evidence.
@@ -190,7 +192,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.9.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v0.10.0...HEAD
+[0.10.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.10.0
 [0.9.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.9.0
 [0.8.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.8.1
 [0.8.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.8.0
