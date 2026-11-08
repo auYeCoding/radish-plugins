@@ -49,6 +49,13 @@ const EXECUTOR_INACTIVE_REASON =
   "本会话绑定的工单已不在执行中 (已提交, 已作废, 验收中, 受阻待修改或被撤回修改), 不能再改动文件. 请回到编排会话确认下一步; 工单重新发布后, 先重新开工对齐.";
 
 /**
+ * 只产出记录的工单 (运行检查与分析) 的执行会话改动业务文件时的拒绝理由.
+ * @type {string}
+ */
+const EXECUTOR_RECORD_ONLY_REASON =
+  "本工单是运行检查或分析工单, 只产出记录: 只能写本工单的回执, 以及本工单文件夹 artifacts/ 下的文档, 脚本等证据文件, 不能改动业务文件与项目配置. 确实需要改代码时, 写进回执, 由编排会话另发实现工单.";
+
+/**
  * 执行会话写本工单回执与证据文件之外的编排记录时的拒绝理由.
  * @type {string}
  */
@@ -181,7 +188,7 @@ function decideOrchestratorWrite(request) {
 
 /**
  * 判定执行会话的写入: 只能写本工单回执, 本工单的证据文件与业务文件;
- * 对齐之前不能写证据文件与业务文件.
+ * 对齐之前不能写证据文件与业务文件; 只产出记录的工单不能写业务文件.
  *
  * @param {WriteRequest} request 写入请求.
  * @returns {import("./guard.mjs").GuardDecision} 判定结果.
@@ -195,7 +202,7 @@ function decideExecutorWrite(request) {
 }
 
 /**
- * 判定执行会话能否写业务文件: 工单在执行中, 且已开工对齐.
+ * 判定执行会话能否写业务文件: 工单在执行中, 不是只产出记录的工单, 且已开工对齐.
  *
  * @param {import("./guard.mjs").GuardContext} context 状态上下文.
  * @returns {import("./guard.mjs").GuardDecision} 判定结果.
@@ -203,6 +210,9 @@ function decideExecutorWrite(request) {
 function decideExecutorBusinessWrite(context) {
   if (!context.isOrderActive) {
     return deny(EXECUTOR_INACTIVE_REASON);
+  }
+  if (context.isRecordOnly === true) {
+    return deny(EXECUTOR_RECORD_ONLY_REASON);
   }
   return context.isAligned ? allow() : deny(EXECUTOR_UNALIGNED_REASON);
 }

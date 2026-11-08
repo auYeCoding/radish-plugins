@@ -752,6 +752,23 @@ const EXECUTOR_CASES = Object.freeze([
     expected: "deny",
   },
   {
+    name: "只产出记录的工单的执行会话写业务代码",
+    role: "executor",
+    tool: "Write",
+    target: "src/app.js",
+    context: { isRecordOnly: true },
+    expected: "deny",
+    reason: /只产出记录.*另发实现工单/u,
+  },
+  {
+    name: "只产出记录的工单的执行会话写本工单证据文件",
+    role: "executor",
+    tool: "Write",
+    target: ".navigator/orders/0001-x/artifacts/analysis.md",
+    context: { isRecordOnly: true },
+    expected: "allow",
+  },
+  {
     name: "执行会话写本工单回执",
     role: "executor",
     tool: "Write",

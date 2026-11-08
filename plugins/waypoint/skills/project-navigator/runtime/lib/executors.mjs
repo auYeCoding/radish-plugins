@@ -14,6 +14,7 @@ import {
 } from "./paths.mjs";
 import { readExecutorRecord, writeExecutorRecord } from "./registry.mjs";
 import { isOrchestratorSession, readOrchestrators } from "./sessions.mjs";
+import { isRecordOnlyOrderKind } from "./workflow-orders.mjs";
 
 /**
  * 执行会话请求用户确认计划时使用的回复类型.
@@ -215,11 +216,12 @@ export function inheritExecutor({ worktreeRoot, sessionId, origin, now }) {
 }
 
 /**
- * 计算执行会话在守卫中的状态: 绑定的工单是否仍在执行中, 是否已就本轮发布完成对齐.
+ * 计算执行会话在守卫中的状态: 绑定的工单是否仍在执行中, 是否只产出记录,
+ * 是否已就本轮发布完成对齐.
  *
  * @param {import("./registry.mjs").ExecutorRecord | undefined} record 执行登记.
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
- * @returns {{executorFolder: string | undefined, isOrderActive: boolean, isAligned: boolean}} 守卫所需的执行状态.
+ * @returns {{executorFolder: string | undefined, isOrderActive: boolean, isRecordOnly: boolean, isAligned: boolean}} 守卫所需的执行状态.
  */
 export function executorGuardState(record, state) {
   const order = state.order;
@@ -231,6 +233,7 @@ export function executorGuardState(record, state) {
   return {
     executorFolder: record?.folder,
     isOrderActive,
+    isRecordOnly: isOrderActive && isRecordOnlyOrderKind(order.kind),
     isAligned:
       isOrderActive && record.isAligned && record.alignedRound === order.round,
   };

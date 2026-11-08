@@ -21,7 +21,10 @@ import {
   EVIDENCE_SECTION,
   REQUIREMENT_SECTION,
 } from "./source-evidence.mjs";
-import { SELECTION_ORDER_KIND } from "./workflow-orders.mjs";
+import {
+  SELECTION_ORDER_KIND,
+  isRecordOnlyOrderKind,
+} from "./workflow-orders.mjs";
 
 /**
  * 一次问题域调研中网络搜索与网页抓取的总次数上限. 立项调研只需形成基本认知,
@@ -63,11 +66,21 @@ export const LAUNCH_PROMPT_PATTERN = /执行工单 (\d{4})/u;
 
 /**
  * 生成执行会话的启动提示词: 身份, 手册与工单路径, 三条硬规则. 细节都在手册与工单中.
+ * 只产出记录的工单 (运行检查与分析) 的前两条规则改为只写回执与证据文件.
  *
- * @param {{id: string, folder: string}} order 当前工单.
+ * @param {{id: string, folder: string, kind: string}} order 当前工单.
  * @returns {string} 启动提示词全文.
  */
 export function buildLaunchPrompt(order) {
+  const scopeRules = isRecordOnlyOrderKind(order.kind)
+    ? [
+        '1. 先对齐再动手: 按 "开工对齐" 版式回复, 用户选 A 之后才写证据文件.',
+        "2. 本工单只产出记录: 只写本工单的回执与工单文件夹 artifacts/ 下的证据文件 (文档, 脚本等), 不改业务文件与 .navigator/ 下的其它文件, 不提交, 不推送.",
+      ]
+    : [
+        '1. 先对齐再动手: 按 "开工对齐" 版式回复, 用户选 A 之后才改动业务文件.',
+        "2. 只改业务文件, 本工单的回执与工单文件夹 artifacts/ 下的证据文件, 不改 .navigator/ 下的其它文件, 不提交, 不推送.",
+      ];
   return [
     `执行工单 ${order.id}.`,
     "",
@@ -75,10 +88,24 @@ export function buildLaunchPrompt(order) {
     "",
     "三条硬规则:",
     "",
-    '1. 先对齐再动手: 按 "开工对齐" 版式回复, 用户选 A 之后才改动业务文件.',
-    "2. 只改业务文件, 本工单的回执与工单文件夹 artifacts/ 下的证据文件, 不改 .navigator/ 下的其它文件, 不提交, 不推送.",
+    ...scopeRules,
     '3. 做完或受阻时, 按 "执行完成" 或 "执行受阻" 版式回复, 由用户选择汇报方式.',
   ].join("\n");
+}
+
+/**
+ * 生成验收提示词中的接线核查项: 选型工单与只产出记录的工单不改动程序代码, 不做本项.
+ *
+ * @param {string} kind 工单类型.
+ * @returns {string} 核查项全文.
+ */
+function wiringCheckItem(kind) {
+  if (kind === SELECTION_ORDER_KIND) {
+    return '3. 接线核查: 选型工单不改动程序代码, 不做本项, 交回时写 "不适用".';
+  }
+  return isRecordOnlyOrderKind(kind)
+    ? '3. 接线核查: 运行检查与分析工单只产出记录, 不改动程序代码, 不做本项, 交回时写 "不适用". 改为在 "范围核查" 中列出本工单文件夹之外被改动的已入库文件.'
+    : "3. 接线核查: 从程序入口追到本工单的新代码, 写出调用链经过的文件路径; 追不到即为未接线.";
 }
 
 /**
@@ -124,9 +151,7 @@ export function buildReviewBrief({
     "",
     `1. 逐条对照工单的 "验收判据", 每条给出结论与证据 (文件路径与行号, 或命令输出). 结论只能是 ${verdicts} 之一, 不用其它说法; 无法确认的写 ${unverified}, 并写明缺少什么.`,
     `2. 回执一致: 用 git diff ${order.baseCommit} --stat 与回执的 "改动清单" 比对, 列出不一致之处.`,
-    order.kind === SELECTION_ORDER_KIND
-      ? '3. 接线核查: 选型工单不改动程序代码, 不做本项, 交回时写 "不适用".'
-      : "3. 接线核查: 从程序入口追到本工单的新代码, 写出调用链经过的文件路径; 追不到即为未接线.",
+    wiringCheckItem(order.kind),
     '4. 范围核查: 列出工单 "工作范围" 之外的改动.',
     "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试, 是否放宽了代码检查的规则或加了忽略标记.",
     '6. 测试运行: 只运行 "已授权测试" 中的命令, 原样记录结果; 没有授权的测试不运行.',

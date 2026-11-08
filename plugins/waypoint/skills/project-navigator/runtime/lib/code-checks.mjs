@@ -131,6 +131,21 @@ export function orderSkeletonPrefills(state) {
 }
 
 /**
+ * 找出不能新建某种工单的原因: 需要代码检查的工单, 项目必须已登记检查命令.
+ * 新建时就拒绝, 不等写完工单到审阅时才发现.
+ *
+ * @param {import("./state.mjs").NavigatorState} state 当前状态.
+ * @param {string} kind 要新建的工单类型.
+ * @returns {string | undefined} 不能新建的原因; 可以新建时为 undefined.
+ */
+export function creationBlocker(state, kind) {
+  if (!requiresCodeCheck(kind) || (state.codeChecks ?? null) !== null) {
+    return undefined;
+  }
+  return unregisteredChecksMessage(`${kind} 工单会改动代码`);
+}
+
+/**
  * 找出工单不能发布的原因: 需要代码检查的工单, 项目必须已登记检查命令,
  * 且验收判据中含有检查判据的原文.
  *
@@ -145,7 +160,7 @@ export function issueBlocker(state, orderText) {
   }
   const codeChecks = state.codeChecks ?? null;
   if (codeChecks === null) {
-    return `工单 ${order.id} 会改动代码, 但项目还没有登记代码检查命令. 先确定检查命令 (选型阶段由执行会话选定并配置, 含函数长度与复杂度规则), 写草稿 {"commands": ["命令"]} 后运行 codecheck set --from <草稿>; 确实没有合适的工具时, 经用户同意写 {"commands": [], "reason": "原因"} 登记.`;
+    return unregisteredChecksMessage(`工单 ${order.id} 会改动代码`);
   }
   if (codeChecks.commands.length === 0) {
     return undefined;
@@ -154,6 +169,16 @@ export function issueBlocker(state, orderText) {
   return criteriaText(orderText ?? "").includes(criterion)
     ? undefined
     : `工单 ${order.id} 的 "${CRITERIA_SECTION}" 缺少代码检查判据, 请原样加入: ${criterion}`;
+}
+
+/**
+ * 项目还没有登记检查命令时的说明与补救办法.
+ *
+ * @param {string} subject 说明开头, 指出哪张工单或哪种工单会改动代码.
+ * @returns {string} 说明.
+ */
+function unregisteredChecksMessage(subject) {
+  return `${subject}, 但项目还没有登记代码检查命令. 先确定检查命令 (选型阶段由执行会话选定并配置, 含函数长度与复杂度规则), 写草稿 {"commands": ["命令"]} 后运行 codecheck set --from <草稿>; 确实没有合适的工具时, 经用户同意写 {"commands": [], "reason": "原因"} 登记.`;
 }
 
 /**

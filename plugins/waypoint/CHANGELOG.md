@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: a new work order kind, `analysis`, for hands-on investigation such as reverse engineering or research that produces documents and evidence scripts. Such tasks used to borrow `runcheck`. Like run-check orders, analysis orders need no check commands and can be issued in any stage.
+
+### Changed
+
+- `project-navigator`: run-check and analysis orders now only produce records, and the guard enforces it: their executor sessions can write only the receipt and the order's `artifacts/`, and writes to business files or `.claude/settings.json` are denied with a reason that points to an implementation order. "Changes no files" used to be only a sentence in the survey instructions. Their launch prompts state the narrower scope, and the reviewer marks the wiring check as not applicable instead of tracing new code from the entry point.
+
+- `project-navigator`: `order new --kind implementation` and `--kind fix` are refused while no check commands are registered, with the same instructions `reply approve` gave. The problem used to surface only after the order file was written.
+- `project-navigator`: option A of the second option group of "验收报告" (review report) now reads "补正工单, 立即发布." (follow-up order, issue now), since the follow-up is not always a fix order.
+
+### Fixed
+
+- `project-navigator`: a rejected run-check or analysis order now leads to a new order of the same kind in the same slice. `order set rejected` used to suggest a fix order, which cannot be issued before check commands are registered, so a run-check rejected during survey or before selection had no way forward.
+
 ## [0.10.0] - 2026-11-08
 
 ### Changed

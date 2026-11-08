@@ -502,6 +502,44 @@ test("执行: 只有当前已发布的工单能被启动提示词登记", () => 
   assert.ok(findLaunchedOrder(drafting, prompt).problem !== undefined);
 });
 
+test("执行: 运行检查与分析工单只产出记录, 启动提示词随之收窄", () => {
+  const record = {
+    sessionId: "executor-1",
+    order: "0001",
+    folder: "0001-probe",
+    registeredAt: NOW,
+    isAligned: true,
+    alignedRound: 1,
+    isAwaitingAlignment: false,
+  };
+  for (const [kind, isRecordOnly] of [
+    ["analysis", true],
+    ["runcheck", true],
+    ["implementation", false],
+  ]) {
+    const issued = setOrderStatus(
+      createOrder(stateWithRoadmap(), {
+        kind,
+        slug: "probe",
+        slice: undefined,
+        baseCommit: COMMITS.base,
+      }),
+      "issued",
+      COMMITS.base,
+    );
+    assert.equal(
+      executorGuardState(record, issued).isRecordOnly,
+      isRecordOnly,
+      kind,
+    );
+    assert.equal(
+      buildLaunchPrompt(issued.order).includes("本工单只产出记录"),
+      isRecordOnly,
+      kind,
+    );
+  }
+});
+
 test("执行: 对齐只对本轮发布有效", () => {
   const issued = stateWithIssuedOrder();
   const record = {

@@ -10,7 +10,7 @@
 import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
 
-import { issueBlocker } from "../lib/code-checks.mjs";
+import { creationBlocker, issueBlocker } from "../lib/code-checks.mjs";
 import {
   COMMIT_STEP_KINDS,
   settleCommitStep,
@@ -38,10 +38,12 @@ import {
 } from "../lib/review-record.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import {
+  FIX_ORDER_KIND,
   SELECTION_ORDER_KIND,
   authorizeTests,
   consecutiveRejections,
   createOrder,
+  isRecordOnlyOrderKind,
   setOrderStatus,
 } from "../lib/workflow-orders.mjs";
 import {
@@ -83,7 +85,7 @@ const ISSUE_REPLY_TYPE = "工单发布";
 const RESPLIT_THRESHOLD = 2;
 
 /**
- * "验收报告" 中发布修复工单的选项组.
+ * "验收报告" 中新建补正工单的选项组.
  * @type {number}
  */
 const FIX_OPTION = 2;
@@ -130,12 +132,13 @@ export function runOrder({ positionals, values, cwd, now }) {
 }
 
 /**
- * 新建工单并输出工单文件夹的路径.
+ * 新建工单并输出工单文件夹的路径. 会改动代码的工单要求项目已登记检查命令.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {Record<string, any>} values 选项值.
  * @param {string} now 当前时间.
  * @returns {string[]} 输出各行.
+ * @throws {WorkflowError} 有待处理的阶段提交, 仓库没有提交, 参数不合法, 或缺少检查命令时.
  */
 function createNewOrder(context, values, now) {
   assertNoStageCommit(
@@ -146,16 +149,17 @@ function createNewOrder(context, values, now) {
   if (baseCommit === undefined) {
     throw new WorkflowError("仓库还没有任何提交, 请先完成首次提交再发布工单.");
   }
-  const state = saveState(
-    context,
-    createOrder(context.state, {
-      kind: String(values.kind ?? ""),
-      slug: String(values.slug ?? ""),
-      slice: typeof values.slice === "string" ? values.slice : undefined,
-      baseCommit,
-    }),
-    now,
-  );
+  const created = createOrder(context.state, {
+    kind: String(values.kind ?? ""),
+    slug: String(values.slug ?? ""),
+    slice: typeof values.slice === "string" ? values.slice : undefined,
+    baseCommit,
+  });
+  const blocker = creationBlocker(context.state, created.order.kind);
+  if (blocker !== undefined) {
+    throw new WorkflowError(blocker);
+  }
+  const state = saveState(context, created, now);
   const orderFile = path.join(
     context.projectRoot,
     orderFilePath(state.order.folder, "order"),
@@ -346,10 +350,13 @@ function archiveReceipt(projectRoot, folder) {
 }
 
 /**
- * 验收不通过后的下一动作. 选型工单只在用户于 "验收报告" 第 4 组选择另选方案
- * 之后才转为不通过, 下一步按用户给出的方向新建选型工单 (修复工单要求已登记
- * 检查命令, 而检查命令在选型通过后才登记); 其余工单在同一切片连续不通过达到
- * 阈值时重新拆分, 否则发布修复工单.
+ * 验收不通过后的下一动作. 修复工单要求已登记检查命令, 不能用于还没有检查命令的
+ * 阶段, 所以按工单类型分三种:
+ * - 选型工单只在用户于 "验收报告" 第 4 组选择另选方案之后才转为不通过, 下一步
+ *   按用户给出的方向新建选型工单 (检查命令在选型采用后才登记).
+ * - 运行检查与分析工单只产出记录, 补正就是在同一切片重发同类工单; 不提示重新拆分,
+ *   这类工单的结果与切片大小无关.
+ * - 其余工单在同一切片连续不通过达到阈值时重新拆分, 否则在同一切片发布修复工单.
  *
  * @param {import("../lib/spec.mjs").TemplateSpec} spec 模板规格.
  * @param {import("../lib/state.mjs").NavigatorState} state 写入后的状态.
@@ -357,13 +364,17 @@ function archiveReceipt(projectRoot, folder) {
  * @returns {string} 下一动作行.
  */
 function rejectionAction(spec, state, order) {
-  const fixStep = replyStep(spec, "验收报告", FIX_OPTION);
   if (order.kind === SELECTION_ORDER_KIND) {
     return `- 下一动作: 按用户在 "验收报告" 第 ${SELECTION_ADOPT_OPTION} 组选 B 时给出的方向, 运行 order new --kind ${SELECTION_ORDER_KIND} 新建选型工单; 用户还没有选择时先${replyStep(spec, "验收报告", SELECTION_ADOPT_OPTION)}`;
+  }
+  const remedyStep = replyStep(spec, "验收报告", FIX_OPTION);
+  const sliceFlag = order.slice === null ? "" : ` --slice ${order.slice}`;
+  if (isRecordOnlyOrderKind(order.kind)) {
+    return `- 下一动作: ${remedyStep}; 用户选 A 后运行 order new --kind ${order.kind}${sliceFlag}, 重发同类工单 (这类工单只产出记录, 不发修复工单)`;
   }
   const count =
     order.slice === null ? 0 : consecutiveRejections(state, order.slice);
   return count >= RESPLIT_THRESHOLD
     ? `- 下一动作: 切片 ${order.slice} 已连续 ${count} 次验收不通过, ${replyStep(spec, "验收报告", RESPLIT_OPTION)}`
-    : `- 下一动作: ${fixStep}; 用户选 A 后运行 order new --kind fix`;
+    : `- 下一动作: ${remedyStep}; 用户选 A 后运行 order new --kind ${FIX_ORDER_KIND}${sliceFlag}`;
 }

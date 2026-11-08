@@ -20,7 +20,7 @@
    - 构建, 启动与测试命令.
    - 已有功能清单.
    - 已有规范: `CLAUDE.md`, `AGENTS.md`, `.claude/rules/`, 格式化与检查配置.
-2. survey-runcheck: 编排会话不能构建与运行程序. 新建运行检查工单 `order new --kind runcheck --slug runcheck`, 要求执行会话按盘点得到的命令构建, 启动, 测试, 原样记录结果, 不修改任何文件. 工单往返见 [order-loop.md](order-loop.md); 验收通过后只提交记录.
+2. survey-runcheck: 编排会话不能构建与运行程序. 新建运行检查工单 `order new --kind runcheck --slug runcheck`, 要求执行会话按盘点得到的命令构建, 启动, 测试, 原样记录结果, 不修改任何文件 (守卫拒绝运行检查工单改动业务文件). 工单往返见 [order-loop.md](order-loop.md); 验收通过后只提交记录. 验收不通过时重发运行检查工单, 不发修复工单: 修复工单要求已登记检查命令, 盘点阶段还没有登记.
 3. survey-report: 运行 `template survey`, 写 `.navigator/plan/survey.md`. "运行情况" 取自运行检查回执; 没有初始需求时, "目标差距" 写 "立项后补充". 回复 "产出确认".
 4. 用户确认后运行 `stage 1` 与 `step understanding`. 现状报告的关键事实并入下一步的 "我的假设".
 
