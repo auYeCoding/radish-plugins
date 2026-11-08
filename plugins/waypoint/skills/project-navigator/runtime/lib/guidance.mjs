@@ -13,7 +13,15 @@ import { COMMIT_SKILL } from "./guard.mjs";
 import { APPROVAL_REPLY_TYPE, APPROVAL_STATUSES } from "./order-approval.mjs";
 import { shortHash } from "./repo.mjs";
 import { lastStageNumber } from "./spec.mjs";
+import { SELECTION_ORDER_KIND } from "./workflow-orders.mjs";
 import { isProjectFinished } from "./workflow-plan.mjs";
+
+/**
+ * "验收报告" 中请用户决定是否采用选型结论的选项组. 选型工单验收之后总用这一组,
+ * 不论判据是否全部通过.
+ * @type {number}
+ */
+export const SELECTION_ADOPT_OPTION = 4;
 
 /**
  * 发布工单的回复类型.
@@ -175,7 +183,7 @@ function stageCommitAction(spec, stageCommit) {
  * 当前有工单时, 按工单状态给出下一动作.
  *
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {{id: string, status: string}} order 当前工单.
+ * @param {{id: string, status: string, kind: string}} order 当前工单.
  * @param {{hasReceipt: boolean, orderApproval: string | undefined}} facts 回执文件是否存在, 工单的审阅状态.
  * @returns {string} 下一动作.
  */
@@ -192,7 +200,9 @@ function orderAction(spec, order, { hasReceipt, orderApproval }) {
         ? `工单 ${order.id} 的修改已经用户审阅: 运行 order set issued, 再${replyStep(spec, ISSUE_REPLY_TYPE)}`
         : `工单 ${order.id} 受阻: ${replyStep(spec, "受阻处理")}; 用户选择后修改工单, 再${replyStep(spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后运行 order set issued`;
     case "reviewing":
-      return `工单 ${order.id} 验收中: 用 review-brief 的输出派验收子代理, 结论写入 review.md, 再${replyStep(spec, "验收报告")}`;
+      return order.kind === SELECTION_ORDER_KIND
+        ? `选型工单 ${order.id} 验收中: 用 review-brief 的输出派验收子代理, 结论写入 review.md, 再${replyStep(spec, "验收报告", SELECTION_ADOPT_OPTION)}, 由用户决定是否采用选型结论`
+        : `工单 ${order.id} 验收中: 用 review-brief 的输出派验收子代理, 结论写入 review.md, 再${replyStep(spec, "验收报告")}`;
     case "accepted":
       return `工单 ${order.id} 已通过验收: ${replyStep(spec, "确认提交")}`;
     case "committing":

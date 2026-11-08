@@ -13,6 +13,7 @@ import { SPEC_FILE } from "./paths.mjs";
  * @typedef {object} TableSpec 节中表格的规格.
  * @property {string[]} columns 表头各列, 按顺序.
  * @property {Record<string, string[]>} [choices] 只能取固定值的列, 键为列名, 值为允许的取值.
+ * @property {boolean} [allowEmpty] 是否允许只有表头, 没有内容行.
  */
 
 /**
