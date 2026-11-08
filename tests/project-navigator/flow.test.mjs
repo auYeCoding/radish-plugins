@@ -272,6 +272,16 @@ function writeOrder(context, folder, edit = (text) => text) {
 }
 
 /**
+ * 去掉工单骨架预填的代码检查判据, 换成一条普通判据.
+ *
+ * @param {string} text 工单内容.
+ * @returns {string} 去掉检查判据后的内容.
+ */
+function withoutCodeCheckCriterion(text) {
+  return text.replace(/^1\. 代码检查通过: .*$/mu, "1. 页面能打开.");
+}
+
+/**
  * 编排会话回复 "工单审阅", 返回填好的回复.
  *
  * @param {FlowContext} context 测试上下文.
@@ -518,17 +528,20 @@ projectTest("流程: 工单文件没写好或不能发布时, 不能请用户审
   assert.equal(project(["stage", "5"]).status, 0);
   const draft = writeDraft(root, "roadmap.json", ROADMAP_DRAFT);
   assert.equal(project(["roadmap", "--from", draft]).status, 0);
-  assert.equal(
-    project(["order", "new", "--kind", "implementation", "--slug", "x"]).status,
-    0,
-  );
+  const newOrder = () =>
+    project(["order", "new", "--kind", "implementation", "--slug", "x"]);
+  const unregistered = newOrder();
+  assert.equal(unregistered.status, 1, "没有登记检查命令时不能新建实现工单");
+  assert.match(unregistered.stdout, /codecheck set/u);
+  registerCodeCheck(context);
+  assert.equal(newOrder().status, 0);
   const missing = project(["reply", "approve"]);
   assert.equal(missing.status, 1);
   assert.match(missing.stdout, /还没有写入/u);
-  writeOrder(context, ".navigator/orders/0001-x");
-  const unregistered = project(["reply", "approve"]);
-  assert.equal(unregistered.status, 1);
-  assert.match(unregistered.stdout, /codecheck set/u);
+  writeOrder(context, ".navigator/orders/0001-x", withoutCodeCheckCriterion);
+  const noCriterion = project(["reply", "approve"]);
+  assert.equal(noCriterion.status, 1);
+  assert.match(noCriterion.stdout, /缺少代码检查判据/u);
 });
 
 projectTest("流程: 发布后等待回执, 回执写入后转为读回执", (context) => {
@@ -780,7 +793,7 @@ projectTest(
     const draft = writeDraft(root, "roadmap.json", ROADMAP_DRAFT);
     assert.equal(project(["roadmap", "--from", draft]).status, 0);
     assert.equal(project(["slice", "0001", "active"]).status, 0);
-    assert.equal(
+    const newOrder = () =>
       project([
         "order",
         "new",
@@ -790,14 +803,13 @@ projectTest(
         "export-csv",
         "--slice",
         "0001",
-      ]).status,
-      0,
-    );
-    writeOrder(context, FIRST_ORDER_FOLDER);
-    const unregistered = project(["order", "set", "issued"]);
+      ]);
+    const unregistered = newOrder();
     assert.equal(unregistered.status, 1);
     assert.match(unregistered.stdout, /codecheck set/u);
     registerCodeCheck(context);
+    assert.equal(newOrder().status, 0);
+    writeOrder(context, FIRST_ORDER_FOLDER, withoutCodeCheckCriterion);
     const missing = project(["order", "set", "issued"]);
     assert.equal(missing.status, 1);
     assert.match(missing.stdout, /缺少代码检查判据/u);
@@ -972,6 +984,113 @@ projectTest(
     assert.equal(rejected.status, 0, rejected.stdout);
     assert.match(rejected.stdout, /第 4 组选 B 时给出的方向/u);
     assert.match(rejected.stdout, /order new --kind selection/u);
+  },
+);
+
+projectTest(
+  "流程: 登记检查命令之前运行检查工单被拒, 下一动作是在同一切片重发运行检查工单",
+  (context) => {
+    const { root, project } = context;
+    assert.equal(project(["stage", "5"]).status, 0);
+    const draft = writeDraft(root, "roadmap.json", ROADMAP_DRAFT);
+    assert.equal(project(["roadmap", "--from", draft]).status, 0);
+    const runcheck = (slug) =>
+      project([
+        "order",
+        "new",
+        "--kind",
+        "runcheck",
+        "--slug",
+        slug,
+        "--slice",
+        "0001",
+      ]);
+    assert.equal(runcheck("analysis").status, 0);
+    writeOrder(context, ".navigator/orders/0001-analysis");
+    approveAndIssue(context);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    const rejected = project(["order", "set", "rejected"]);
+    assert.equal(rejected.status, 0, rejected.stdout);
+    assert.match(
+      rejected.stdout,
+      /用户选 A 后运行 order new --kind runcheck --slice 0001/u,
+    );
+    assert.doesNotMatch(rejected.stdout, /--kind fix/u);
+    const fix = project(["order", "new", "--kind", "fix", "--slug", "x"]);
+    assert.equal(fix.status, 1, "没有检查命令时修复工单在新建时就被拒");
+    assert.match(fix.stdout, /codecheck set/u);
+    assert.equal(runcheck("analysis-again").status, 0);
+    writeOrder(context, ".navigator/orders/0002-analysis-again");
+    approveAndIssue(context);
+  },
+);
+
+projectTest(
+  "流程: 分析工单不需要检查命令, 执行会话只能写证据文件, 被拒后重发分析工单",
+  (context) => {
+    const { root, project, hook } = context;
+    assert.equal(project(["stage", "5"]).status, 0);
+    const draft = writeDraft(root, "roadmap.json", ROADMAP_DRAFT);
+    assert.equal(project(["roadmap", "--from", draft]).status, 0);
+    const created = project([
+      "order",
+      "new",
+      "--kind",
+      "analysis",
+      "--slug",
+      "probe",
+      "--slice",
+      "0001",
+    ]);
+    assert.equal(created.status, 0, created.stdout);
+    const folder = ".navigator/orders/0001-probe";
+    writeOrder(context, folder);
+    approveAndIssue(context);
+    const prompt = launchPrompt(context);
+    assert.match(prompt, /本工单只产出记录/u);
+    hook({
+      session_id: EXECUTOR,
+      hook_event_name: "UserPromptSubmit",
+      prompt,
+    });
+    alignExecutor(context);
+    assert.match(
+      executorWritesBusinessFile(context) ?? "",
+      /只产出记录/u,
+      "对齐之后仍不能写业务文件",
+    );
+    writeThroughHook(
+      context,
+      EXECUTOR,
+      `${folder}/artifacts/analysis.md`,
+      "# 分析\n",
+    );
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    assert.match(
+      project(["review-brief"]).stdout,
+      /接线核查: 运行检查与分析工单只产出记录/u,
+    );
+    const rejected = project(["order", "set", "rejected"]);
+    assert.equal(rejected.status, 0, rejected.stdout);
+    assert.match(
+      rejected.stdout,
+      /用户选 A 后运行 order new --kind analysis --slice 0001/u,
+    );
+  },
+);
+
+projectTest(
+  "流程: 实现工单被拒后, 下一动作是在同一切片新建修复工单",
+  (context) => {
+    const { project } = context;
+    issueFirstOrder(context);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    const rejected = project(["order", "set", "rejected"]);
+    assert.equal(rejected.status, 0, rejected.stdout);
+    assert.match(
+      rejected.stdout,
+      /用户选 A 后运行 order new --kind fix --slice 0001/u,
+    );
   },
 );
 

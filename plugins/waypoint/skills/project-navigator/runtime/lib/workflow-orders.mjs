@@ -44,15 +44,53 @@ export const TERMINAL_ORDER_STATUSES = Object.freeze([
 export const SELECTION_ORDER_KIND = "selection";
 
 /**
+ * 运行检查工单的类型名. 运行检查工单不修改任何文件.
+ * @type {string}
+ */
+export const RUNCHECK_ORDER_KIND = "runcheck";
+
+/**
+ * 分析工单的类型名: 逆向, 调研等只产出文档与证据脚本的任务.
+ * @type {string}
+ */
+export const ANALYSIS_ORDER_KIND = "analysis";
+
+/**
+ * 修复工单的类型名.
+ * @type {string}
+ */
+export const FIX_ORDER_KIND = "fix";
+
+/**
  * 工单类型.
  * @type {readonly string[]}
  */
 export const ORDER_KINDS = Object.freeze([
   "implementation",
   SELECTION_ORDER_KIND,
-  "runcheck",
-  "fix",
+  RUNCHECK_ORDER_KIND,
+  ANALYSIS_ORDER_KIND,
+  FIX_ORDER_KIND,
 ]);
+
+/**
+ * 只产出记录的工单类型: 执行会话只能写回执与本工单的 artifacts/, 不改业务文件.
+ * @type {readonly string[]}
+ */
+export const RECORD_ONLY_ORDER_KINDS = Object.freeze([
+  RUNCHECK_ORDER_KIND,
+  ANALYSIS_ORDER_KIND,
+]);
+
+/**
+ * 判断某种工单是否只产出记录.
+ *
+ * @param {string} kind 工单类型.
+ * @returns {boolean} 只产出记录时返回 true.
+ */
+export function isRecordOnlyOrderKind(kind) {
+  return RECORD_ONLY_ORDER_KINDS.includes(kind);
+}
 
 /**
  * 工单短名的格式: 小写字母, 数字与连字符.

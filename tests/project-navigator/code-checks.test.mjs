@@ -1,5 +1,5 @@
 /**
- * @file 代码检查测试: 登记, 固定判据, 发布前核对, 可运行的测试命令与骨架预填.
+ * @file 代码检查测试: 登记, 固定判据, 新建与发布前核对, 可运行的测试命令与骨架预填.
  */
 
 import assert from "node:assert/strict";
@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   CRITERIA_SECTION,
   codeCheckCriterion,
+  creationBlocker,
   issueBlocker,
   orderSkeletonPrefills,
   orderTestCommands,
@@ -110,6 +111,21 @@ test("代码检查: 选型工单不需要检查判据", () => {
 test("代码检查: 实现工单在登记检查命令之前不能发布", () => {
   const blocker = issueBlocker(stateWithOrder("implementation", undefined), "");
   assert.match(blocker ?? "", /codecheck set/u);
+});
+
+test("代码检查: 会改动代码的工单在登记检查命令之前不能新建", () => {
+  const initial = createInitialState({ skillVersion: "0.1.0", now: NOW });
+  for (const kind of ["implementation", "fix"]) {
+    assert.match(creationBlocker(initial, kind) ?? "", /codecheck set/u);
+  }
+  for (const kind of ["selection", "runcheck"]) {
+    assert.equal(creationBlocker(initial, kind), undefined);
+  }
+  const declined = registerCodeChecks(initial, {
+    commands: [],
+    reason: "纯文档项目",
+  });
+  assert.equal(creationBlocker(declined, "fix"), undefined);
 });
 
 test("代码检查: 登记为没有命令时, 实现工单可以发布", () => {
