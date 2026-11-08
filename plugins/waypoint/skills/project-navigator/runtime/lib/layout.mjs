@@ -96,7 +96,8 @@ export function readSectionTable(section) {
 }
 
 /**
- * 校验表格节: 表头与规格一致, 至少一行, 每格都已填写, 固定取值的列只用允许的值.
+ * 校验表格节: 表头与规格一致, 至少一行 (规格允许为空的表格除外), 每格都已填写,
+ * 固定取值的列只用允许的值.
  *
  * @param {Section} section 节.
  * @param {import("./spec.mjs").TableSpec} table 表格规格.
@@ -113,7 +114,7 @@ export function checkTable(section, table) {
       `${title} 应包含一个表格, 表头依次为 ${table.columns.map((column) => `"${column}"`).join(", ")}.`,
     ];
   }
-  if (parsed.rows.length === 0) {
+  if (parsed.rows.length === 0 && table.allowEmpty !== true) {
     return [`${title} 的表格至少要有一行内容.`];
   }
   return parsed.rows.flatMap((row, index) =>

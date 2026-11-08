@@ -20,7 +20,7 @@ import {
   STAGE_COMMIT_REPLY_TYPE,
   assertNoStageCommit,
 } from "../lib/commit-step.mjs";
-import { replyStep } from "../lib/guidance.mjs";
+import { SELECTION_ADOPT_OPTION, replyStep } from "../lib/guidance.mjs";
 import { formatNumber } from "../lib/numbering.mjs";
 import {
   APPROVAL_REPLY_TYPE,
@@ -246,7 +246,9 @@ function settleOrderCommit(context, now) {
 }
 
 /**
- * 核对当前工单能否通过验收: 验收记录的判据核对表中每条都必须是通过.
+ * 核对当前工单能否通过验收: 验收记录的判据核对表中每条都必须是通过. 选型工单
+ * 例外: 是否采用选型结论由用户在看过逐条核对结果之后决定, 判据核对只供参考;
+ * 两种工单都要求验收记录中已写下用户结论.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @returns {void}
@@ -258,7 +260,7 @@ function assertAcceptable(context) {
     return;
   }
   const blockers = orderAcceptanceBlockers(context.projectRoot, order);
-  if (blockers.length > 0) {
+  if (blockers.length > 0 && order.kind !== SELECTION_ORDER_KIND) {
     throw new WorkflowError(
       `工单 ${order.id} 不能通过验收: ${blockers.join(" ")} 有判据不通过或未验证时运行 order set rejected, 按输出处理.`,
     );
@@ -344,9 +346,10 @@ function archiveReceipt(projectRoot, folder) {
 }
 
 /**
- * 验收不通过后的下一动作: 选型工单重新发布选型工单 (修复工单要求已登记检查命令,
- * 而检查命令在选型通过后才登记); 同一切片连续不通过达到阈值时重新拆分;
- * 其余情况发布修复工单.
+ * 验收不通过后的下一动作. 选型工单只在用户于 "验收报告" 第 4 组选择另选方案
+ * 之后才转为不通过, 下一步按用户给出的方向新建选型工单 (修复工单要求已登记
+ * 检查命令, 而检查命令在选型通过后才登记); 其余工单在同一切片连续不通过达到
+ * 阈值时重新拆分, 否则发布修复工单.
  *
  * @param {import("../lib/spec.mjs").TemplateSpec} spec 模板规格.
  * @param {import("../lib/state.mjs").NavigatorState} state 写入后的状态.
@@ -356,7 +359,7 @@ function archiveReceipt(projectRoot, folder) {
 function rejectionAction(spec, state, order) {
   const fixStep = replyStep(spec, "验收报告", FIX_OPTION);
   if (order.kind === SELECTION_ORDER_KIND) {
-    return `- 下一动作: ${fixStep}; 用户选 A 后运行 order new --kind ${SELECTION_ORDER_KIND}, 新工单的判据写明要补正的问题`;
+    return `- 下一动作: 按用户在 "验收报告" 第 ${SELECTION_ADOPT_OPTION} 组选 B 时给出的方向, 运行 order new --kind ${SELECTION_ORDER_KIND} 新建选型工单; 用户还没有选择时先${replyStep(spec, "验收报告", SELECTION_ADOPT_OPTION)}`;
   }
   const count =
     order.slice === null ? 0 : consecutiveRejections(state, order.slice);

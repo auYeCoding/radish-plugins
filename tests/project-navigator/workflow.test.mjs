@@ -583,6 +583,19 @@ test("下一动作: 按对账结果与工单状态给出", () => {
     nextAction({ ...base, state: issued, hasReceipt: true }),
     /已有回执/u,
   );
+  const reviewing = setOrderStatus(issued, "reviewing", COMMITS.base);
+  assert.match(
+    nextAction({ ...base, state: reviewing }),
+    /回复 "验收报告" \(reply review\)/u,
+  );
+  const selectionReviewing = {
+    ...reviewing,
+    order: { ...reviewing.order, kind: "selection" },
+  };
+  assert.match(
+    nextAction({ ...base, state: selectionReviewing }),
+    /使用第 4 组选项 \(reply review --option 4\), 由用户决定是否采用/u,
+  );
   const drafting = createOrder(stateWithRoadmap(), {
     kind: "implementation",
     slug: "export-csv",

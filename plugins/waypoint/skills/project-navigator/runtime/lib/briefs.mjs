@@ -16,7 +16,12 @@ import {
   orderFilePath,
 } from "./paths.mjs";
 import { VERDICTS } from "./review-record.mjs";
-import { EVIDENCE_COMMAND, EVIDENCE_SECTION } from "./source-evidence.mjs";
+import {
+  EVIDENCE_COMMAND,
+  EVIDENCE_SECTION,
+  REQUIREMENT_SECTION,
+} from "./source-evidence.mjs";
+import { SELECTION_ORDER_KIND } from "./workflow-orders.mjs";
 
 /**
  * 一次问题域调研中网络搜索与网页抓取的总次数上限. 立项调研只需形成基本认知,
@@ -119,7 +124,9 @@ export function buildReviewBrief({
     "",
     `1. 逐条对照工单的 "验收判据", 每条给出结论与证据 (文件路径与行号, 或命令输出). 结论只能是 ${verdicts} 之一, 不用其它说法; 无法确认的写 ${unverified}, 并写明缺少什么.`,
     `2. 回执一致: 用 git diff ${order.baseCommit} --stat 与回执的 "改动清单" 比对, 列出不一致之处.`,
-    "3. 接线核查: 从程序入口追到本工单的新代码, 写出调用链经过的文件路径; 追不到即为未接线.",
+    order.kind === SELECTION_ORDER_KIND
+      ? '3. 接线核查: 选型工单不改动程序代码, 不做本项, 交回时写 "不适用".'
+      : "3. 接线核查: 从程序入口追到本工单的新代码, 写出调用链经过的文件路径; 追不到即为未接线.",
     '4. 范围核查: 列出工单 "工作范围" 之外的改动.',
     "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试, 是否放宽了代码检查的规则或加了忽略标记.",
     '6. 测试运行: 只运行 "已授权测试" 中的命令, 原样记录结果; 没有授权的测试不运行.',
@@ -127,7 +134,7 @@ export function buildReviewBrief({
     '8. 用户测试: "用户测试记录" 存在时, 其中是用户亲手运行的命令与原始输出, 脚本已核对输出与用户的消息逐字一致. 按输出判定每个条目 "对应判据" 所列的判据, 证据写条目标题与输出摘录. 文件不存在时跳过本项.',
     '9. 证据文件: "证据文件目录" 存在时, 其中是执行会话留下的产物, 例如抓包原文与复现脚本. 回执或判据引用这些文件时, 按路径读取核对, 证据写文件路径与行号; 其中的脚本只有列在 "已授权测试" 中才运行. 目录不存在时跳过本项.',
     `10. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
-    `11. 选型工单另查: 运行\`${EVIDENCE_COMMAND}\`, 它从原仓库按版本取回回执 "${EVIDENCE_SECTION}" 表中每条证据引用的源码行. 逐条判断源码是否支持该行 "说明" 所述的能力: 支持的为 ${pass}, 不支持的为 ${fail}, 取不到源码的为 ${unverified}. 工单要求的关键能力在表中没有证据的, 也为 ${unverified}. 不用其它方式获取源码.`,
+    `11. 选型工单另查: 核对范围只是工单列出的每条需求, 判据核对表中每条需求单独一行. 对照回执 "${REQUIREMENT_SECTION}" 表: 依据是源码的, 运行\`${EVIDENCE_COMMAND}\` 从原仓库按版本取回 "${EVIDENCE_SECTION}" 表引用的源码行, 判断是否支持该需求的结论; 依据是测试的, 测试命令在 "已授权测试" 中时运行, 按输出判断. 依据支持结论的为 ${pass}, 不支持的为 ${fail}, 取不到源码或测试没有授权的为 ${unverified}; 需求在表中没有对应行的也为 ${unverified}. 回执其它内容不核对, 不用其它方式获取源码.`,
     "",
     "## 交回格式",
     "",

@@ -1,7 +1,7 @@
 /**
  * @file reply 命令: 输出某种回复的填写要求与骨架, "当前进展" 已按状态填好.
  * 不带回复类型时, 列出全部回复类型及其编号与选项组数. 验收中请用户人工验收之前,
- * 先核对验收记录的判据结论全部为通过. 摘录工单内容的回复 ("工单审阅") 按当前
+ * 先核对验收记录的判据结论全部为通过; 选型工单不做人工验收, 由用户决定是否采用结论. 摘录工单内容的回复 ("工单审阅") 按当前
  * 工单文件预填, 工单不在可审阅的状态或还不能发布时拒绝.
  */
 
@@ -11,12 +11,14 @@ import { readSettledState } from "../lib/commit-settlement.mjs";
 import { hasOrderExcerpt, orderExcerptBodies } from "../lib/order-excerpt.mjs";
 import { readOrderText } from "../lib/order-approval.mjs";
 import { orderFilePath } from "../lib/paths.mjs";
+import { SELECTION_ADOPT_OPTION } from "../lib/guidance.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import { renderReplySkeleton } from "../lib/render.mjs";
 import { renderReplyGuide } from "../lib/reply-guide.mjs";
 import { orderAcceptanceBlockers } from "../lib/review-record.mjs";
 import { loadSpec, resolveReplyType } from "../lib/spec.mjs";
 import { renderTable } from "../lib/table.mjs";
+import { SELECTION_ORDER_KIND } from "../lib/workflow-orders.mjs";
 
 /**
  * 请用户人工验收的回复类型.
@@ -80,7 +82,7 @@ export function runReply({ cwd, type, optionSet }) {
     resolvedType === REVIEW_REPLY_TYPE &&
     optionSet === MANUAL_ACCEPTANCE_OPTION
   ) {
-    assertAllCriteriaPassed(projectRoot, order);
+    assertManualAcceptable(projectRoot, order);
   }
   const reply = spec.replies[resolvedType];
   const skeleton = renderReplySkeleton({
@@ -141,14 +143,20 @@ function excerptBodies({ projectRoot, state, reply, spec }) {
 }
 
 /**
- * 核对验收记录中的判据结论全部为通过; 否则不能请用户人工验收.
+ * 核对能否请用户人工验收: 选型工单不做人工验收, 改由用户决定是否采用结论;
+ * 其它工单的判据结论必须全部为通过.
  *
  * @param {string} projectRoot 项目根目录.
- * @param {{id: string, folder: string}} order 当前工单.
+ * @param {{id: string, folder: string, kind: string}} order 当前工单.
  * @returns {void}
- * @throws {Error} 有判据不是通过, 或验收记录缺失时.
+ * @throws {Error} 是选型工单, 有判据不是通过, 或验收记录缺失时.
  */
-function assertAllCriteriaPassed(projectRoot, order) {
+function assertManualAcceptable(projectRoot, order) {
+  if (order.kind === SELECTION_ORDER_KIND) {
+    throw new Error(
+      `reply: 选型工单不请用户人工验收, 改用 "${REVIEW_REPLY_TYPE}" 第 ${SELECTION_ADOPT_OPTION} 组选项, 由用户决定是否采用选型结论.`,
+    );
+  }
   const blockers = orderAcceptanceBlockers(projectRoot, order);
   if (blockers.length > 0) {
     throw new Error(

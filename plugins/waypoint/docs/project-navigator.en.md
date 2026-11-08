@@ -73,7 +73,7 @@ Take "做一个团队周报汇总工具" (build a tool that combines a team's we
    1. Open a new Claude Code session in the project root and paste the launch prompt from the "后续操作" (next steps) section of the reply.
    2. After reading the work order, the executor replies with "开工对齐" (alignment). Check its plan; it starts working only after you reply `A`.
    3. When done, the executor replies with "执行完成" (done). Reply `A` to have it write the receipt file, then go back to the orchestrator session and reply `A` in "等待回执" (awaiting receipt).
-4. The orchestrator sends the reviewer subagent to check the work and replies with "验收报告" (review report), listing steps for you to verify by hand. Reply `A` once everything checks out.
+4. The orchestrator sends the reviewer subagent to check the work and replies with "验收报告" (review report), listing the result for each requirement. Reply `A` to adopt the selection, or `B` with the direction you want to switch to.
 5. In "确认提交" (confirm commit), choose to commit only, commit and push, or hand over to commit-message.
 
 The skeleton and every later slice move forward through the same work order round trip.
@@ -118,15 +118,15 @@ The plugin-managed configuration is protected as well. Sessions cannot change th
 
 ## Stages
 
-| No. | Stage     | What happens                                                                                                                                                          |
-| --- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | Survey    | Existing projects only: read the repository, run a build and test check, write a status report                                                                        |
-| 1   | Framing   | Understand the requirement, research the problem domain, report, Socratic brainstorming, project brief                                                                |
-| 2   | Main flow | Write the shortest path through the core scenario, split it into milestones and slices, register risks                                                                |
-| 3   | Selection | Compare engineering standards and pick the comment language; executors select technologies with source proof, which the review fetches from the original repositories |
-| 4   | Skeleton  | The first slice: the smallest version that runs the main flow end to end                                                                                              |
-| 5   | Slices    | Deliver slice by slice, with a review at the end of each milestone                                                                                                    |
-| 6   | Closing   | Overall acceptance against the brief, statistics, and a retrospective                                                                                                 |
+| No. | Stage     | What happens                                                                                                                                                                                                     |
+| --- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Survey    | Existing projects only: read the repository, run a build and test check, write a status report                                                                                                                   |
+| 1   | Framing   | Understand the requirement, research the problem domain, report, Socratic brainstorming, project brief                                                                                                           |
+| 2   | Main flow | Write the shortest path through the core scenario, split it into milestones and slices, register risks                                                                                                           |
+| 3   | Selection | Compare engineering standards and pick the comment language; executors select technologies and answer whether the library can do each requirement, backed by source or a temporary test that the review rechecks |
+| 4   | Skeleton  | The first slice: the smallest version that runs the main flow end to end                                                                                                                                         |
+| 5   | Slices    | Deliver slice by slice, with a review at the end of each milestone                                                                                                                                               |
+| 6   | Closing   | Overall acceptance against the brief, statistics, and a retrospective                                                                                                                                            |
 
 A requirement change can come in at any stage and returns to the same position afterwards. Skipping a stage requires your explicit approval and a written reason.
 
@@ -145,7 +145,7 @@ Work orders run strictly one at a time. If the same slice fails review twice in 
 
 Every work order that changes code carries a fixed criterion, "代码检查通过" (code checks pass). The check commands are chosen during selection, using each language's established check tools with function length and complexity rules enabled, and they do not check `.navigator/` or `.claude/`. If the checks fail, the work order cannot pass review.
 
-A selection receipt lists its source evidence in a table: capability, repository, version, path, lines, and note. The reviewer subagent runs the `evidence` command, which fetches those lines from the original repository at that version, and checks them one by one without relying on the executor's copy. When a selection order fails, the orchestrator opens a new selection order to correct it.
+A selection answers one question: can the chosen library do each requirement the order lists? The receipt has one row per requirement with the answer "能" (yes) or "不能" (no). The basis is the library's source (repository, version, path, lines) or, when the source does not show it, a temporary test written by the executor. The reviewer subagent fetches the source from the original repository with the `evidence` command, or reruns the test, in a single round. A selection order does not ask you to verify by hand: the review report lists the result for each requirement and you choose to adopt the selection or switch to another option. Requirements that did not check out are listed as they are; you can still adopt, and they are recorded as risks.
 
 ### Test authorization and evidence tools
 

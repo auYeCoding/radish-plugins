@@ -83,11 +83,17 @@ test("证据: 从回执中读出证据表, 没有证据表时报错", () => {
   const row = `| ${Object.keys(EVIDENCE_COLUMNS)
     .map((key) => VALID_ROW[key])
     .join(" | ")} |`;
-  const text = skeleton.replace(
-    new RegExp(`^\\| ${PLACEHOLDER}.*$`, "mu"),
-    row,
+  const evidenceRowPattern = new RegExp(
+    `^\\| ${PLACEHOLDER}(?: \\| ${PLACEHOLDER}){${Object.keys(EVIDENCE_COLUMNS).length - 1}} \\|$`,
+    "mu",
   );
+  const text = skeleton.replace(evidenceRowPattern, row);
   assert.deepEqual(readEvidenceRows(text), [VALID_ROW]);
+  assert.deepEqual(
+    readEvidenceRows(skeleton.replace(evidenceRowPattern, "")),
+    [],
+    "全部用测试核实时, 证据表只留表头",
+  );
   const formatted = text.replace(
     row,
     "| H2 支持 | `https://github.com/encode/httpx` | `0.28.1` | httpx/\\_client.py | 650-651 | Client 接受 http2 参数 |",

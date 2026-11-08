@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `project-navigator`: a selection now answers one question, whether the chosen library can do each requirement listed in the order, and is reviewed in one round. The selection receipt has a new "需求核对" (requirement check) table with one row per requirement, the answer "能" (yes) or "不能" (no), and its basis: source evidence, or a temporary test the executor writes under the order's `artifacts/` when the source does not show it. The "能力核实" source table may now contain only its header. The reviewer checks only the requirement table, fetching source with `evidence` or rerunning the tests, and skips the wiring check. Other statements in the receipt need no evidence.
+- `project-navigator`: after review, a selection order uses a new fourth option group of "验收报告" (review report): adopt the conclusion or choose another option. It no longer asks for manual verification, and `order set accepted` no longer requires every verdict of a selection order to pass, only the user's conclusion; requirements that did not check out are recorded as risks. A new selection order follows only when the user chooses another option. Selections used to be reviewed like other orders: anything unverified failed and led to another selection order, and in a reported project one question went through six rejected orders without converging.
+- `project-navigator`: the selection guide in the engineering standards asks for an answer per requirement, backed by source or a temporary test, instead of source evidence for every key capability.
+
 ## [0.9.0] - 2026-10-01
 
 ### Changed

@@ -73,7 +73,8 @@ function tableSectionLine(section) {
   const choices = Object.entries(table.choices ?? {}).map(
     ([column, values]) => `, "${column}" 只能填 ${values.join(", ")} 之一`,
   );
-  return `- "${section.title}" 只放一个表格, 表头依次为 ${table.columns.map((column) => `"${column}"`).join(", ")}, 至少一行, 每格都填写${choices.join("")}.`;
+  const rows = table.allowEmpty === true ? "没有内容时只留表头" : "至少一行";
+  return `- "${section.title}" 只放一个表格, 表头依次为 ${table.columns.map((column) => `"${column}"`).join(", ")}, ${rows}, 每格都填写${choices.join("")}.`;
 }
 
 /**

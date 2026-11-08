@@ -925,7 +925,33 @@ projectTest(
 );
 
 projectTest(
-  "流程: 选型工单核对证据需要回执, 不通过时下一动作是新建选型工单",
+  "流程: 选型工单验收后由用户决定是否采用, 有需求没核对通过也可以采用",
+  (context) => {
+    const { project } = context;
+    assert.equal(
+      project(["order", "new", "--kind", "selection", "--slug", "storage"])
+        .status,
+      0,
+    );
+    const folder = ".navigator/orders/0001-storage";
+    writeOrder(context, folder);
+    approveAndIssue(context);
+    assert.equal(project(["order", "set", "reviewing"]).status, 0);
+    const brief = project(["review-brief"]).stdout;
+    assert.match(brief, /接线核查: 选型工单不改动程序代码/u);
+    assert.match(brief, /"需求核对" 表/u);
+    writeReview(context, folder, "不通过");
+    const manual = project(["reply", "review", "--option", "1"]);
+    assert.equal(manual.status, 1);
+    assert.match(manual.stdout, /选型工单不请用户人工验收/u);
+    assert.equal(project(["reply", "review", "--option", "4"]).status, 0);
+    const accepted = project(["order", "set", "accepted"]);
+    assert.equal(accepted.status, 0, accepted.stdout);
+  },
+);
+
+projectTest(
+  "流程: 选型工单核对证据需要回执, 用户另选方案时下一动作是新建选型工单",
   (context) => {
     const { project } = context;
     const noOrder = project(["evidence"]);
@@ -944,6 +970,7 @@ projectTest(
     assert.equal(project(["order", "set", "reviewing"]).status, 0);
     const rejected = project(["order", "set", "rejected"]);
     assert.equal(rejected.status, 0, rejected.stdout);
+    assert.match(rejected.stdout, /第 4 组选 B 时给出的方向/u);
     assert.match(rejected.stdout, /order new --kind selection/u);
   },
 );

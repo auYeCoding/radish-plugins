@@ -32,6 +32,12 @@ export const EVIDENCE_CHECK_ACTION = "check";
 export const EVIDENCE_SECTION = "能力核实";
 
 /**
+ * 回执中逐条回答需求能否实现的节, 与规格 files.receipt 选型结构中的节标题一致.
+ * @type {string}
+ */
+export const REQUIREMENT_SECTION = "需求核对";
+
+/**
  * 证据表各列的列名, 与规格中该节表格的列一致, 顺序相同.
  * @type {Readonly<{capability: string, repository: string, version: string, path: string, lines: string, note: string}>}
  */
