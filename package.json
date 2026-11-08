@@ -20,6 +20,6 @@
   },
   "devDependencies": {
     "@anthropic-ai/claude-code": "^2.1.283",
-    "prettier": "^3.9.9"
+    "prettier": "^3.9.10"
   }
 }
