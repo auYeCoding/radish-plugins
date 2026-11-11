@@ -129,6 +129,12 @@ test("校验: 自由正文可以放代码块与三级标题", () => {
   );
   assert.ok(freeform.includes(body));
   assert.deepEqual(check(freeform), []);
+  const report = filledReply("问题报告").replace(
+    `## 报告内容\n\n${FILLER}\n`,
+    `## 报告内容\n\n${body}`,
+  );
+  assert.ok(report.includes(body));
+  assert.deepEqual(check(report), []);
 });
 
 test("校验: 改动固定选项", () => {

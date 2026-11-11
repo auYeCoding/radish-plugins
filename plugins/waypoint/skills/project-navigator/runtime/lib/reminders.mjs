@@ -3,6 +3,7 @@
  * 重新查询下一动作.
  */
 
+import { REPORT_STEP } from "./diagnostics.mjs";
 import { COMMAND_NAME } from "./paths.mjs";
 import { progressLine } from "./render.mjs";
 
@@ -28,6 +29,18 @@ export function orchestratorReminder(state, spec) {
     `[project-navigator] 你是编排会话. ${progressLine(state, spec)}.`,
     `要点: ${ORCHESTRATOR_POINTS.map((point, index) => `${index + 1}. ${point}`).join("; ")}.`,
   ].join("\n");
+}
+
+/**
+ * 生成有未上报的技能异常时给编排会话的提醒.
+ *
+ * @param {number} count 未上报的异常条数.
+ * @returns {string[]} 提醒各行; 没有异常时为空.
+ */
+export function diagnosticsReminder(count) {
+  return count > 0
+    ? [`技能异常: 脚本记录到 ${count} 条还没有上报的异常. ${REPORT_STEP}.`]
+    : [];
 }
 
 /**

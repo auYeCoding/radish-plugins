@@ -18,6 +18,12 @@
 
 import { existsSync, readFileSync } from "node:fs";
 
+import {
+  EVENT_KINDS,
+  recordEvent,
+  stackLines,
+  unreportedEvents,
+} from "./lib/diagnostics.mjs";
 import { WRITE_TOOLS, decideWrite } from "./lib/guard.mjs";
 import {
   APPROVAL_REPLY_TYPE,
@@ -30,6 +36,7 @@ import {
 } from "./lib/orchestrator-marker.mjs";
 import { findWorktreeRoot, navigatorPath } from "./lib/paths.mjs";
 import {
+  diagnosticsReminder,
   orchestratorCompactReminder,
   orchestratorReminder,
 } from "./lib/reminders.mjs";
@@ -50,6 +57,12 @@ const REPLY_REJECTION_HEADER =
  * @type {string}
  */
 const COMPACT_SOURCE = "compact";
+
+/**
+ * 记录 hook 错误时, 输入中没有事件名时写的来源.
+ * @type {string}
+ */
+const UNKNOWN_EVENT = "未知事件";
 
 /**
  * 可以请用户审阅的工单状态: 起草中, 以及受阻后修改待重新发布.
@@ -102,6 +115,29 @@ function main() {
     if (output !== undefined) {
       process.stdout.write(JSON.stringify(output));
     }
+  } catch (error) {
+    recordHookError(projectRoot, input, error);
+  }
+}
+
+/**
+ * 记下 hook 的内部错误, 供问题报告使用. hook 出错时一律放行, 所以这里只记录,
+ * 不输出; 记录本身出错时也不影响放行.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @param {Record<string, any>} input hook 输入.
+ * @param {unknown} error 捕获到的错误.
+ * @returns {void}
+ */
+function recordHookError(projectRoot, input, error) {
+  try {
+    recordEvent(projectRoot, {
+      kind: EVENT_KINDS.hookError,
+      source: String(input.hook_event_name ?? UNKNOWN_EVENT),
+      message: error instanceof Error ? error.message : String(error),
+      stack: stackLines(error),
+      at: new Date().toISOString(),
+    });
   } catch {
     return;
   }
@@ -170,7 +206,13 @@ function handleUserPrompt({ input, projectRoot, state, isOrchestrator, now }) {
     spec,
     now,
   });
-  return contextOutput("UserPromptSubmit", orchestratorReminder(state, spec));
+  return contextOutput(
+    "UserPromptSubmit",
+    [
+      orchestratorReminder(state, spec),
+      ...diagnosticsReminder(unreportedEvents(projectRoot).length),
+    ].join("\n"),
+  );
 }
 
 /**

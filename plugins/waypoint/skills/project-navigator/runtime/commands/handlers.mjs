@@ -13,6 +13,7 @@ import { runPlan } from "./plan.mjs";
 import { runRecords } from "./records.mjs";
 import { runRef } from "./ref.mjs";
 import { runReply } from "./reply.mjs";
+import { runReport } from "./report.mjs";
 import { runStage } from "./stage.mjs";
 import { runStandards } from "./standards.mjs";
 import { runTemplate } from "./template.mjs";
@@ -38,8 +39,8 @@ import { runUninstall } from "./uninstall.mjs";
 export const COMMAND_HANDLERS = Object.freeze({
   init: ({ cwd, now }) => runInit({ cwd, now }),
   uninstall: ({ cwd, now }) => runUninstall({ cwd, now }),
-  enter: ({ cwd }) => runEnter({ cwd, isEntry: true }),
-  status: ({ cwd }) => runEnter({ cwd, isEntry: false }),
+  enter: ({ cwd, now }) => runEnter({ cwd, isEntry: true, now }),
+  status: ({ cwd, now }) => runEnter({ cwd, isEntry: false, now }),
   reply: ({ positionals, values, cwd }) =>
     runReply({ cwd, type: positionals[0], optionSet: Number(values.option) }),
   template: runTemplate,
@@ -62,4 +63,5 @@ export const COMMAND_HANDLERS = Object.freeze({
   check: runCheck,
   standards: runStandards,
   codecheck: runCodeCheck,
+  report: runReport,
 });

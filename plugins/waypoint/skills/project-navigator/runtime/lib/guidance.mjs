@@ -23,6 +23,18 @@ export const REVIEW_OPTIONS = Object.freeze({
 });
 
 /**
+ * 上报技能自身问题的回复类型.
+ * @type {string}
+ */
+export const REPORT_REPLY_TYPE = "问题报告";
+
+/**
+ * "问题报告" 的选项组: 还能继续推进, 无法继续.
+ * @type {Readonly<{continuable: number, blocking: number}>}
+ */
+export const REPORT_OPTIONS = Object.freeze({ continuable: 1, blocking: 2 });
+
+/**
  * 请用户决定验收结果的回复类型.
  * @type {string}
  */
