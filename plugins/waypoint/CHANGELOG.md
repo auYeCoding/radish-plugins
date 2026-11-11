@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-11
+
 ### Fixed
 
 - `project-navigator`: the review brief used the commit recorded when the order was created as the base commit. When the repository got a new commit before the order was issued (for example the commit after a plugin upgrade), the reviewer compared against the wrong commit and listed unrelated changes. The base commit is now the current commit at issue time: the order skeleton prefills it, and both `reply approve` and `order set issued` refuse an order file whose "基准提交" (base commit) is not the current commit.
@@ -260,7 +262,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.2.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.2.1...HEAD
+[1.2.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.1
 [1.2.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.0
 [1.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.1.0
 [1.0.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.0.0
