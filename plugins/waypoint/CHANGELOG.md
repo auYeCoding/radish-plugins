@@ -6,12 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-10
+
 ### Added
 
 - `project-navigator`: the skill notices its own problems and reports them. The scripts record internal errors in commands and hooks, an inconsistent state, a command that the next action asked for but that was refused, and the same next action given 4 times while the state does not change. `status` and the reminder on each user message then show a "技能异常" (skill anomaly) line.
 - `project-navigator`: a new `report [--from <draft>]` command and a new reply "问题报告" (problem report). The command writes `.navigator/drafts/reports/report-NNNN.md` (not committed) from the recorded anomalies, the environment, a state summary, and the course of events in the draft, and the reply shows the full text in one code block for the user to pass to the maintainers. A report states only what happened: no guesses about causes, no advice, no work order text or business code, and local paths are masked. Orchestration pauses only when it cannot continue, that is, after an internal command error or with an inconsistent state.
 
-## [1.0.0] - 2026-11-11
+## [1.0.0] - 2026-11-10
 
 This release reworks `project-navigator` and is not compatible with projects initialized by 0.x: invoke the skill in such a project and run `init` when asked. The upgrade removes the old project-level hooks, permission rules and script copies; all records are kept.
 
@@ -244,7 +246,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.0.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.1.0...HEAD
+[1.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.1.0
 [1.0.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.0.0
 [0.11.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.11.0
 [0.10.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.10.0
