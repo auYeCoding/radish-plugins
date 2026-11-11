@@ -2,7 +2,8 @@
  * @file 识别用户对选项块的回答: 回复单独的选项字母, 或以选项文字的第一个分句开头.
  *
  * 开工对齐与工单审阅都要由 hook 记下用户是否选了 A; 识别的文字取自规格中的
- * 选项, 与回复中显示的选项保持一致.
+ * 选项, 与回复中显示的选项保持一致. 支持按钮的应用中, 按钮文字就是选项的
+ * 第一个分句, 点按钮与打字回复走同一条识别.
  */
 
 import { OPTION_LETTERS } from "./render.mjs";
@@ -12,6 +13,17 @@ import { OPTION_LETTERS } from "./render.mjs";
  * @type {RegExp}
  */
 const CLAUSE_BREAK_PATTERN = /[,.;:]/u;
+
+/**
+ * 取出选项文字的第一个分句, 例如 "发布工单, 开始执行." 得到 "发布工单".
+ * 用户以这个分句开头的回复算选了该项, 应用的按钮也用它作文字.
+ *
+ * @param {string} choice 选项文字.
+ * @returns {string} 第一个分句.
+ */
+export function choiceLead(choice) {
+  return choice.split(CLAUSE_BREAK_PATTERN)[0].trim();
+}
 
 /**
  * 判断用户消息是否选了某组选项中的某一项.
@@ -32,7 +44,7 @@ export function isChoiceSelected(prompt, optionSet, index) {
     `^[${letter}${letter.toLowerCase()}](?:[\\s.,:;)]|$)`,
     "u",
   );
-  const lead = choice.split(CLAUSE_BREAK_PATTERN)[0].trim();
+  const lead = choiceLead(choice);
   return (
     letterPattern.test(trimmed) || (lead !== "" && trimmed.startsWith(lead))
   );

@@ -29,13 +29,14 @@ import { SPEC_FILE } from "./paths.mjs";
  * @typedef {object} OptionSetSpec 一组固定选项的规格.
  * @property {string} title 选项标题, 4 个汉字, 显示在方括号中.
  * @property {string[]} choices 选项文字, 按字母顺序排列, 不含字母前缀.
+ * @property {boolean} [buttons] 写 false 时不做成应用的按钮: 选择之后还要用户打字补充 (例如逐条回答), 或选了就会提交改动 (应用规定提交不能用回复按钮).
  */
 
 /**
  * @typedef {object} ReplySpec 一种回复类型的规格.
  * @property {string} id 英文编号, 供命令行参数使用.
  * @property {SectionSpec[]} sections 结论与进展行之后的节, 按顺序.
- * @property {OptionSetSpec[]} optionSets 允许使用的选项组, 回复中必须恰好使用其中一组.
+ * @property {OptionSetSpec[]} optionSets 允许使用的选项组, 回复中必须恰好使用其中一组; 为空表示这种回复不需要用户选择, 不带选项块.
  */
 
 /**

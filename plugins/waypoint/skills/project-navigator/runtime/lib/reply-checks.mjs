@@ -3,7 +3,7 @@
  *
  * 回复结束时 Stop hook 调用这里的检查, 只查机器依赖的结构: 一级标题是回复类型
  * (据此识别回复), 标题下方有结论行, 选项块与规格逐字一致 (据此识别用户的选择),
- * 代码块都已关闭, 没有残留占位标记. 节, 键名与写作规则都只是填写要求中的提醒,
+ * 不需要用户选择的回复不带选项块, 代码块都已关闭, 没有残留占位标记. 节, 键名与写作规则都只是填写要求中的提醒,
  * 不在这里打回. 返回的问题列表直接作为打回原因交给模型.
  */
 
@@ -80,11 +80,7 @@ export function checkReply({ text, spec }) {
     );
   }
   problems.push(...checkConclusion(body[0], spec.format));
-  if (optionBlocks.length !== 1) {
-    problems.push("回复结尾必须恰好有一个选项块.");
-  } else {
-    problems.push(...checkOptionSet(optionBlocks[0], reply));
-  }
+  problems.push(...checkOptionBlocks(optionBlocks, reply));
   if (!reply.sections.some(isFreeformSection)) {
     const stray = blocks.filter((block) => !isOptionBlock(block));
     if (stray.length > 0) {
@@ -130,6 +126,25 @@ function isOptionBlock(block) {
   return (
     block.language === "" && OPTION_TITLE_PATTERN.test(block.content[0] ?? "")
   );
+}
+
+/**
+ * 校验选项块的数量: 规格中有选项组的回复恰好一个, 且与某一组一致; 没有选项组的
+ * 回复不需要用户选择, 不能带选项块.
+ *
+ * @param {import("./markdown.mjs").BlockItem[]} optionBlocks 回复中的选项块.
+ * @param {import("./spec.mjs").ReplySpec} reply 回复规格.
+ * @returns {string[]} 问题列表.
+ */
+function checkOptionBlocks(optionBlocks, reply) {
+  if (reply.optionSets.length === 0) {
+    return optionBlocks.length === 0
+      ? []
+      : ["这种回复不需要用户选择, 不能带选项块."];
+  }
+  return optionBlocks.length === 1
+    ? checkOptionSet(optionBlocks[0], reply)
+    : ["回复结尾必须恰好有一个选项块."];
 }
 
 /**

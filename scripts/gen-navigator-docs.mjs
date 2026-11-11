@@ -18,6 +18,10 @@ import * as prettier from "prettier";
 import { KEY_SECTION_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/file-guide.mjs";
 import { FREEFORM_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/freeform-sections.mjs";
 import { OPTION_LETTERS } from "../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
+import {
+  BUTTON_COUNT,
+  BUTTON_TOOL,
+} from "../plugins/waypoint/skills/project-navigator/runtime/lib/reply-guide.mjs";
 import { isFreeformSection } from "../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { renderTable } from "../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
 import { UNIT_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/text-units.mjs";
@@ -225,7 +229,7 @@ function repliesDocument({ spec }) {
   return [
     "# 回复类型",
     "",
-    `每条回复都以 "# 类型" 开头, 下方第一行是 "${spec.format.conclusionLabel}: ..." 一句话结论, 其后是脚本计算的进展行, 然后是各节, 最后是一个选项块. 回复前运行 \`project-navigator reply <编号> --option <组号>\` 取得填写要求与骨架, 按要求在骨架上填写. 回复结束时只校验结构: 标题, 结论行与选项块.`,
+    `每条回复都以 "# 类型" 开头, 下方第一行是 "${spec.format.conclusionLabel}: ..." 一句话结论, 其后是脚本计算的进展行, 然后是各节, 最后是一个选项块; 不需要用户选择的回复 (下方 "选项" 写 "无") 不带选项块. 恰好 ${BUTTON_COUNT} 项的选项组, 在提供 \`${BUTTON_TOOL}\` 工具的应用中同时做成按钮, 按钮文字是选项的第一个分句, 写法见填写要求中的 "按钮" 一条; 规格中关闭了按钮的组除外 (选择后还要打字补充, 或选了就会提交). 回复前运行 \`project-navigator reply <编号> --option <组号>\` 取得填写要求与骨架, 按要求在骨架上填写. 回复结束时只校验结构: 标题, 结论行与选项块.`,
     ...Object.entries(spec.replies).flatMap(([title, reply]) => [
       "",
       ...replySummary(title, reply),
@@ -247,11 +251,15 @@ function replySummary(title, reply) {
     "",
     `- 编号: \`${reply.id}\``,
     `- 各节: ${reply.sections.map(sectionLabel).join("; ")}`,
-    "- 选项:",
-    ...reply.optionSets.map(
-      (set, index) =>
-        `  - 第 ${index + 1} 组 [${set.title}]: ${set.choices.map((choice, choiceIndex) => `${OPTION_LETTERS[choiceIndex]}. ${choice}`).join(" ")}`,
-    ),
+    ...(reply.optionSets.length === 0
+      ? ["- 选项: 无, 不需要用户选择, 回复不带选项块."]
+      : [
+          "- 选项:",
+          ...reply.optionSets.map(
+            (set, index) =>
+              `  - 第 ${index + 1} 组 [${set.title}]: ${set.choices.map((choice, choiceIndex) => `${OPTION_LETTERS[choiceIndex]}. ${choice}`).join(" ")}`,
+          ),
+        ]),
   ];
 }
 

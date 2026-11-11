@@ -88,7 +88,11 @@ export function runReply({ cwd, type, optionSet }) {
         : {},
   });
   return [
-    ...renderReplyGuide({ type: resolvedType, spec }),
+    ...renderReplyGuide({
+      type: resolvedType,
+      spec,
+      optionSetIndex: optionSet - 1,
+    }),
     ...skeleton.trimEnd().split("\n"),
   ];
 }

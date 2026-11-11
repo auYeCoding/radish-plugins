@@ -310,6 +310,22 @@ test("回复骨架: 标题下方是结论行与进展行, 结尾是选项块, �
   assert.doesNotMatch(skeleton, /<- \+/u);
 });
 
+test("填写要求: 两个选项的组给出按钮文字, 其它组与没有选项的回复不给", (context) => {
+  const repository = createTemporaryRepository();
+  context.after(repository.cleanup);
+  initializeProject(repository.root);
+  const guide = (/** @type {string[]} */ ...args) =>
+    runCommand(["reply", ...args], repository.root).stdout;
+  assert.match(
+    guide("entry"),
+    /- 按钮: .*mcp__ccd_turn__wrap_up.*"新建项目", "已有项目".*选项块照常保留/u,
+  );
+  assert.doesNotMatch(guide("research"), /- 按钮: /u);
+  assert.doesNotMatch(guide("brainstorm"), /- 按钮: /u);
+  assert.match(guide("brainstorm", "--option", "2"), /"开始收敛", "继续发散"/u);
+  assert.doesNotMatch(guide("running"), /- 按钮: /u);
+});
+
 test("自查: check 带文件时只报告问题, 不分配体检编号, 不写状态", (context) => {
   const repository = createTemporaryRepository();
   context.after(repository.cleanup);

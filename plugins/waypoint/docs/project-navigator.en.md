@@ -43,7 +43,7 @@ Any session that invokes the skill continues from the recorded state; there is n
 
 ## Quick start
 
-Take "build a tool that collects the team's weekly reports" as an example, starting from a new repository that has only a README. Each reply starts with a one-line conclusion and ends with an option block, so you only need to answer with a letter. To add details, write them after the letter, for example `B assumption 3 is wrong, we use Feishu`.
+Take "build a tool that collects the team's weekly reports" as an example, starting from a new repository that has only a README. Each reply starts with a one-line conclusion and ends with an option block, so you only need to answer with a letter. In the Claude desktop app, a reply with two choices also shows two buttons above the input box, and a click answers with that choice. To add details, write them after the letter, for example `B assumption 3 is wrong, we use Feishu`.
 
 ### First invocation
 
@@ -128,7 +128,7 @@ A requirement change can be inserted at any stage, and the work returns to where
 ## One work order round trip
 
 1. **Review.** The orchestrator writes the work order and replies with "工单审阅" (work order review), listing only the review points and the order file path. The order can be issued only after you choose A; if the order changes after that, it is reviewed again.
-2. **Execution.** The orchestrator dispatches an executor subagent in the background and replies with "工单执行" (order running). The executor checks the commit and assumptions, plans, implements, checks itself, and writes the receipt. To stop and change the order midway, choose B in "工单执行".
+2. **Execution.** The orchestrator dispatches an executor subagent in the background and replies with "工单执行" (order running). The executor checks the commit and assumptions, plans, implements, checks itself, and writes the receipt. "工单执行" needs no choice from you, so it has no option block; to stop and change the order midway, reply "停止执行" (stop).
 3. **Blocked.** When the executor hits a specification problem, or needs an action or decision from you, it explains in the receipt and stops. The orchestrator replies with "受阻处理" (blocked handling); once you have handled it and the order does not need to change, the same executor continues without a new review.
 4. **Review of the work.** The orchestrator sends the reviewer subagent to check each criterion; the only verdicts are pass, fail, and unverified. In "验收报告" (review report):
    - Everything passes: you may verify by hand following the "人工验收" (manual verification) steps, then choose to commit, or commit and push.
@@ -148,7 +148,7 @@ A selection answers one question: can the chosen library do each requirement lis
 
 ## What a reply looks like
 
-Every reply from the orchestrator has the same structure: a type heading, a one-line conclusion, a progress line, a few sections, and an option block at the end. For example:
+Every reply from the orchestrator has the same structure: a type heading, a one-line conclusion, a progress line, a few sections, and an option block at the end (a reply that needs no choice from you, such as "工单执行", has no option block). For example:
 
 ````markdown
 # 工单审阅

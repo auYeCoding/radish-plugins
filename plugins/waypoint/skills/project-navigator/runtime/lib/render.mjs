@@ -79,7 +79,8 @@ export function renderProgressSection(state, spec) {
 }
 
 /**
- * 生成某种回复的骨架: 一级标题, 结论行, 进展行, 各节与选项块.
+ * 生成某种回复的骨架: 一级标题, 结论行, 进展行, 各节与选项块. 规格中没有
+ * 选项组的回复不需要用户选择, 骨架不带选项块.
  *
  * @param {object} options 生成参数.
  * @param {string} options.type 回复类型.
@@ -101,8 +102,9 @@ export function renderReplySkeleton({
   if (reply === undefined) {
     throw new Error(`render: 未知的回复类型 "${type}"`);
   }
+  const hasOptions = reply.optionSets.length > 0;
   const optionSet = reply.optionSets[optionSetIndex];
-  if (optionSet === undefined) {
+  if (hasOptions && optionSet === undefined) {
     throw new Error(`render: "${type}" 没有第 ${optionSetIndex + 1} 组选项`);
   }
   const lines = [
@@ -115,8 +117,7 @@ export function renderReplySkeleton({
       "",
       ...renderSection(section, values),
     ]),
-    "",
-    ...renderOptionBlock(optionSet),
+    ...(hasOptions ? ["", ...renderOptionBlock(optionSet)] : []),
   ];
   return `${lines.join("\n")}\n`;
 }
