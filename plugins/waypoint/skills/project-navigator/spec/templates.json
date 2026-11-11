@@ -10,7 +10,13 @@
     "progressTitle": "当前进展",
     "progressKeys": ["当前阶段", "当前里程", "当前切片", "当前工单"],
     "progressLabels": ["阶段", "里程", "切片", "工单"],
-    "progressSeparator": " · "
+    "progressSeparator": " · ",
+    "orderStages": {
+      "drafting": "起草中",
+      "issued": "执行中",
+      "blocked": "受阻",
+      "reviewing": "验收中"
+    }
   },
   "writing": {
     "structure": { "label": "结构不符", "severity": "problem" },
@@ -299,8 +305,17 @@
       ],
       "optionSets": []
     },
+    "工单验收": {
+      "id": "reviewing",
+      "sections": [
+        { "title": "验收情况", "keys": ["回执路径", "验收方式"] },
+        { "title": "核对重点" }
+      ],
+      "optionSets": []
+    },
     "验收报告": {
       "id": "review",
+      "orderStage": "待你决定",
       "sections": [
         { "title": "验收结论", "keys": ["总体结论", "判据通过", "回执来源"] },
         { "title": "判据核对" },
@@ -315,7 +330,8 @@
             "规范核查"
           ]
         },
-        { "title": "人工验收" }
+        { "title": "人工验收" },
+        { "title": "处理建议", "keys": ["建议选项", "主要依据"] }
       ],
       "optionSets": [
         {

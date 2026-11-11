@@ -130,7 +130,7 @@ A requirement change can be inserted at any stage, and the work returns to where
 1. **Review.** The orchestrator writes the work order and replies with "工单审阅" (work order review), listing only the review points and the order file path. The order can be issued only after you choose A; if the order changes after that, it is reviewed again.
 2. **Execution.** The orchestrator dispatches an executor subagent in the background and replies with "工单执行" (order running). The executor checks the commit and assumptions, plans, implements, checks itself, and writes the receipt. "工单执行" needs no choice from you, so it has no option block; to stop and change the order midway, reply "停止执行" (stop).
 3. **Blocked.** When the executor hits a specification problem, or needs an action or decision from you, it explains in the receipt and stops. The orchestrator replies with "受阻处理" (blocked handling); once you have handled it and the order does not need to change, the same executor continues without a new review.
-4. **Review of the work.** The orchestrator sends the reviewer subagent to check each criterion; the only verdicts are pass, fail, and unverified. In "验收报告" (review report):
+4. **Review of the work.** The orchestrator sends the reviewer subagent to check each criterion; the only verdicts are pass, fail, and unverified. While the reviewer works in the background, the orchestrator first replies with "工单验收" (order under review, no option block), then with "验收报告" (review report) when the result is back; its recommendation goes only in the "处理建议" (recommendation) section. In "验收报告":
    - Everything passes: you may verify by hand following the "人工验收" (manual verification) steps, then choose to commit, or commit and push.
    - Something fails: the orchestrator first judges why; an order that was too large is split, otherwise a fix order follows.
    - Only unverified criteria remain: you decide to accept as is and commit, or to follow up; accepted unverified criteria are recorded as risks.
@@ -155,7 +155,7 @@ Every reply from the orchestrator has the same structure: a type heading, a one-
 
 结论: 工单 0007 补齐 HTTP/2 指纹, 需要你决定是否在仓库内维护 fhttp 补丁.
 
-阶段 5/6 (切片) · 里程 3/5 (引擎跑通主线) · 切片 4/10 (HTTP/2 指纹) · 工单 0007
+阶段 5/6 (切片) · 里程 3/5 (引擎跑通主线) · 切片 4/10 (HTTP/2 指纹) · 工单 0007 (起草中)
 
 ## 审阅要点
 
@@ -173,7 +173,7 @@ B. 需要修改, 请提需求.
 ```
 ````
 
-The conclusion line alone tells you what is asked of you; the details follow for when you need them.
+The conclusion line alone tells you what is asked of you; the details follow for when you need them. The parentheses at the end of the progress line show where the work order stands (起草中 drafting, 执行中 running, 受阻 blocked, 验收中 under review, 待你决定 awaiting your decision), which tells consecutive replies apart.
 
 ## Record files
 

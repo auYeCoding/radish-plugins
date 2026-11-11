@@ -288,7 +288,7 @@ test("hook: 编排会话收到消息与压缩上下文后得到位置提醒, 其
   );
 });
 
-test("hook: 只校验编排会话回复的结构, 打回一次后放行, 后台任务进行中不校验", (context) => {
+test("hook: 只校验编排会话回复的结构, 打回一次后放行, 后台任务进行中照常校验", (context) => {
   const setup = setupProject(context);
   const { root, project, orchestrator, other } = setup;
   const valid = fill(commandSkeleton(project(["reply", "freeform"]).stdout));
@@ -301,10 +301,11 @@ test("hook: 只校验编排会话回复的结构, 打回一次后放行, 后台�
     stop(root, orchestrator, broken, { stop_hook_active: true }),
     undefined,
   );
-  assert.equal(
-    stop(root, orchestrator, broken, { background_tasks: [{ id: "t" }] }),
-    undefined,
-  );
+  const background = { background_tasks: [{ id: "t" }] };
+  assert.equal(stop(root, orchestrator, broken, background)?.decision, "block");
+  const waiting = fill(commandSkeleton(project(["reply", "reviewing"]).stdout));
+  assert.doesNotMatch(waiting, /```/u);
+  assert.equal(stop(root, orchestrator, waiting, background), undefined);
   assert.equal(stop(root, other, "随便说点什么"), undefined);
 });
 
@@ -331,12 +332,20 @@ test("工单往返: 审阅发布, 执行子代理写回执, 验收通过, 输出
     "deny",
   );
   assert.match(project(["status"]).stdout, /回复 "工单执行"/u);
+  assert.match(
+    project(["reply", "running"]).stdout,
+    /· 工单 0001 \(执行中\)\n/u,
+  );
   writeReceipt(setup, folder, "完成");
   assert.match(
     project(["status"]).stdout,
-    /执行状态 完成[\s\S]*order set reviewing, 再运行 review-brief/u,
+    /执行状态 完成[\s\S]*order set reviewing, 再运行 review-brief[\s\S]*回复 "工单验收" \(reply reviewing\)/u,
   );
   project(["order", "set", "reviewing"]);
+  assert.match(
+    project(["reply", "reviewing"]).stdout,
+    /· 工单 0001 \(验收中\)\n[\s\S]*## 核对重点/u,
+  );
   assert.match(
     project(["review-brief"]).stdout,
     new RegExp(`- 代码检查: ${CHECK_COMMAND}`, "u"),

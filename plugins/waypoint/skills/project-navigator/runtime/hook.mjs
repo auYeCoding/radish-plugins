@@ -238,8 +238,8 @@ function handleSessionStart({ input, state, isOrchestrator }) {
  * 处理回复结束事件: 校验编排会话回复的结构, 不合格时打回一次. 工单审阅合格,
  * 或本轮不校验时, 开始等待用户对工单审阅的选择.
  *
- * `stop_hook_active` 为 true 表示本轮已被打回过, 此时不再校验, 避免循环;
- * 有后台任务时回复是等待中的中间回复, 也不校验.
+ * `stop_hook_active` 为 true 表示本轮已被打回过, 此时不再校验, 避免循环.
+ * 有后台任务时照常校验: 等待子代理的回复有自己的类型 ("工单执行", "工单验收").
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
@@ -252,10 +252,10 @@ function handleStop({ input, projectRoot, state, isOrchestrator, now }) {
   if (text === "" || !isOrchestrator()) {
     return undefined;
   }
-  const hasBackgroundTasks =
-    Array.isArray(input.background_tasks) && input.background_tasks.length > 0;
-  const shouldCheck = input.stop_hook_active !== true && !hasBackgroundTasks;
-  const problems = shouldCheck ? checkReply({ text, spec: loadSpec() }) : [];
+  const problems =
+    input.stop_hook_active === true
+      ? []
+      : checkReply({ text, spec: loadSpec() });
   if (problems.length > 0) {
     return {
       decision: "block",

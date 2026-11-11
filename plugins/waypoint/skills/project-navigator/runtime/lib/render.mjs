@@ -47,16 +47,29 @@ export function progressValues(state, spec) {
 }
 
 /**
- * 生成回复中的一行进展, 例如 "阶段 5/6 (切片) · 里程 3/5 (导出) · 切片 4/10 (报表) · 工单 0007".
+ * 生成回复中的一行进展, 例如
+ * "阶段 5/6 (切片) · 里程 3/5 (导出) · 切片 4/10 (报表) · 工单 0007 (执行中)".
+ * 有当前工单时, 工单编号之后写工单所处的环节, 连续几条回复靠它区分先后.
  *
  * @param {import("./state.mjs").NavigatorState | undefined} state 状态.
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {string} [orderStage] 工单所处的环节; 省略时按工单状态取.
  * @returns {string} 进展行.
  */
-export function progressLine(state, spec) {
+export function progressLine(state, spec, orderStage) {
   const values = progressValues(state, spec);
+  const order = state?.order ?? null;
+  const stage =
+    order === null
+      ? undefined
+      : (orderStage ?? spec.format.orderStages[order.status]);
+  const lastIndex = values.length - 1;
   return spec.format.progressLabels
-    .map((label, index) => `${label} ${values[index]}`)
+    .map((label, index) =>
+      index === lastIndex && stage !== undefined
+        ? `${label} ${values[index]} (${stage})`
+        : `${label} ${values[index]}`,
+    )
     .join(spec.format.progressSeparator);
 }
 
@@ -112,7 +125,7 @@ export function renderReplySkeleton({
     "",
     `${spec.format.conclusionLabel}: ${PLACEHOLDER}`,
     "",
-    progressLine(state, spec),
+    progressLine(state, spec, reply.orderStage),
     ...reply.sections.flatMap((section) => [
       "",
       ...renderSection(section, values),

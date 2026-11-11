@@ -65,6 +65,7 @@ export function renderReplyGuide({ type, spec, optionSetIndex = 0 }) {
       : "标题与进展行原样保留; 这种回复不需要用户选择, 结尾不加选项块";
   return wrapGuide([
     `- 回复从下面的 "# ${type}" 写起, 前面不加引导语. 只替换 "${PLACEHOLDER}", ${kept}.`,
+    "- 各节之外不加文字: 补充说明与建议写进已有的节, 没有对应的节就不写. 每项只写结论与必要的依据, 不复述工单与回执.",
     ...buttonLines(reply.optionSets[optionSetIndex]),
     conclusionRule(spec.format),
     ...freeformLines(spec.replies[type]),

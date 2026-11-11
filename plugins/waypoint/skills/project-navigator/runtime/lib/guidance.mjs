@@ -47,6 +47,12 @@ export const REVIEW_REPLY_TYPE = "验收报告";
 export const RUNNING_REPLY_TYPE = "工单执行";
 
 /**
+ * 验收子代理工作期间的回复类型.
+ * @type {string}
+ */
+export const REVIEWING_REPLY_TYPE = "工单验收";
+
+/**
  * 处理受阻工单的回复类型.
  * @type {string}
  */
@@ -69,6 +75,16 @@ export const BLOCKED_RECEIPT_KEYWORD = "受阻";
  * @type {string}
  */
 const DISPATCH_STEP = `运行 order set issued, 再运行 exec-brief, 把输出原样作为提示词, 用 Agent 工具在后台 (run_in_background) 派 ${SUBAGENT_TYPES.executor}, 然后`;
+
+/**
+ * 派出验收子代理的一串动作; 子代理在后台运行, 本轮要先结束时回复 "工单验收".
+ *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @returns {string} 动作.
+ */
+function reviewDispatchStep(spec) {
+  return `运行 review-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.reviewer}; 子代理在后台运行, 本轮要先结束时${replyStep(spec, REVIEWING_REPLY_TYPE)}, 不写其它说明`;
+}
 
 /**
  * @typedef {object} GuidanceInput 判断下一动作需要的信息.
@@ -188,7 +204,7 @@ function issuedAction(spec, order, receiptStatus) {
   }
   return receiptStatus.includes(BLOCKED_RECEIPT_KEYWORD)
     ? `工单 ${order.id} 执行受阻: 读回执, 运行 order set blocked, 再${replyStep(spec, BLOCKED_REPLY_TYPE)}, 按受阻类型选择选项组`
-    : `工单 ${order.id} 执行完成: 运行 order set reviewing, 再运行 review-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.reviewer}`;
+    : `工单 ${order.id} 执行完成: 运行 order set reviewing, 再${reviewDispatchStep(spec)}`;
 }
 
 /**
@@ -214,7 +230,7 @@ function blockedAction(spec, order, input) {
  * @returns {string} 下一动作.
  */
 function reviewingAction(spec, order) {
-  const brief = `运行 review-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.reviewer}, 结论写入 review.md, 再`;
+  const brief = `${reviewDispatchStep(spec)}; 结果回来后把结论写入 review.md, 再`;
   return order.kind === SELECTION_ORDER_KIND
     ? `选型工单 ${order.id} 验收中: ${brief}${replyStep(spec, REVIEW_REPLY_TYPE, REVIEW_OPTIONS.selection)}, 由用户决定是否采用`
     : `工单 ${order.id} 验收中: ${brief}${replyStep(spec, REVIEW_REPLY_TYPE)}: 判据全部通过用第 ${REVIEW_OPTIONS.passed} 组, 有不通过用第 ${REVIEW_OPTIONS.fix} 组, 只有未验证用第 ${REVIEW_OPTIONS.unverified} 组`;
