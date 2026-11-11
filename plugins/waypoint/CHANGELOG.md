@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-10
+
 ### Added
 
 - `project-navigator`: in the Claude desktop app, a reply whose option group has exactly two choices also shows them as two buttons in the app's next-step box, so the user can answer with one click. The button text is the first clause of each choice, for example "发布工单" (issue the order). The option block stays in every reply, and other environments behave as before. Groups where the user must type more after choosing, or where the choice leads to a commit, get no buttons.
@@ -254,7 +256,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.1.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.2.0...HEAD
+[1.2.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.0
 [1.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.1.0
 [1.0.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.0.0
 [0.11.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v0.11.0
