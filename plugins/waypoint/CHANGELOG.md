@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: a new reply "工单验收" (order under review, no option block), used when the reviewer subagent works in the background. Before, the orchestrator wrote an untitled note at that point.
+- `project-navigator`: the progress line shows where the work order stands after the order id, for example `工单 0012 (验收中)`: 起草中 (drafting), 执行中 (running), 受阻 (blocked), 验收中 (under review), 待你决定 (awaiting your decision).
+- `project-navigator`: "验收报告" (review report) has a new section "处理建议" (recommendation) with the recommended option and one line of reasoning. The fill-in instructions say to add no text outside the sections.
+
+### Changed
+
+- `project-navigator`: the reply structure is checked while background tasks run too. A free-form note written while a subagent works is sent back once.
+
 ## [1.2.1] - 2026-11-11
 
 ### Fixed

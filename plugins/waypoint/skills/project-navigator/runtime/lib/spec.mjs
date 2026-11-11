@@ -35,6 +35,7 @@ import { SPEC_FILE } from "./paths.mjs";
 /**
  * @typedef {object} ReplySpec 一种回复类型的规格.
  * @property {string} id 英文编号, 供命令行参数使用.
+ * @property {string} [orderStage] 这种回复的进展行中工单所处的环节; 省略时按工单状态取 format.orderStages.
  * @property {SectionSpec[]} sections 结论与进展行之后的节, 按顺序.
  * @property {OptionSetSpec[]} optionSets 允许使用的选项组, 回复中必须恰好使用其中一组; 为空表示这种回复不需要用户选择, 不带选项块.
  */
@@ -51,6 +52,7 @@ import { SPEC_FILE } from "./paths.mjs";
  * @property {string[]} progressKeys 记录文件中进展节的键名, 按顺序.
  * @property {string[]} progressLabels 回复中进展行各项的名称, 与 progressKeys 一一对应.
  * @property {string} progressSeparator 回复中进展行各项之间的分隔符.
+ * @property {Record<string, string>} orderStages 工单状态到环节名称的映射, 写在进展行的工单编号之后.
  */
 
 /**

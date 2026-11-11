@@ -94,9 +94,9 @@
 ### 验收
 
 1. 运行 `order set reviewing`.
-2. 运行 `review-brief`, 把输出原样作为提示词派 `waypoint:navigator-reviewer`. 回执 "测试记录" 中列为 "外部影响" 的命令, 验收子代理不运行, 按回执中的输出判断.
+2. 运行 `review-brief`, 把输出原样作为提示词派 `waypoint:navigator-reviewer`. 回执 "测试记录" 中列为 "外部影响" 的命令, 验收子代理不运行, 按回执中的输出判断. 子代理在后台运行, 本轮要先结束时回复 "工单验收": "验收方式" 写 "后台验收子代理", "核对重点" 只列执行子代理提请核对的事项, 没有时写 "无"; 不写其它说明.
 3. 运行 `template review`, 用子代理交回的结果写 `review.md`. "判据核对" 表的结论照抄子代理的结论, 只能是 通过, 不通过, 未验证 之一. "用户结论" 保留骨架预填的 "待用户确认", 用户选择之后再改写. "人工验收" 写出用户可以亲手验证的步骤, 命令只取自回执; 没有时写 "无".
-4. 回复 "验收报告", 按判据结论选择选项组 (`reply review --option <组号>` 会核对):
+4. 回复 "验收报告", 按判据结论选择选项组 (`reply review --option <组号>` 会核对). 建议只写在 "处理建议" 一节: "建议选项" 写选项字母, "主要依据" 写一句话; 选项块之前不另加说明:
    - 全部通过: 第 1 组. 用户选 A 或 B: 在 `review.md` 写 "用户结论", 运行 `order set accepted`, 按输出调用 `waypoint:commit-message` 提交 (B 同时推送). 用户选 C: 把用户描述的现象写进 `review.md`, 运行 `order set rejected`, 按输出用第 2 组再回复 "验收报告".
    - 有判据不通过: 运行 `order set rejected`, 按输出使用第 2 组.
    - 没有不通过, 但有未验证的判据: 第 3 组. 用户选 A (接受现状): 在 `review.md` 写 "用户结论", 运行 `order set accepted --accept-unverified`, 按输出提交; 未验证的判据用 `risk add` 各登记一条风险. 用户选 B: 运行 `order set rejected`, 按输出新建补正工单.
