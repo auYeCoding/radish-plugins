@@ -11,6 +11,7 @@ import { test } from "node:test";
 import { PLACEHOLDER } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
 import {
   commandSkeleton,
+  commitPaths,
   createTemporaryRepository,
   initializeProject,
   runHook,
@@ -390,6 +391,36 @@ test("工单往返: 认可之后改过工单, 发布被拒; 未验证的判据�
     project(["order", "set", "accepted", "--accept-unverified"]).stdout,
     /转为 accepted/u,
   );
+});
+
+test("基准提交: 新建工单之后仓库有新提交时, 审阅拒绝旧值, 发布后验收提示词用当前提交", (context) => {
+  const setup = setupProject(context);
+  const { root, project, orchestrator } = setup;
+  project(["order", "new", "--kind", "implementation", "--slug", "export"]);
+  const folder = ".navigator/orders/0001-export";
+  const stale = fill(commandSkeleton(project(["template", "order"]).stdout));
+  writeProjectFile(root, "CHANGES.md", "升级.\n");
+  const head = commitPaths(root, ["CHANGES.md"], "升级").trim();
+  assert.doesNotMatch(stale, new RegExp(head, "u"));
+  writeProjectFile(root, `${folder}/order.md`, stale);
+  const refused = project(["reply", "approve"]);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stdout, new RegExp(`把 "基准提交" 改为 ${head}`, "u"));
+  const order = fill(commandSkeleton(project(["template", "order"]).stdout));
+  assert.match(order, new RegExp(`- 基准提交: ${head}`, "u"));
+  writeProjectFile(root, `${folder}/order.md`, order);
+  stop(
+    root,
+    orchestrator,
+    fill(commandSkeleton(project(["reply", "approve"]).stdout)),
+  );
+  prompt(root, orchestrator, "A");
+  assert.equal(project(["order", "set", "issued"]).status, 0);
+  writeReceipt(setup, folder, "完成");
+  project(["order", "set", "reviewing"]);
+  const brief = project(["review-brief"]).stdout;
+  assert.match(brief, new RegExp(`- 基准提交: ${head}`, "u"));
+  assert.match(brief, new RegExp(`git diff ${head} --stat`, "u"));
 });
 
 test("工单审阅: 骨架从工单文件的审阅要点预填, 并写出工单文件路径", (context) => {

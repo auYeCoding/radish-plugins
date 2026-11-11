@@ -11,10 +11,11 @@ import { issueBlocker } from "../lib/code-checks.mjs";
 import { REVIEW_OPTIONS, REVIEW_REPLY_TYPE } from "../lib/guidance.mjs";
 import { findSection, readKeyValues } from "../lib/layout.mjs";
 import { APPROVAL_REPLY_TYPE, readOrderText } from "../lib/order-approval.mjs";
+import { baseCommitBlocker } from "../lib/order-base.mjs";
 import { orderFilePath } from "../lib/paths.mjs";
 import { renderReplySkeleton } from "../lib/render.mjs";
 import { renderReplyGuide } from "../lib/reply-guide.mjs";
-import { findRepositoryRoot } from "../lib/repo.mjs";
+import { findRepositoryRoot, headCommit } from "../lib/repo.mjs";
 import { readOrderVerdicts } from "../lib/review-record.mjs";
 import { loadSpec, resolveReplyType } from "../lib/spec.mjs";
 import { readStateIfValid } from "../lib/state.mjs";
@@ -99,7 +100,7 @@ export function runReply({ cwd, type, optionSet }) {
 
 /**
  * 为 "工单审阅" 取出预填的值: 工单文件 "审阅要点" 中的各键, 以及工单文件路径.
- * 工单要处于可审阅的状态, 工单文件已写好, 且内容已满足发布条件.
+ * 工单要处于可审阅的状态, 工单文件已写好, 且内容已满足发布条件 (含基准提交是当前提交).
  *
  * @param {string | undefined} projectRoot 项目根目录.
  * @param {import("../lib/state.mjs").NavigatorState | undefined} state 当前状态.
@@ -123,7 +124,13 @@ function approvalValues(projectRoot, state) {
   if (orderText === undefined) {
     throw new Error(`reply: 工单文件 ${orderPath} 还没有写入.`);
   }
-  const blocker = issueBlocker(state, orderText);
+  const blocker =
+    issueBlocker(state, orderText) ??
+    baseCommitBlocker({
+      orderId: order.id,
+      orderText,
+      head: headCommit(projectRoot),
+    });
   if (blocker !== undefined) {
     throw new Error(`reply: 工单还不能发布, 先改好再请用户审阅: ${blocker}`);
   }

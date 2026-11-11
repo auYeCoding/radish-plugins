@@ -163,15 +163,19 @@ export function createOrder(state, { kind, slug, slice, baseCommit }) {
 
 /**
  * 转换当前工单的状态. 每次发布 (含受阻或撤回后重新发布) 时发布轮次加一,
- * 并记下发布时工单文件的摘要; 进入结束状态时移入历史.
+ * 并记下发布时工单文件的摘要与基准提交; 进入结束状态时移入历史.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
  * @param {string} status 目标状态.
- * @param {{issuedDigest?: string}} [options] 发布时工单文件内容的摘要.
+ * @param {{issuedDigest?: string, baseCommit?: string}} [options] 发布时工单文件内容的摘要, 以及发布时的当前提交; 不给基准提交时保持原值.
  * @returns {import("./state.mjs").NavigatorState} 新状态.
  * @throws {WorkflowError} 没有当前工单或转换不合法时.
  */
-export function setOrderStatus(state, status, { issuedDigest } = {}) {
+export function setOrderStatus(
+  state,
+  status,
+  { issuedDigest, baseCommit } = {},
+) {
   const order = state.order;
   if (order === null) {
     throw new WorkflowError("当前没有工单.");
@@ -184,7 +188,13 @@ export function setOrderStatus(state, status, { issuedDigest } = {}) {
   }
   const updated =
     status === ISSUED_ORDER_STATUS
-      ? { ...order, status, round: (order.round ?? 0) + 1, issuedDigest }
+      ? {
+          ...order,
+          status,
+          round: (order.round ?? 0) + 1,
+          issuedDigest,
+          baseCommit: baseCommit ?? order.baseCommit,
+        }
       : { ...order, status };
   if (!TERMINAL_ORDER_STATUSES.includes(status)) {
     return {
