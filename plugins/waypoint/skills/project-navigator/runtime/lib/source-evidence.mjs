@@ -2,14 +2,13 @@
  * @file 选型回执的源码证据: 读取回执中的证据表, 校验每条证据的写法,
  * 从原仓库取回被引用的行, 生成核对输出.
  *
- * 证据由执行会话写进回执; 验收子代理运行 evidence 命令, 从原仓库重新取源码核对,
- * 不依赖执行会话手中的副本. 取源码的细节在 source-fetch.mjs 中.
+ * 证据由执行子代理写进回执; 验收子代理运行 evidence 命令, 从原仓库重新取源码核对,
+ * 不依赖执行子代理手中的副本. 取源码的细节在 source-fetch.mjs 中.
  */
 
-import { EVIDENCE_COMMAND_NAME } from "./command-access.mjs";
 import { readSectionTable, splitSections } from "./layout.mjs";
 import { parseMarkdown } from "./markdown.mjs";
-import { PROJECT_COMMAND_PATH } from "./paths.mjs";
+import { COMMAND_NAME } from "./paths.mjs";
 import { fetchVersion, readSourceLines } from "./source-fetch.mjs";
 import { WorkflowError } from "./workflow-error.mjs";
 
@@ -17,10 +16,10 @@ import { WorkflowError } from "./workflow-error.mjs";
  * 核对当前工单回执中全部证据的完整命令; 验收子代理原样运行.
  * @type {string}
  */
-export const EVIDENCE_COMMAND = `node ${PROJECT_COMMAND_PATH} ${EVIDENCE_COMMAND_NAME}`;
+export const EVIDENCE_COMMAND = `${COMMAND_NAME} evidence`;
 
 /**
- * 核对单条证据的动作名, 执行会话写回执前自查时使用.
+ * 核对单条证据的动作名, 执行子代理写回执前自查时使用.
  * @type {string}
  */
 export const EVIDENCE_CHECK_ACTION = "check";

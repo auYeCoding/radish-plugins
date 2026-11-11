@@ -14,11 +14,11 @@ WayPoint is a [Claude Code](https://code.claude.com) plugin of practical workflo
 
 ## Skills
 
-| Skill               | Command                                    | Purpose                                                                                                                                                                                 | Docs                                                                                                |
-| ------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `commit-message`    | `/waypoint:commit-message [extra request]` | Drafts a Simplified Chinese Conventional Commits message from the actual Git changes, then commits or pushes on request.                                                                | [Guide](docs/commit-message.en.md)                                                                  |
-| `repo-init`         | `/waypoint:repo-init`                      | Initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files.                                                                            | [Guide](docs/repo-init.en.md)                                                                       |
-| `project-navigator` | `/waypoint:project-navigator [argument]`   | Guides a large project from a single idea through framing, technology selection, a skeleton, and slice-by-slice delivery; it only plans and reviews, while separate sessions implement. | [Guide](docs/project-navigator.en.md), [maintainer guide](docs/project-navigator-maintaining.en.md) |
+| Skill               | Command                                    | Purpose                                                                                                                                                                                             | Docs                                                                                                |
+| ------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `commit-message`    | `/waypoint:commit-message [extra request]` | Drafts a Simplified Chinese Conventional Commits message from the actual Git changes, then commits or pushes on request.                                                                            | [Guide](docs/commit-message.en.md)                                                                  |
+| `repo-init`         | `/waypoint:repo-init`                      | Initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files.                                                                                        | [Guide](docs/repo-init.en.md)                                                                       |
+| `project-navigator` | `/waypoint:project-navigator [argument]`   | Guides a large project from a single idea through framing, technology selection, a skeleton, and slice-by-slice delivery; it only plans and reviews, while background executor subagents implement. | [Guide](docs/project-navigator.en.md), [maintainer guide](docs/project-navigator-maintaining.en.md) |
 
 `commit-message` and `repo-init` trigger automatically when you ask for them in plain language, and you can also call them directly with the slash commands above. `project-navigator` runs only when invoked explicitly with its slash command.
 
@@ -36,7 +36,7 @@ To drive a larger project from scratch, run `/waypoint:project-navigator <your r
 ## Tips
 
 - Disable any other skill that writes commit messages, such as a personal skill in `~/.claude/skills`. Otherwise Claude may pick either skill when you ask for a commit message.
-- Once `project-navigator` is initialized in a project, its guard hooks apply to every session in that project. For example, ordinary sessions cannot edit the records under `.navigator/` or run plugin commands that change the orchestration state. Run `/waypoint:project-navigator uninstall` when you no longer need it.
+- `project-navigator` ships its hooks with the plugin, and they act only in initialized projects: no session can edit `.navigator/state.json` directly, and a session that invoked the skill cannot write files outside `.navigator/`. Run `/waypoint:project-navigator uninstall` when you no longer need it.
 
 ## Installation
 

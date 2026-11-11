@@ -1,10 +1,10 @@
 /**
- * @file 文档检查: 生成文档与规格同步, SKILL.md 不超过篇幅上限.
+ * @file 文档检查: 生成文档与规格同步, SKILL.md 与规格一致且不超过篇幅上限.
  */
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -55,13 +55,23 @@ test("文档: 生成的参考文档与执行手册和规格同步", () => {
   assert.equal(result.status, 0, result.stderr);
 });
 
-test("文档: SKILL.md 写明的人类总结字数上限与规格一致", () => {
+test("文档: SKILL.md 写明的结论行前缀与规格一致", () => {
   const text = readFileSync(path.join(SKILL_DIRECTORY, "SKILL.md"), "utf8");
-  assert.ok(
-    text.includes(
-      `人类总结的正文不超过 ${loadSpec().format.summaryMaxLength} 字`,
-    ),
+  assert.ok(text.includes(`"${loadSpec().format.conclusionLabel}:"`));
+});
+
+test("文档: 路由表与命令速查引用的参考文件都存在", () => {
+  const text = readFileSync(path.join(SKILL_DIRECTORY, "SKILL.md"), "utf8");
+  const names = [...text.matchAll(/\| `([a-z-]+)` +\|$/gmu)].map(
+    (match) => match[1],
   );
+  assert.ok(names.length > 0);
+  for (const name of names) {
+    assert.ok(
+      existsSync(path.join(SKILL_DIRECTORY, "references", `${name}.md`)),
+      `路由表中的 ${name} 没有对应的参考文件`,
+    );
+  }
 });
 
 test("文档: SKILL.md 不超过篇幅上限", () => {

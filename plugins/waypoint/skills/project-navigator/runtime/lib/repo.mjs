@@ -1,6 +1,6 @@
 /**
  * @file 调用 git: 查询本仓库信息, 以及为源码证据访问第三方公开仓库.
- * 只在命令行脚本中使用, hook 的热路径不启动 git.
+ * 只在命令行脚本中使用, hook 不启动 git.
  */
 
 import { spawnSync } from "node:child_process";
@@ -14,12 +14,6 @@ import { gitCommonDirectory } from "./paths.mjs";
  * @type {string}
  */
 const GIT_EXECUTABLE = "git";
-
-/**
- * 显示用的短提交哈希长度.
- * @type {number}
- */
-const SHORT_HASH_LENGTH = 7;
 
 /**
  * 访问第三方仓库时附加的环境变量: 不在终端询问账号, 不弹出凭据管理器的窗口.
@@ -43,18 +37,6 @@ const NO_CREDENTIAL_ARGUMENTS = Object.freeze(["-c", "credential.helper="]);
  * @property {Buffer} stdout 标准输出的原始字节.
  * @property {string} message 失败原因: git 的错误输出, 或无法启动, 超时的说明; 成功时为空字符串.
  */
-
-/**
- * 截取显示用的短提交哈希.
- *
- * @param {string | null | undefined} commit 完整提交哈希.
- * @returns {string} 短哈希; 没有提交时为 "无".
- */
-export function shortHash(commit) {
-  return typeof commit === "string" && commit !== ""
-    ? commit.slice(0, SHORT_HASH_LENGTH)
-    : "无";
-}
 
 /**
  * 在指定目录运行 git 并返回标准输出.
@@ -114,66 +96,19 @@ export function runIsolatedGit(args, timeout) {
 }
 
 /**
- * 按原始字节读取某个提交中的文件内容.
+ * 删除一个引用; 引用不存在时不做任何事.
  *
  * @param {string} worktreeRoot 工作区根目录.
- * @param {string} objectSpec 对象描述, 例如 "<提交>:<路径>".
- * @returns {Buffer | undefined} 文件内容; 对象不存在时为 undefined.
+ * @param {string} ref 完整引用名, 例如 "refs/navigator/snapshots".
+ * @returns {boolean} 引用存在并已删除时返回 true.
  */
-export function readGitBlob(worktreeRoot, objectSpec) {
-  const result = spawnSync(GIT_EXECUTABLE, ["cat-file", "blob", objectSpec], {
-    cwd: worktreeRoot,
-    windowsHide: true,
-  });
-  if (result.error !== undefined || result.status !== 0) {
-    return undefined;
+export function deleteRef(worktreeRoot, ref) {
+  if (
+    runGit(worktreeRoot, ["rev-parse", "-q", "--verify", ref]) === undefined
+  ) {
+    return false;
   }
-  return result.stdout;
-}
-
-/**
- * 判断一个提交是否是另一个提交的祖先 (含相同).
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} ancestor 可能的祖先提交.
- * @param {string} descendant 可能的后代提交.
- * @returns {boolean} 是祖先时返回 true; 任一提交不存在时为 false.
- */
-export function isAncestor(worktreeRoot, ancestor, descendant) {
-  return (
-    runGit(worktreeRoot, [
-      "merge-base",
-      "--is-ancestor",
-      ancestor,
-      descendant,
-    ]) !== undefined
-  );
-}
-
-/**
- * 列出从 from (不含) 到 to (含) 之间的提交, 从新到旧.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} from 起点提交.
- * @param {string} to 终点提交.
- * @returns {string[]} 提交哈希列表.
- */
-export function commitsBetween(worktreeRoot, from, to) {
-  const output = runGit(worktreeRoot, ["rev-list", `${from}..${to}`]);
-  return output === undefined || output === "" ? [] : output.split("\n");
-}
-
-/**
- * 判断提交对象是否存在于本地仓库.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} commit 提交哈希.
- * @returns {boolean} 存在时返回 true.
- */
-export function commitExists(worktreeRoot, commit) {
-  return (
-    runGit(worktreeRoot, ["cat-file", "-e", `${commit}^{commit}`]) !== undefined
-  );
+  return runGit(worktreeRoot, ["update-ref", "-d", ref]) !== undefined;
 }
 
 /**

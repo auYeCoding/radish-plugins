@@ -2,8 +2,9 @@
  * @file check 命令: 体检的脚本层. 检查编排文档的结构与写作规则, 分配体检编号.
  *
  * 用法:
- * - check: 检查计划目录中编排会话写的文档, 全部工单与验收记录, 以及最近一份回执
- * - check <文件...>: 只检查指定文件
+ * - check: 体检, 检查计划目录中编排会话写的文档, 全部工单与验收记录, 以及最近一份
+ *   回执, 并分配体检编号
+ * - check <文件...>: 只检查指定文件, 用于写完记录后自查, 不分配编号, 不写状态
  *
  * 语义层 (自造简称, 未定义术语, 比喻等) 由编排会话派只读子代理完成, 不在脚本中.
  */
@@ -48,13 +49,16 @@ const ORCHESTRATOR_ORDER_FILES = Object.freeze(["order", "review"]);
  */
 export function runCheck({ positionals, cwd, now }) {
   const context = openProject(cwd);
-  const files =
-    positionals.length > 0
-      ? resolveTargets(context.projectRoot, positionals)
-      : defaultTargets(context.projectRoot);
+  const isSelfCheck = positionals.length > 0;
+  const files = isSelfCheck
+    ? resolveTargets(context.projectRoot, positionals)
+    : defaultTargets(context.projectRoot);
   const findings = files.flatMap((file) =>
     checkOneFile(context.projectRoot, file, context.spec),
   );
+  if (isSelfCheck) {
+    return reportLines({ id: undefined, files, findings, spec: context.spec });
+  }
   const { id, state } = addCheckup(context.state);
   saveState(context, state, now);
   return reportLines({ id, files, findings, spec: context.spec });
@@ -170,7 +174,7 @@ function checkOneFile(projectRoot, relative, spec) {
  * 生成体检结果: 概况, 问题清单 (只列问题级别) 与分类统计.
  *
  * @param {object} options 结果参数.
- * @param {string} options.id 体检编号.
+ * @param {string | undefined} options.id 体检编号; 只检查指定文件时为 undefined.
  * @param {string[]} options.files 检查的文件.
  * @param {FileFinding[]} options.findings 全部问题.
  * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
@@ -190,7 +194,7 @@ function reportLines({ id, files, findings, spec }) {
       [problemCount, hintCount].some((count) => Number(count) > 0),
     );
   return [
-    `- 体检编号: ${id}`,
+    ...(id === undefined ? [] : [`- 体检编号: ${id}`]),
     `- 文件数量: ${formatNumber(files.length)}`,
     `- 问题数量: ${formatNumber(problems.length)}`,
     `- 提示数量: ${formatNumber(hints.length)}`,

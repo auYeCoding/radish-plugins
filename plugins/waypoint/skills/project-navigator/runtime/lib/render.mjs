@@ -1,14 +1,15 @@
 /**
- * @file 根据状态与模板规格生成 "当前进展" 各行与回复骨架.
+ * @file 根据状态与模板规格生成进展行, 记录文件的 "当前进展" 一节, 以及回复与
+ * 记录文件的骨架.
  *
- * 编排者先取得骨架再填写内容, 进展行由脚本计算, 避免模型自己数 "2/5" 出错.
+ * 编排会话先取得骨架再填写内容, 进展由脚本计算, 避免模型自己数 "2/5" 出错.
  */
 
 import { findReply, lastStageNumber } from "./spec.mjs";
 import { renderTable } from "./table.mjs";
 
 /**
- * 骨架中待编排者填写的位置标记; 校验时发现它残留即判为未完成.
+ * 骨架中待填写的位置标记; 校验时发现它残留即判为未完成.
  * @type {string}
  */
 export const PLACEHOLDER = "<待填写>";
@@ -26,7 +27,7 @@ const CODE_FENCE = "```";
 export const OPTION_LETTERS = "ABCDEFGH";
 
 /**
- * 计算 "当前进展" 四个键的值.
+ * 计算进展四项的值: 阶段, 里程, 切片, 工单.
  *
  * @param {import("./state.mjs").NavigatorState | undefined} state 状态; 未初始化时为 undefined.
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
@@ -46,22 +47,21 @@ export function progressValues(state, spec) {
 }
 
 /**
- * 没有当前工单时的写法: 有已结束的工单时附上最近一张的编号与结束状态, 例如
- * 验收不通过之后的验收报告仍能看出说的是哪张工单.
+ * 生成回复中的一行进展, 例如 "阶段 5/6 (切片) · 里程 3/5 (导出) · 切片 4/10 (报表) · 工单 0007".
  *
- * @param {readonly {id: string, status: string}[] | undefined} orders 已结束的工单摘要.
- * @param {string} empty 字段不适用时写的值.
- * @returns {string} 当前工单一项的值.
+ * @param {import("./state.mjs").NavigatorState | undefined} state 状态.
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @returns {string} 进展行.
  */
-function formatNoOrder(orders, empty) {
-  const last = orders?.at(-1);
-  return last === undefined
-    ? empty
-    : `${empty} (上一张 ${last.id} 已结束, ${last.status})`;
+export function progressLine(state, spec) {
+  const values = progressValues(state, spec);
+  return spec.format.progressLabels
+    .map((label, index) => `${label} ${values[index]}`)
+    .join(spec.format.progressSeparator);
 }
 
 /**
- * 生成 "当前进展" 一节, 含二级标题.
+ * 生成记录文件的 "当前进展" 一节, 含二级标题.
  *
  * @param {import("./state.mjs").NavigatorState | undefined} state 状态.
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
@@ -79,22 +79,14 @@ export function renderProgressSection(state, spec) {
 }
 
 /**
- * 启动提示词之前的固定说明.
- * @type {string}
- */
-const LAUNCH_PROMPT_INTRO =
-  "在仓库根目录新开一个 Claude Code 会话, 粘贴下面的启动提示词.";
-
-/**
- * 生成某种回复的骨架文本.
+ * 生成某种回复的骨架: 一级标题, 结论行, 进展行, 各节与选项块.
  *
  * @param {object} options 生成参数.
  * @param {string} options.type 回复类型.
  * @param {number} [options.optionSetIndex] 使用第几组选项, 从 0 开始.
  * @param {import("./state.mjs").NavigatorState | undefined} options.state 状态.
  * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
- * @param {string} [options.launchPrompt] 启动提示词; 提供时填入允许放启动提示词的节.
- * @param {Readonly<Record<string, string[]>>} [options.bodies] 节标题到完整正文的映射, 用于摘录其它文件内容的节.
+ * @param {Readonly<Record<string, string>>} [options.values] 键名到预填值的映射, 用于脚本已知的键值.
  * @returns {string} 骨架文本, 以换行结尾.
  * @throws {Error} 回复类型或选项组不存在时.
  */
@@ -103,8 +95,7 @@ export function renderReplySkeleton({
   optionSetIndex = 0,
   state,
   spec,
-  launchPrompt,
-  bodies = {},
+  values = {},
 }) {
   const reply = findReply(spec, type);
   if (reply === undefined) {
@@ -117,27 +108,22 @@ export function renderReplySkeleton({
   const lines = [
     `# ${type}`,
     "",
-    ...renderProgressSection(state, spec),
+    `${spec.format.conclusionLabel}: ${PLACEHOLDER}`,
+    "",
+    progressLine(state, spec),
     ...reply.sections.flatMap((section) => [
       "",
-      ...(Object.hasOwn(bodies, section.title)
-        ? [`## ${section.title}`, "", ...bodies[section.title]]
-        : renderSection(section, spec, launchPrompt)),
+      ...renderSection(section, values),
     ]),
     "",
     ...renderOptionBlock(optionSet),
-    "",
-    `${CODE_FENCE}${spec.format.summaryLanguage}`,
-    spec.format.summarySeparator,
-    PLACEHOLDER,
-    CODE_FENCE,
   ];
   return `${lines.join("\n")}\n`;
 }
 
 /**
- * 生成某种记录文件的骨架: 一级标题, 当前进展 (如有), 固定节与人类总结.
- * 只追加的条目由编排会话在文件创建后逐条添加, 不在骨架中.
+ * 生成某种记录文件的骨架: 一级标题, 当前进展 (如有) 与固定节.
+ * 只追加的条目在文件创建后逐条添加, 不在骨架中.
  *
  * @param {object} options 生成参数.
  * @param {import("./file-checks.mjs").FileSpec} options.fileSpec 文件规格.
@@ -163,13 +149,8 @@ export function renderFileSkeleton({
       : []),
     ...sections.flatMap((section) => [
       "",
-      ...renderSection(section, spec, undefined, prefills[section.title]),
+      ...renderSection(section, {}, prefills[section.title]),
     ]),
-    "",
-    `${CODE_FENCE}${spec.format.summaryLanguage}`,
-    spec.format.summarySeparator,
-    PLACEHOLDER,
-    CODE_FENCE,
   ];
   return `${lines.join("\n")}\n`;
 }
@@ -213,17 +194,15 @@ export function renderOptionBlock(optionSet) {
 }
 
 /**
- * 生成一个节的骨架; 允许放启动提示词的节在提供了提示词时直接填好;
- * 表格节给出表头与一行占位; 键值行使用规格中的预填值, 其余留占位标记;
- * 没有键名的节可以在占位标记之前预填若干行.
+ * 生成一个节的骨架: 表格节给出表头与一行占位; 键值行依次使用调用方给的值,
+ * 规格中的预填值, 其余留占位标记; 没有键名的节可以在占位标记之前预填若干行.
  *
  * @param {import("./spec.mjs").SectionSpec} section 节规格.
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {string | undefined} launchPrompt 启动提示词.
+ * @param {Readonly<Record<string, string>>} values 键名到预填值的映射.
  * @param {readonly string[]} [prefill] 预填行.
  * @returns {string[]} 各行文本, 含二级标题.
  */
-function renderSection(section, spec, launchPrompt, prefill = []) {
+function renderSection(section, values, prefill = []) {
   if (section.table !== undefined) {
     return [
       `## ${section.title}`,
@@ -233,24 +212,29 @@ function renderSection(section, spec, launchPrompt, prefill = []) {
       ]),
     ];
   }
-  if (section.allowLaunchPrompt === true && launchPrompt !== undefined) {
-    return [
-      `## ${section.title}`,
-      "",
-      LAUNCH_PROMPT_INTRO,
-      "",
-      `${CODE_FENCE}${spec.format.launchPromptLanguage}`,
-      launchPrompt,
-      CODE_FENCE,
-    ];
-  }
   const body =
     section.keys === undefined
       ? [...prefill, PLACEHOLDER]
       : section.keys.map(
-          (key) => `- ${key}: ${section.presets?.[key] ?? PLACEHOLDER}`,
+          (key) =>
+            `- ${key}: ${values[key] ?? section.presets?.[key] ?? PLACEHOLDER}`,
         );
   return [`## ${section.title}`, "", ...body];
+}
+
+/**
+ * 没有当前工单时的写法: 有已结束的工单时附上最近一张的编号与结束状态, 例如
+ * 验收不通过之后的验收报告仍能看出说的是哪张工单.
+ *
+ * @param {readonly {id: string, status: string}[] | undefined} orders 已结束的工单摘要.
+ * @param {string} empty 字段不适用时写的值.
+ * @returns {string} 当前工单一项的值.
+ */
+function formatNoOrder(orders, empty) {
+  const last = orders?.at(-1);
+  return last === undefined
+    ? empty
+    : `${empty} (上一张 ${last.id} 已结束, ${last.status})`;
 }
 
 /**

@@ -29,7 +29,6 @@ import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtim
 import { parseTable } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
 import { WorkflowError } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-error.mjs";
 import {
-  PLUGIN_COMMAND,
   commitPaths,
   createTemporaryDirectory,
   createTemporaryRepository,
@@ -229,7 +228,6 @@ test("证据: 单条自查命令报告写法问题, 不访问网络; 参数不�
   const repository = createTemporaryRepository();
   try {
     const result = runCommand(
-      PLUGIN_COMMAND,
       [
         "evidence",
         "check",
@@ -244,8 +242,7 @@ test("证据: 单条自查命令报告写法问题, 不访问网络; 参数不�
     assert.match(result.stdout, /仓库应写 https/u);
     assert.match(result.stdout, /取不到 1 条/u);
     assert.equal(
-      runCommand(PLUGIN_COMMAND, ["evidence", "check", "x"], repository.root)
-        .status,
+      runCommand(["evidence", "check", "x"], repository.root).status,
       1,
     );
   } finally {

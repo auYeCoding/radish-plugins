@@ -1,141 +1,23 @@
 /**
  * @file 运行期登记信息的读写, 位于 Git 公共目录下的 `navigator/`.
  *
- * 这里存放不入库, 也不应随回退丢失的信息: 编排会话与执行会话的登记, 工单审阅
- * 记录, 提交结算记录, 自检请求与心跳, 编排会话最近收到的用户消息. Git 目录不受 `reset`,
- * `checkout`, `clean` 影响. hook 每次事件都会读这些文件, 所以一律原子写入.
+ * 这里只存工单审阅记录: 不入库, 也不应随回退丢失. Git 目录不受 `reset`,
+ * `checkout`, `clean` 影响. hook 会读写这个文件, 所以一律原子写入.
  */
 
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 
 import { writeJsonAtomically } from "./atomic-file.mjs";
-import {
-  COMMIT_SETTLEMENT_FILE,
-  ORCHESTRATOR_REGISTRY_FILE,
-  ORDER_APPROVAL_FILE,
-  PROBE_HEARTBEAT_FILE,
-  PROMPT_HISTORY_FILE,
-  registryDirectory,
-} from "./paths.mjs";
-
-/**
- * 保留的用户消息条数. 用户粘贴测试输出之后, 编排会话通常在一两轮之内写入记录.
- * @type {number}
- */
-const PROMPT_HISTORY_LIMIT = 20;
-
-/**
- * 执行会话登记文件所在的子目录名.
- * @type {string}
- */
-const SESSIONS_DIRECTORY = "sessions";
-
-/**
- * 自检请求文件名: init 写入, 标明正在等待探测写入.
- * @type {string}
- */
-const PROBE_REQUEST_FILE = "probe-request.json";
-
-/**
- * 会话编号中允许出现的字符, 防止拼出目录之外的路径.
- * @type {RegExp}
- */
-const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]+$/u;
-
-/**
- * @typedef {object} ExecutorRecord 执行会话的登记信息.
- * @property {string} sessionId 会话编号.
- * @property {string} order 绑定的工单编号.
- * @property {string} folder 绑定的工单文件夹名.
- * @property {string} registeredAt 登记时间.
- * @property {string} [inheritedFrom] 分叉出的会话沿用登记时, 原执行会话的编号.
- * @property {boolean} isAligned 用户是否已在开工对齐中选 "继续执行".
- * @property {number} [alignedRound] 完成对齐时工单的发布轮次.
- * @property {boolean} isAwaitingAlignment 执行会话是否已输出开工对齐, 正在等用户选择.
- */
-
-/**
- * @typedef {object} OrchestratorRecord 编排会话的登记信息.
- * @property {{id: string, claimedAt: string, address?: string, addressedAt?: string} | undefined} current 当前编排会话, 含登记的消息地址与登记时间; 还没有会话接管时为 undefined.
- * @property {string[]} former 曾经的编排会话, 按接管的先后排列; 这些会话不会被登记为执行会话.
- */
+import { ORDER_APPROVAL_FILE, registryDirectory } from "./paths.mjs";
 
 /**
  * @typedef {object} OrderApprovalRecord 用户对一张工单的审阅.
  * @property {string} order 工单编号.
  * @property {string} digest 审阅时工单文件内容的摘要.
- * @property {"awaiting" | "approved"} status 等待用户选择, 或用户已选 "内容无误, 发布工单.".
+ * @property {"awaiting" | "approved"} status 等待用户选择, 或用户已选发布.
  * @property {string} updatedAt 最后更新时间.
  */
-
-/**
- * @typedef {object} CommitSettlementRecord 一次提交步骤的结算.
- * @property {string} stateDigest 结算时状态文件内容的摘要; 状态文件改动后记录失效.
- * @property {"order" | "stage"} kind 完成的是工单提交还是阶段提交.
- * @property {string} commit 完成提交步骤的提交.
- * @property {string} settledAt 结算时间.
- */
-
-/**
- * 读取某个会话的执行登记.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} sessionId 会话编号.
- * @returns {ExecutorRecord | undefined} 登记信息; 未登记时为 undefined.
- */
-export function readExecutorRecord(worktreeRoot, sessionId) {
-  const file = executorRecordPath(worktreeRoot, sessionId);
-  return file === undefined ? undefined : readJsonIfExists(file);
-}
-
-/**
- * 写入某个会话的执行登记.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {ExecutorRecord} record 登记信息.
- * @returns {void}
- * @throws {Error} 会话编号含非法字符时.
- */
-export function writeExecutorRecord(worktreeRoot, record) {
-  const file = executorRecordPath(worktreeRoot, record.sessionId);
-  if (file === undefined) {
-    throw new Error(`registry: 会话编号含非法字符: ${record.sessionId}`);
-  }
-  writeJsonAtomically(file, record);
-}
-
-/**
- * 读取编排会话登记.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @returns {OrchestratorRecord | undefined} 登记信息; 还没有登记文件时为 undefined.
- */
-export function readOrchestratorRecord(worktreeRoot) {
-  const raw = readJsonIfExists(
-    path.join(registryDirectory(worktreeRoot), ORCHESTRATOR_REGISTRY_FILE),
-  );
-  return raw === undefined
-    ? undefined
-    : {
-        current: raw.current ?? undefined,
-        former: Array.isArray(raw.former) ? raw.former : [],
-      };
-}
-
-/**
- * 写入编排会话登记.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {OrchestratorRecord} record 登记信息.
- * @returns {void}
- */
-export function writeOrchestratorRecord(worktreeRoot, record) {
-  writeJsonAtomically(
-    path.join(registryDirectory(worktreeRoot), ORCHESTRATOR_REGISTRY_FILE),
-    record,
-  );
-}
 
 /**
  * 读取工单审阅记录.
@@ -144,7 +26,8 @@ export function writeOrchestratorRecord(worktreeRoot, record) {
  * @returns {OrderApprovalRecord | undefined} 审阅记录; 没有时为 undefined.
  */
 export function readOrderApproval(worktreeRoot) {
-  return readJsonIfExists(orderApprovalPath(worktreeRoot));
+  const file = orderApprovalPath(worktreeRoot);
+  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
 }
 
 /**
@@ -169,138 +52,6 @@ export function removeOrderApproval(worktreeRoot) {
 }
 
 /**
- * 读取提交结算记录.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @returns {CommitSettlementRecord | undefined} 结算记录; 没有时为 undefined.
- */
-export function readCommitSettlement(worktreeRoot) {
-  return readJsonIfExists(
-    path.join(registryDirectory(worktreeRoot), COMMIT_SETTLEMENT_FILE),
-  );
-}
-
-/**
- * 写入提交结算记录, 替换上一次的记录.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {CommitSettlementRecord} record 结算记录.
- * @returns {void}
- */
-export function writeCommitSettlement(worktreeRoot, record) {
-  writeJsonAtomically(
-    path.join(registryDirectory(worktreeRoot), COMMIT_SETTLEMENT_FILE),
-    record,
-  );
-}
-
-/**
- * 写入自检请求, 并清除上一次的心跳.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} now 当前时间, ISO 格式.
- * @returns {void}
- */
-export function writeProbeRequest(worktreeRoot, now) {
-  const directory = registryDirectory(worktreeRoot);
-  mkdirSync(directory, { recursive: true });
-  rmSync(path.join(directory, PROBE_HEARTBEAT_FILE), { force: true });
-  writeJsonAtomically(path.join(directory, PROBE_REQUEST_FILE), {
-    requestedAt: now,
-  });
-}
-
-/**
- * 守卫拦下探测写入时记录心跳.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} sessionId 发起探测写入的会话.
- * @param {string} now 当前时间, ISO 格式.
- * @returns {void}
- */
-export function writeProbeHeartbeat(worktreeRoot, sessionId, now) {
-  writeJsonAtomically(
-    path.join(registryDirectory(worktreeRoot), PROBE_HEARTBEAT_FILE),
-    { sessionId, deniedAt: now },
-  );
-}
-
-/**
- * 读取自检请求与心跳.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @returns {{request?: {requestedAt: string}, heartbeat?: {sessionId: string, deniedAt: string}}} 请求与心跳, 不存在的项省略.
- */
-export function readProbeState(worktreeRoot) {
-  const directory = registryDirectory(worktreeRoot);
-  return {
-    request: readJsonIfExists(path.join(directory, PROBE_REQUEST_FILE)),
-    heartbeat: readJsonIfExists(path.join(directory, PROBE_HEARTBEAT_FILE)),
-  };
-}
-
-/**
- * 记录编排会话收到的一条用户消息, 只保留最近的若干条.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} text 用户消息原文.
- * @param {string} now 当前时间, ISO 格式.
- * @returns {void}
- */
-export function appendPrompt(worktreeRoot, text, now) {
-  const history = [
-    ...readPromptHistory(worktreeRoot),
-    { receivedAt: now, text },
-  ].slice(-PROMPT_HISTORY_LIMIT);
-  writeJsonAtomically(
-    path.join(registryDirectory(worktreeRoot), PROMPT_HISTORY_FILE),
-    history,
-  );
-}
-
-/**
- * 读取编排会话最近收到的用户消息原文, 按收到的先后排列.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @returns {string[]} 消息原文.
- */
-export function readRecentPrompts(worktreeRoot) {
-  return readPromptHistory(worktreeRoot).map((entry) => entry.text);
-}
-
-/**
- * 读取用户消息记录.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @returns {{receivedAt: string, text: string}[]} 记录; 不存在时为空.
- */
-function readPromptHistory(worktreeRoot) {
-  return (
-    readJsonIfExists(
-      path.join(registryDirectory(worktreeRoot), PROMPT_HISTORY_FILE),
-    ) ?? []
-  );
-}
-
-/**
- * 返回执行登记文件路径.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} sessionId 会话编号.
- * @returns {string | undefined} 文件路径; 编号含非法字符时为 undefined.
- */
-function executorRecordPath(worktreeRoot, sessionId) {
-  if (!SESSION_ID_PATTERN.test(sessionId)) {
-    return undefined;
-  }
-  return path.join(
-    registryDirectory(worktreeRoot),
-    SESSIONS_DIRECTORY,
-    `${sessionId}.json`,
-  );
-}
-
-/**
  * 返回工单审阅记录的路径.
  *
  * @param {string} worktreeRoot 工作区根目录.
@@ -308,14 +59,4 @@ function executorRecordPath(worktreeRoot, sessionId) {
  */
 function orderApprovalPath(worktreeRoot) {
   return path.join(registryDirectory(worktreeRoot), ORDER_APPROVAL_FILE);
-}
-
-/**
- * 读取 JSON 文件, 不存在时返回 undefined.
- *
- * @param {string} file 文件路径.
- * @returns {any} 文件内容; 不存在时为 undefined.
- */
-function readJsonIfExists(file) {
-  return existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
 }

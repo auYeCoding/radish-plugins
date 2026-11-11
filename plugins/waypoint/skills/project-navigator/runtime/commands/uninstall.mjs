@@ -1,20 +1,26 @@
 /**
- * @file uninstall 命令: 移除本技能的 hook 配置, 保留全部编排记录.
+ * @file uninstall 命令: 移除本技能的放行规则, 把项目标为已卸载, 保留全部编排记录.
+ *
+ * hook 由插件提供, 无法按项目移除; 项目标为已卸载后, 插件的 hook 在本项目中
+ * 不做任何事.
  */
 
-import { readSettledState } from "../lib/commit-settlement.mjs";
-import { findRepositoryRoot } from "../lib/repo.mjs";
 import {
   PROJECT_LOCAL_SETTINGS_FILE,
   PROJECT_SETTINGS_FILE,
 } from "../lib/paths.mjs";
+import { findRepositoryRoot } from "../lib/repo.mjs";
 import {
   readSettingsFile,
-  removeNavigatorHooks,
+  removeLegacyHooks,
   removeNavigatorPermissions,
   writeSettingsFile,
 } from "../lib/settings.mjs";
-import { INIT_UNINSTALLED, writeState } from "../lib/state.mjs";
+import {
+  INIT_UNINSTALLED,
+  readStateIfValid,
+  writeState,
+} from "../lib/state.mjs";
 
 /**
  * 执行 uninstall 命令.
@@ -33,9 +39,7 @@ export function runUninstall({ cwd, now }) {
     projectRoot,
     PROJECT_SETTINGS_FILE,
     removeNavigatorPermissions(
-      removeNavigatorHooks(
-        readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE),
-      ),
+      removeLegacyHooks(readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE)),
     ),
   );
   writeSettingsFile(
@@ -45,7 +49,7 @@ export function runUninstall({ cwd, now }) {
       readSettingsFile(projectRoot, PROJECT_LOCAL_SETTINGS_FILE),
     ),
   );
-  const state = readSettledState(projectRoot);
+  const state = readStateIfValid(projectRoot);
   if (state !== undefined) {
     writeState(
       projectRoot,
@@ -57,7 +61,7 @@ export function runUninstall({ cwd, now }) {
     );
   }
   return [
-    "- 卸载结果: 已移除 hook 与放行规则",
-    "- 编排记录: 已保留, 重新运行 init 可恢复防护",
+    "- 卸载结果: 已移除放行规则, 插件的 hook 在本项目中不再生效",
+    "- 编排记录: 已保留, 重新运行 init 可恢复",
   ];
 }

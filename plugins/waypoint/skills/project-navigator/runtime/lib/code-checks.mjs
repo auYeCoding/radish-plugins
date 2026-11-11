@@ -3,11 +3,10 @@
  *
  * 模块化与代码质量的机械检查交给各语言成熟的检查工具 (例如函数长度与复杂度规则),
  * 插件不自己解析代码. 选型阶段确定检查命令并登记后, 每张会改动代码的工单都带一条
- * 固定判据 "代码检查通过", 检查命令自动算作已授权测试, 验收子代理运行它.
+ * 固定判据 "代码检查通过", 验收子代理运行这些检查命令.
  */
 
-import { splitSections } from "./layout.mjs";
-import { parseMarkdown } from "./markdown.mjs";
+import { findSection } from "./layout.mjs";
 import { WorkflowError } from "./workflow-error.mjs";
 
 /**
@@ -95,20 +94,16 @@ export function describeCodeChecks(codeChecks) {
 }
 
 /**
- * 当前工单的全部可运行测试: 需要代码检查的工单先放检查命令, 再放用户授权的测试.
+ * 当前工单要运行的代码检查命令: 只有会改动代码的工单需要.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
- * @returns {string[]} 去重后的命令.
+ * @returns {string[]} 检查命令; 不需要或未登记时为空.
  */
-export function orderTestCommands(state) {
+export function orderCheckCommands(state) {
   const order = state.order;
-  if (order === null) {
-    return [];
-  }
-  const checks = requiresCodeCheck(order.kind)
+  return order !== null && requiresCodeCheck(order.kind)
     ? (state.codeChecks?.commands ?? [])
     : [];
-  return [...new Set([...checks, ...(order.authorizedTests ?? [])])];
 }
 
 /**
@@ -178,7 +173,7 @@ export function issueBlocker(state, orderText) {
  * @returns {string} 说明.
  */
 function unregisteredChecksMessage(subject) {
-  return `${subject}, 但项目还没有登记代码检查命令. 先确定检查命令 (选型阶段由执行会话选定并配置, 含函数长度与复杂度规则), 写草稿 {"commands": ["命令"]} 后运行 codecheck set --from <草稿>; 确实没有合适的工具时, 经用户同意写 {"commands": [], "reason": "原因"} 登记.`;
+  return `${subject}, 但项目还没有登记代码检查命令. 先确定检查命令 (选型阶段由执行子代理选定并配置, 含函数长度与复杂度规则), 写草稿 {"commands": ["命令"]} 后运行 codecheck set --from <草稿>; 确实没有合适的工具时, 经用户同意写 {"commands": [], "reason": "原因"} 登记.`;
 }
 
 /**
@@ -188,9 +183,7 @@ function unregisteredChecksMessage(subject) {
  * @returns {string} 该节文字; 没有该节时为空字符串.
  */
 function criteriaText(orderText) {
-  const section = splitSections(parseMarkdown(orderText)).sections.find(
-    (entry) => entry.title === CRITERIA_SECTION,
-  );
+  const section = findSection(orderText, CRITERIA_SECTION);
   return (section?.items ?? [])
     .map((item) => (item.kind === "text" ? item.text : ""))
     .join("\n");

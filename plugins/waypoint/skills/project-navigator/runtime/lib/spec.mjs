@@ -22,9 +22,7 @@ import { SPEC_FILE } from "./paths.mjs";
  * @property {string[]} [keys] 键值行的键名, 按顺序; 省略时节内容不固定.
  * @property {Record<string, string>} [presets] 骨架中预填的键值, 键为键名. 用于写骨架时还不知道, 或由固定说明代替的值; 预填值不是占位标记, 写入校验放行.
  * @property {TableSpec} [table] 节中必须有的表格; 与 keys 不同时使用.
- * @property {boolean} [allowLaunchPrompt] 是否允许放启动提示词代码块.
- * @property {string} [source] 内容来源; 为 "order" 时正文摘录自当前工单文件的同名节, 不由编排会话撰写.
- * @property {boolean} [freeform] 是否为自由正文: 按用户要求的格式撰写, 可以放代码块, 不按写作规则打回.
+ * @property {boolean} [freeform] 是否为自由正文: 按用户要求的格式撰写, 可以放代码块.
  */
 
 /**
@@ -36,10 +34,8 @@ import { SPEC_FILE } from "./paths.mjs";
 /**
  * @typedef {object} ReplySpec 一种回复类型的规格.
  * @property {string} id 英文编号, 供命令行参数使用.
- * @property {"orchestrator" | "executor"} role 使用该回复的一方.
- * @property {SectionSpec[]} sections "当前进展" 之后的节, 按顺序.
+ * @property {SectionSpec[]} sections 结论与进展行之后的节, 按顺序.
  * @property {OptionSetSpec[]} optionSets 允许使用的选项组, 回复中必须恰好使用其中一组.
- * @property {string[]} [extraBlocks] 额外允许的代码块种类.
  */
 
 /**
@@ -47,13 +43,13 @@ import { SPEC_FILE } from "./paths.mjs";
  * @property {number} titleLength 标题与键名的汉字数.
  * @property {number} keyLength 键名的汉字数.
  * @property {number} numberWidth 编号与计数的位数.
- * @property {number} summaryMaxLength 人类总结正文的最大字符数.
- * @property {string} summarySeparator 人类总结代码块的首行.
- * @property {string} summaryLanguage 人类总结代码块的语言标记.
- * @property {string} launchPromptLanguage 启动提示词代码块的语言标记.
+ * @property {string} conclusionLabel 回复标题下方结论行的前缀.
+ * @property {number} conclusionMaxLength 结论行建议的最大字数, 只作提醒, 不打回.
  * @property {string} emptyValue 字段不适用时写的值.
- * @property {string} progressTitle 进展节的标题.
- * @property {string[]} progressKeys 进展节的键名, 按顺序.
+ * @property {string} progressTitle 记录文件中进展节的标题.
+ * @property {string[]} progressKeys 记录文件中进展节的键名, 按顺序.
+ * @property {string[]} progressLabels 回复中进展行各项的名称, 与 progressKeys 一一对应.
+ * @property {string} progressSeparator 回复中进展行各项之间的分隔符.
  */
 
 /**

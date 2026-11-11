@@ -1,12 +1,11 @@
 /**
  * @file 记录文件结构校验测试: 每种文件的骨架填写后合格, 填写要求覆盖每个受校验的节,
- * 常见违规被指出, Edit 类写入先重建全文再校验.
+ * 常见违规被指出.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { reconstructContent } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/edits.mjs";
 import {
   checkFile,
   findFileSpec,
@@ -110,9 +109,7 @@ for (const [kind, fileSpec] of Object.entries(SPEC.files)) {
   (fileSpec.variants ?? [fileSpec.sections ?? []]).forEach(
     (sections, index) => {
       test(`文件: ${kind} 第 ${index + 1} 种结构的填写要求列出每个键值节与表格节`, () => {
-        const guide = renderFileGuide({ fileSpec, sections, spec: SPEC }).join(
-          "\n",
-        );
+        const guide = renderFileGuide({ fileSpec, sections }).join("\n");
         assert.match(guide, /^填写要求:\n/u);
         assert.match(guide, /\n骨架:\n$/u);
         for (const section of sections) {
@@ -129,14 +126,14 @@ test("文件: 回执的填写要求写明键值节每个键只占一行, 多行�
   const guide = renderFileGuide({
     fileSpec: SPEC.files.receipt,
     sections: SPEC.files.receipt.variants[0],
-    spec: SPEC,
   }).join("\n");
   assert.ok(guide.includes(KEY_SECTION_RULE));
   assert.match(guide, /"测试记录"/u);
-  assert.match(guide, /表格与多行内容写进没有键名的节 \("开工核对"/u);
+  assert.match(guide, /表格与多行内容写进没有键名的节 \("前提核对"/u);
+  assert.match(guide, /project-navigator check <文件路径>/u);
 });
 
-test("文件: 键值节中接了表格时被拒, 理由与填写要求一致", () => {
+test("文件: 键值节中接了表格时自查报告问题, 理由与填写要求一致", () => {
   const text = filledFile("receipt").replace(
     `- 测试结果: ${FILLER}\n`,
     `- 测试结果: 见下表\n\n| 命令 | 退出码 |\n| --- | --- |\n| npm test | 0 |\n`,
@@ -248,10 +245,7 @@ test("文件: 残留占位符", () => {
 test("文件: 只追加记录的条目标题必须符合格式", () => {
   const base = filledFile("decisions");
   const entry = (title) =>
-    base.replace(
-      /\n```text/u,
-      `\n## ${title}\n\n${SPEC.files.decisions.entryKeys.map((key) => `- ${key}: 内容`).join("\n")}\n\n\`\`\`text`,
-    );
+    `${base}\n## ${title}\n\n${SPEC.files.decisions.entryKeys.map((key) => `- ${key}: 内容`).join("\n")}\n`;
   assert.deepEqual(check("decisions", entry("决策 0001: 选用 PostgreSQL")), []);
   assert.ok(
     check("decisions", entry("选用 PostgreSQL")).some((problem) =>
@@ -260,81 +254,30 @@ test("文件: 只追加记录的条目标题必须符合格式", () => {
   );
 });
 
-test("文件: 用户测试的每个条目以一个输出代码块结尾", () => {
-  const base = filledFile("user-tests");
-  const withEntries = (...entries) =>
-    base.replace(/```text/u, `${entries.join("\n")}\n\`\`\`text`);
-  const entry = (number, body) =>
-    `## 测试 ${number}: 注册第一步\n\n- 测试命令: \`python main.py\`\n- 对应判据: 判据 2\n\n${body}\n`;
-  const output = "```output\nHTTP/2 200\n```";
-  assert.deepEqual(
-    check(
-      "user-tests",
-      withEntries(entry("0001", output), entry("0002", output)),
-    ),
-    [],
-  );
-  const missing = check("user-tests", withEntries(entry("0001", "")));
-  assert.ok(
-    missing.some((problem) => problem.includes("output")),
-    missing.join("\n"),
-  );
-  const twice = check(
-    "user-tests",
-    withEntries(entry("0001", `${output}\n\n${output}`)),
-  );
-  assert.ok(twice.some((problem) => problem.includes("恰好有一个")));
-  const code = check(
-    "user-tests",
-    withEntries(entry("0001", "```js\nconsole.log(1)\n```")),
-  );
-  assert.ok(code.some((problem) => problem.includes("不能贴代码")));
-});
-
 test("文件: 头脑风暴的收尾节只能在条目之后", () => {
   const base = filledFile("brainstorm");
   const closing =
-    "## 收敛结果\n\n- 必须要做: 甲\n- 明确不做: 乙\n- 优先验证: 丙\n\n";
-  const withRound = base.replace(
-    /\n```text/u,
-    `\n## 轮次 0001: 问题与动机\n\n内容\n\n${closing}\`\`\`text`,
-  );
+    "## 收敛结果\n\n- 必须要做: 甲\n- 明确不做: 乙\n- 优先验证: 丙\n";
+  const withRound = `${base}\n## 轮次 0001: 问题与动机\n\n内容\n\n${closing}`;
   assert.deepEqual(check("brainstorm", withRound), []);
-  const roundAfterClosing = base.replace(
-    /\n```text/u,
-    `\n${closing}## 轮次 0002: 使用人群\n\n内容\n\n\`\`\`text`,
-  );
+  const roundAfterClosing = `${base}\n${closing}\n## 轮次 0002: 使用人群\n\n内容\n`;
   assert.ok(check("brainstorm", roundAfterClosing).length > 0);
 });
 
-test("文件: Edit 先重建全文再校验", () => {
-  const current = filledFile("glossary");
-  const broken = reconstructContent(
-    "Edit",
-    { old_string: "## 项目术语", new_string: "## 其它术语" },
-    current,
+test("文件: 标题下方可以有一行结论, 其它内容不行", () => {
+  const withConclusion = filledFile("brief").replace(
+    "# 项目简报\n",
+    "# 项目简报\n\n结论: 简报第 1 版.\n",
   );
-  assert.ok(check("glossary", broken ?? "").length > 0);
-  const multi = reconstructContent(
-    "MultiEdit",
-    {
-      edits: [
-        {
-          old_string: FILLER,
-          new_string: "工单: 一项任务.",
-          replace_all: true,
-        },
-      ],
-    },
-    current,
+  assert.deepEqual(check("brief", withConclusion), []);
+  const withParagraph = filledFile("brief").replace(
+    "# 项目简报\n",
+    "# 项目简报\n\n一段说明.\n",
   );
-  assert.deepEqual(check("glossary", multi ?? ""), []);
-  assert.equal(
-    reconstructContent(
-      "Edit",
-      { old_string: "不存在", new_string: "x" },
-      current,
-    ),
-    undefined,
-  );
+  assert.ok(check("brief", withParagraph).length > 0);
+});
+
+test("文件: 结尾的代码块算作贴代码", () => {
+  const text = `${filledFile("brief")}\n\`\`\`text\n总结\n\`\`\`\n`;
+  assert.ok(check("brief", text).some((problem) => problem.includes("代码块")));
 });

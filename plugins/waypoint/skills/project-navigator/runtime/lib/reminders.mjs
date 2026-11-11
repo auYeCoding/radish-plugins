@@ -1,107 +1,45 @@
 /**
- * @file hook 注入给会话的提醒文字: 编排会话每次收到消息与上下文压缩后的位置与禁令,
- * 编排地址未登记时的登记做法, 提交步骤中放行的提交写法, 执行会话的身份与对齐状态,
- * 以及分叉后沿用执行登记.
+ * @file hook 注入给编排会话的提醒文字: 每次收到消息时的位置与要点, 上下文压缩后
+ * 重新查询下一动作.
  */
 
-import { isStageCommitting } from "./commit-step.mjs";
-import { executorMarker } from "./executors.mjs";
-import { COMMIT_COMMAND_FORMS } from "./guard-commands.mjs";
-import { COMMIT_STEP_STATUSES } from "./guard.mjs";
-import {
-  EXECUTOR_GUIDE_FILE,
-  PROJECT_COMMAND_PATH,
-  orderFilePath,
-} from "./paths.mjs";
-import { progressValues } from "./render.mjs";
-import { ADDRESS_REGISTRATION_STEP } from "./session-notices.mjs";
+import { COMMAND_NAME } from "./paths.mjs";
+import { progressLine } from "./render.mjs";
 
 /**
- * 编排会话每次收到消息时重申的三条禁令.
+ * 编排会话每次收到消息时重申的要点.
  * @type {readonly string[]}
  */
-const ORCHESTRATOR_RULES = Object.freeze([
-  "不写业务代码, 不贴代码, 不做技术选型, 这些交给执行会话",
-  "不替用户做决定, 需要用户选择时用回复末尾的选项块",
-  "每次回复先运行 reply 命令取得填写要求与骨架, 按要求填写",
+const ORCHESTRATOR_POINTS = Object.freeze([
+  "不写业务代码, 实现交给执行子代理",
+  `回复前运行 ${COMMAND_NAME} reply <编号> 取骨架, 第一行写一句给人看的结论`,
+  "需要用户选择时用回复末尾的选项块",
 ]);
 
 /**
- * @typedef {object} OrchestratorReminderOptions 编排会话提醒的输入.
- * @property {import("./state.mjs").NavigatorState} state 当前状态.
- * @property {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @property {boolean} isAddressRegistered 当前编排会话是否已登记编排地址.
- */
-
-/**
- * 生成编排会话的提醒: 当前位置与三条禁令; 编排地址未登记时, 附登记的做法;
- * 处于提交步骤时, 另附放行的提交写法. 地址登记放在这里而不只放在 enter 的输出中:
- * 首次调用技能时 enter 停在初始设置, 输出中没有登记一行, 之后的 init 与 status
- * 也不输出它, 编排地址会一直不登记.
+ * 生成编排会话的提醒: 当前位置与要点.
  *
- * @param {OrchestratorReminderOptions} options 提醒的输入.
+ * @param {import("./state.mjs").NavigatorState} state 当前状态.
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @returns {string} 提醒文字.
  */
-export function orchestratorReminder({ state, spec, isAddressRegistered }) {
-  const values = progressValues(state, spec);
-  const position = spec.format.progressKeys
-    .map((key, index) => `${key} ${values[index]}`)
-    .join(", ");
-  const isCommitStep =
-    COMMIT_STEP_STATUSES.includes(state.order?.status ?? "") ||
-    isStageCommitting(state);
+export function orchestratorReminder(state, spec) {
   return [
-    `[project-navigator] 你是编排会话. ${position}.`,
-    `禁令: ${ORCHESTRATOR_RULES.map((rule, index) => `${index + 1}. ${rule}`).join("; ")}.`,
-    ...(isAddressRegistered
-      ? []
-      : [
-          `编排地址尚未登记, 执行会话无法消息汇报. 先${ADDRESS_REGISTRATION_STEP}, 再继续.`,
-        ]),
-    ...(isCommitStep ? [COMMIT_COMMAND_FORMS] : []),
+    `[project-navigator] 你是编排会话. ${progressLine(state, spec)}.`,
+    `要点: ${ORCHESTRATOR_POINTS.map((point, index) => `${index + 1}. ${point}`).join("; ")}.`,
   ].join("\n");
 }
 
 /**
- * 生成上下文压缩后给编排会话的提醒: 在位置与禁令之外, 提示重新查询下一动作.
+ * 生成上下文压缩后给编排会话的提醒: 在位置与要点之外, 提示重新查询下一动作.
  *
- * @param {OrchestratorReminderOptions} options 提醒的输入.
+ * @param {import("./state.mjs").NavigatorState} state 当前状态.
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @returns {string} 提醒文字.
  */
-export function orchestratorResumeReminder(options) {
+export function orchestratorCompactReminder(state, spec) {
   return [
-    orchestratorReminder(options),
-    `上下文刚被压缩: 先运行 node ${PROJECT_COMMAND_PATH} status 查看最后动作与下一动作, 再继续.`,
-  ].join("\n");
-}
-
-/**
- * 生成执行会话的提醒: 绑定的工单, 手册位置与对齐状态, 以及执行会话标记.
- * 标记留在转录中, 会话分叉后 hook 据此沿用执行登记.
- *
- * @param {import("./registry.mjs").ExecutorRecord} record 执行登记.
- * @returns {string} 提醒文字.
- */
-export function executorReminder(record) {
-  const alignment = record.isAligned
-    ? "已对齐, 可以改动业务文件"
-    : '未对齐: 先按 "开工对齐" 版式回复, 用户选 A 之后才能改动业务文件';
-  return [
-    `[project-navigator] 你是工单 ${record.order} 的执行会话.`,
-    `执行手册: ${EXECUTOR_GUIDE_FILE}; 工单: ${orderFilePath(record.folder, "order")}; 对齐状态: ${alignment}.`,
-    `${executorMarker(record)}.`,
-  ].join("\n");
-}
-
-/**
- * 生成分叉出的会话沿用执行登记后的提醒.
- *
- * @param {import("./registry.mjs").ExecutorRecord} record 沿用后的执行登记.
- * @returns {string} 提醒文字.
- */
-export function executorForkReminder(record) {
-  return [
-    `[project-navigator] 本会话由工单 ${record.order} 的执行会话分叉而来 (例如回退, 编辑或中断后重发了消息), 会话编号已改变, 已沿用原执行登记.`,
-    executorReminder(record),
+    orchestratorReminder(state, spec),
+    `上下文刚被压缩: 先运行 ${COMMAND_NAME} status 查看最后动作与下一动作, 再继续.`,
   ].join("\n");
 }

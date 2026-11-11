@@ -1,17 +1,15 @@
 /**
- * @file 由脚本生成的提示词: 执行会话的启动提示词, 验收子代理与调研子代理的委派提示词.
+ * @file 由脚本生成的委派提示词: 执行子代理, 验收子代理与调研子代理.
  *
- * 提示词由脚本生成, 编排会话原样使用; hook 按同一份文字识别执行会话, 核对委派,
- * 防止编排会话在委派时加入倾向性说明或删掉检查项. 这里是这些提示词的唯一来源.
+ * 提示词由脚本生成, 编排会话原样使用, 不在其中加入倾向性说明或删掉检查项.
+ * 这里是这些提示词的唯一来源.
  */
 
 import path from "node:path";
 
-import { describeEvidenceTools } from "./evidence-tools.mjs";
-import { TOOL_LOADER } from "./guard.mjs";
 import {
+  COMMAND_NAME,
   ENGINEERING_RULES_FILE,
-  EXECUTOR_GUIDE_FILE,
   orderArtifactsPath,
   orderFilePath,
 } from "./paths.mjs";
@@ -32,6 +30,12 @@ import {
  * @type {number}
  */
 const RESEARCH_CALL_LIMIT = 20;
+
+/**
+ * 执行子代理交回给编排会话的要点最多行数.
+ * @type {number}
+ */
+const EXECUTOR_SUMMARY_LINES = 3;
 
 /**
  * 问题域调研提示词的固定框架; 编排会话只在其后填写调研问题.
@@ -59,37 +63,33 @@ export const RESEARCH_FRAME = [
 ].join("\n");
 
 /**
- * 启动提示词第一行的格式; hook 据此把粘贴它的会话登记为执行会话.
- * @type {RegExp}
- */
-export const LAUNCH_PROMPT_PATTERN = /执行工单 (\d{4})/u;
-
-/**
- * 生成执行会话的启动提示词: 身份, 手册与工单路径, 三条硬规则. 细节都在手册与工单中.
- * 只产出记录的工单 (运行检查与分析) 的前两条规则改为只写回执与证据文件.
+ * 生成执行子代理的委派提示词: 手册与工单的位置, 改动范围, 交回格式.
+ * 细节都在执行手册与工单中. 只产出记录的工单 (运行检查与分析) 只写回执与证据文件.
  *
- * @param {{id: string, folder: string, kind: string}} order 当前工单.
- * @returns {string} 启动提示词全文.
+ * @param {object} options 生成参数.
+ * @param {string} options.projectRoot 项目根目录.
+ * @param {{id: string, folder: string, kind: string}} options.order 当前工单.
+ * @returns {string} 提示词全文.
  */
-export function buildLaunchPrompt(order) {
-  const scopeRules = isRecordOnlyOrderKind(order.kind)
-    ? [
-        '1. 先对齐再动手: 按 "开工对齐" 版式回复, 用户选 A 之后才写证据文件.',
-        "2. 本工单只产出记录: 只写本工单的回执与工单文件夹 artifacts/ 下的证据文件 (文档, 脚本等), 不改业务文件与 .navigator/ 下的其它文件, 不提交, 不推送.",
-      ]
-    : [
-        '1. 先对齐再动手: 按 "开工对齐" 版式回复, 用户选 A 之后才改动业务文件.',
-        "2. 只改业务文件, 本工单的回执与工单文件夹 artifacts/ 下的证据文件, 不改 .navigator/ 下的其它文件, 不提交, 不推送.",
-      ];
+export function buildExecutorBrief({ projectRoot, order }) {
+  const scopeRule = isRecordOnlyOrderKind(order.kind)
+    ? "1. 本工单只产出记录: 只写本工单的回执与工单文件夹 artifacts/ 下的证据文件 (文档, 脚本等), 不改业务文件与 .navigator/ 下的其它文件."
+    : "1. 只改业务文件, 本工单的回执与工单文件夹 artifacts/ 下的证据文件, 不改 .navigator/ 下的其它文件.";
   return [
-    `执行工单 ${order.id}.`,
+    `# 执行工单 ${order.id}`,
     "",
-    `你是执行会话. 先完整阅读执行手册 ${EXECUTOR_GUIDE_FILE}, 再阅读工单 ${orderFilePath(order.folder, "order")}, 然后按手册中的执行流程工作.`,
+    `你是执行子代理. 先运行 \`${COMMAND_NAME} ref executor\` 读完执行手册, 再读工单 ${path.join(projectRoot, orderFilePath(order.folder, "order"))}, 然后按手册中的执行流程工作.`,
     "",
-    "三条硬规则:",
+    "## 规则",
     "",
-    ...scopeRules,
-    '3. 做完或受阻时, 按 "执行完成" 或 "执行受阻" 版式回复, 由用户选择汇报方式.',
+    scopeRule,
+    `2. 不提交, 不推送, 不运行改变编排状态的插件命令 (例如 \`${COMMAND_NAME} order\`).`,
+    `3. 做完或受阻时, 用 \`${COMMAND_NAME} template receipt\` 取骨架 (选型工单加 \`--option 2\`), 写回执 ${path.join(projectRoot, orderFilePath(order.folder, "receipt"))}, 然后结束.`,
+    "",
+    "## 交回格式",
+    "",
+    `- 第一行: 执行状态 (完成或受阻) 与回执路径.`,
+    `- 其后不超过 ${EXECUTOR_SUMMARY_LINES} 行要点: 受阻时写受阻类型与需要的决定或操作; 完成时写最重要的实现决定与风险.`,
   ].join("\n");
 }
 
@@ -109,26 +109,22 @@ function wiringCheckItem(kind) {
 }
 
 /**
- * 生成验收委派提示词. 交回表格的列取自验收记录的规格, 结论只用三种固定取值,
- * 与写入 review.md 时的校验一致. 用户测试记录的路径总是写出, 由子代理判断
- * 文件是否存在, 这样同一状态下命令与守卫生成的提示词完全相同.
+ * 生成验收委派提示词. 交回表格的列取自验收记录的规格, 结论只用三种固定取值.
  *
  * @param {object} options 生成参数.
  * @param {string} options.projectRoot 项目根目录.
  * @param {{id: string, folder: string, baseCommit: string, kind: string}} options.order 当前工单.
- * @param {readonly string[]} options.testCommands 可运行的测试命令: 代码检查命令与用户授权的测试.
- * @param {readonly string[]} options.evidenceTools 用户授权的 MCP 取证工具.
+ * @param {readonly string[]} options.checkCommands 本工单要运行的代码检查命令.
  * @param {import("./spec.mjs").TableSpec} options.criteriaTable 验收记录中判据核对表的规格.
  * @returns {string} 提示词全文.
  */
 export function buildReviewBrief({
   projectRoot,
   order,
-  testCommands,
-  evidenceTools,
+  checkCommands,
   criteriaTable,
 }) {
-  const tests = testCommands.length === 0 ? "无" : testCommands.join("; ");
+  const checks = checkCommands.length === 0 ? "无" : checkCommands.join("; ");
   const { pass, fail, unverified } = VERDICTS;
   const verdicts = Object.values(VERDICTS).join(", ");
   return [
@@ -140,12 +136,10 @@ export function buildReviewBrief({
     "",
     `- 工单文件: ${path.join(projectRoot, orderFilePath(order.folder, "order"))}`,
     `- 回执文件: ${path.join(projectRoot, orderFilePath(order.folder, "receipt"))}`,
-    `- 用户测试记录: ${path.join(projectRoot, orderFilePath(order.folder, "userTests"))}`,
     `- 证据文件目录: ${path.join(projectRoot, orderArtifactsPath(order.folder))}`,
     `- 基准提交: ${order.baseCommit}`,
     `- 工单类型: ${order.kind}`,
-    `- 已授权测试: ${tests}`,
-    `- 已授权取证工具: ${describeEvidenceTools(evidenceTools)}`,
+    `- 代码检查: ${checks}`,
     "",
     "## 核对要求",
     "",
@@ -154,12 +148,11 @@ export function buildReviewBrief({
     wiringCheckItem(order.kind),
     '4. 范围核查: 列出工单 "工作范围" 之外的改动.',
     "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试, 是否放宽了代码检查的规则或加了忽略标记.",
-    '6. 测试运行: 只运行 "已授权测试" 中的命令, 原样记录结果; 没有授权的测试不运行.',
-    `7. 取证核对: 判据要用 MCP 工具核对时, 只调用 "已授权取证工具" 中的工具, 调用前先用 ${TOOL_LOADER} 加载. 按回执 "取证记录" 给出的位置查找, 证据写工具名, 参数与返回内容摘录. 需要的工具没有授权, 或按位置找不到记录时, 该判据为 ${unverified}.`,
-    '8. 用户测试: "用户测试记录" 存在时, 其中是用户亲手运行的命令与原始输出, 脚本已核对输出与用户的消息逐字一致. 按输出判定每个条目 "对应判据" 所列的判据, 证据写条目标题与输出摘录. 文件不存在时跳过本项.',
-    '9. 证据文件: "证据文件目录" 存在时, 其中是执行会话留下的产物, 例如抓包原文与复现脚本. 回执或判据引用这些文件时, 按路径读取核对, 证据写文件路径与行号; 其中的脚本只有列在 "已授权测试" 中才运行. 目录不存在时跳过本项.',
-    `10. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界与粒度 (新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
-    `11. 选型工单另查: 核对范围只是工单列出的每条需求, 判据核对表中每条需求单独一行. 对照回执 "${REQUIREMENT_SECTION}" 表: 依据是源码的, 运行\`${EVIDENCE_COMMAND}\` 从原仓库按版本取回 "${EVIDENCE_SECTION}" 表引用的源码行, 判断是否支持该需求的结论; 依据是测试的, 测试命令在 "已授权测试" 中时运行, 按输出判断. 依据支持结论的为 ${pass}, 不支持的为 ${fail}, 取不到源码或测试没有授权的为 ${unverified}; 需求在表中没有对应行的也为 ${unverified}. 回执其它内容不核对, 不用其它方式获取源码.`,
+    '6. 测试运行: 运行 "代码检查" 中的命令, 以及回执 "测试记录" 中 "测试命令" 列出的命令, 原样记录结果; "外部影响" 中列出的命令 (需要真实账号, 会产生费用或外部副作用) 不运行, 按回执中的输出判断, 证据写明 "依据回执输出".',
+    `7. 取证核对: 判据要用 MCP 工具核对时, 按回执 "取证记录" 给出的工具与位置查看, 只做查询类的只读调用, 不发请求, 不清空或修改记录. 证据写工具名, 参数与返回内容摘录; 工具不可用或按位置找不到记录时, 该判据为 ${unverified}.`,
+    '8. 证据文件: "证据文件目录" 存在时, 其中是执行子代理留下的产物, 例如抓包原文与复现脚本. 回执或判据引用这些文件时, 按路径读取核对, 证据写文件路径与行号. 目录不存在时跳过本项.',
+    `9. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界 (回执 "模块划分" 是否与实际改动一致, 新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
+    `10. 选型工单另查: 核对范围只是工单列出的每条需求, 判据核对表中每条需求单独一行. 对照回执 "${REQUIREMENT_SECTION}" 表: 依据是源码的, 运行\`${EVIDENCE_COMMAND}\` 从原仓库按版本取回 "${EVIDENCE_SECTION}" 表引用的源码行, 判断是否支持该需求的结论; 依据是测试的, 运行回执写明的测试命令, 按输出判断. 依据支持结论的为 ${pass}, 不支持的为 ${fail}, 取不到源码或测试无法运行的为 ${unverified}; 需求在表中没有对应行的也为 ${unverified}. 回执其它内容不核对, 不用其它方式获取源码.`,
     "",
     "## 交回格式",
     "",

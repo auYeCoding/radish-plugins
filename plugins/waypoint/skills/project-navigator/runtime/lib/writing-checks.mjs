@@ -2,11 +2,10 @@
  * @file 写作规则检查: 句长, 段落, 列表, 加粗, "的" 字, 黑话, 比喻, 翻译腔,
  * 句首裸指代词, 表格对齐与篇幅.
  *
- * 规则与阈值全部来自规格的 writing 一节. Stop 校验只采用 "问题" 级别的结果,
- * 体检同时报告 "问题" 与 "提示". 代码块不检查, 人类总结块除外.
+ * 规则与阈值全部来自规格的 writing 一节. 只用于体检与自查, 同时报告 "问题" 与
+ * "提示"; 回复结束时不按这些规则打回. 代码块不检查.
  */
 
-import { isSummaryBlock } from "./layout.mjs";
 import { parseMarkdown } from "./markdown.mjs";
 import { displayWidth } from "./table.mjs";
 import { countUnits, plainText } from "./text-units.mjs";
@@ -76,7 +75,7 @@ const SENTENCE_LEAD_PATTERN = /^[\s"'(“‘（]+/u;
  */
 export function checkWriting({ text, spec, maxLines }) {
   const writing = spec.writing;
-  const lines = collectLines(parseMarkdown(text), spec.format);
+  const lines = collectLines(parseMarkdown(text));
   const contentLines = lines.filter((line) => line.content !== "");
   return [
     ...contentLines.flatMap((line) => checkPhrases(line, writing)),
@@ -101,25 +100,18 @@ export function formatFinding(finding) {
 }
 
 /**
- * 把解析结果展开成逐行的检查单元; 代码块只展开人类总结块的正文.
+ * 把解析结果展开成逐行的检查单元; 代码块不展开.
  *
  * @param {import("./markdown.mjs").MarkdownItem[]} items 解析结果.
- * @param {import("./spec.mjs").FormatSpec} format 全局版式规则.
  * @returns {TextLine[]} 各行.
  */
-function collectLines(items, format) {
+function collectLines(items) {
   return items.flatMap((item) => {
     if (item.kind === "heading") {
       return [lineOf("heading", "", item.text, item.line)];
     }
     if (item.kind === "block") {
-      return isSummaryBlock(item, format)
-        ? item.content
-            .slice(1)
-            .map((text, index) =>
-              lineOf("prose", text.trim(), text, item.line + index + 2),
-            )
-        : [lineOf("block", "", "", item.line)];
+      return [lineOf("block", "", "", item.line)];
     }
     return [classifyTextLine(item.text, item.line)];
   });

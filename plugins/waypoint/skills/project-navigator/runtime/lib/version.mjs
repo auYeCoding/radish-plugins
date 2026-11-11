@@ -1,14 +1,11 @@
 /**
- * @file 查询运行脚本的版本号.
- *
- * 插件中的运行脚本以插件清单 `plugin.json` 中的版本为准; 复制进项目的副本以
- * init 写入的版本文件为准. 两者比较即可判断项目中的副本是否需要升级.
+ * @file 查询运行脚本的版本号: 以插件清单 `plugin.json` 中的版本为准.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { RUNTIME_VERSION_FILE, SKILL_ROOT } from "./paths.mjs";
+import { SKILL_ROOT } from "./paths.mjs";
 
 /**
  * 从技能目录向上查找插件清单时最多经过的层数 (技能目录, skills, 插件根目录).
@@ -41,10 +38,6 @@ const VERSION_PART_COUNT = 3;
  * @returns {string} 版本号; 查不到时为 UNKNOWN_VERSION.
  */
 export function runtimeVersion(skillRoot = SKILL_ROOT) {
-  const versionFile = path.join(skillRoot, RUNTIME_VERSION_FILE);
-  if (existsSync(versionFile)) {
-    return JSON.parse(readFileSync(versionFile, "utf8")).version;
-  }
   let directory = skillRoot;
   for (let depth = 0; depth < MANIFEST_SEARCH_DEPTH; depth += 1) {
     const manifest = path.join(directory, PLUGIN_MANIFEST);

@@ -183,19 +183,14 @@ test("写作: 篇幅超过上限", () => {
   assert.deepEqual(findingsOf(text, WRITING.length.label, undefined), []);
 });
 
-test("写作: 代码块不检查, 人类总结块检查", () => {
+test("写作: 代码块不检查, 结论行照常检查", () => {
   const code = ["```js", `const value = "${hanPhrase(60)}";`, "```"].join("\n");
   assert.deepEqual(
     checkWriting({ text: code, spec: SPEC, maxLines: undefined }),
     [],
   );
-  const summary = [
-    "```text",
-    SPEC.format.summarySeparator,
-    "本轮赋能团队.",
-    "```",
-  ].join("\n");
-  const findings = findingsOf(summary, WRITING.jargon.label);
+  const conclusion = ["# 首次接入", "", "结论: 本轮赋能团队."].join("\n");
+  const findings = findingsOf(conclusion, WRITING.jargon.label);
   assert.equal(findings.length, 1);
   assert.equal(findings[0].line, 3);
 });

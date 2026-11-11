@@ -4,8 +4,7 @@
  * 用法: node scripts/gen-navigator-docs.mjs [--check]
  *
  * 回复类型, 记录文件与写作规则的唯一来源是 `spec/templates.json`; 标点规则的唯一
- * 来源是 `shared/punctuation.md`; 插件命令的访问级别的唯一来源是
- * `runtime/lib/command-access.mjs`. 本脚本把它们写进技能的参考文档与执行手册,
+ * 来源是 `shared/punctuation.md`. 本脚本把它们写进技能的参考文档与执行手册,
  * 手写的说明文字放在 `scripts/navigator-docs/` 中, 以占位行标出生成内容的位置.
  * 生成结果经过 prettier 格式化; `--check` 只比较不写入, 有差异时以退出码 1 结束.
  */
@@ -16,13 +15,9 @@ import { fileURLToPath } from "node:url";
 
 import * as prettier from "prettier";
 
-import { SHARED_COMMANDS } from "../plugins/waypoint/skills/project-navigator/runtime/lib/command-access.mjs";
 import { KEY_SECTION_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/file-guide.mjs";
 import { FREEFORM_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/freeform-sections.mjs";
-import {
-  OPTION_LETTERS,
-  renderOptionBlock,
-} from "../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
+import { OPTION_LETTERS } from "../plugins/waypoint/skills/project-navigator/runtime/lib/render.mjs";
 import { isFreeformSection } from "../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { renderTable } from "../plugins/waypoint/skills/project-navigator/runtime/lib/table.mjs";
 import { UNIT_RULE } from "../plugins/waypoint/skills/project-navigator/runtime/lib/text-units.mjs";
@@ -99,15 +94,6 @@ const CHECK_FLAG = "--check";
 const EXIT_FAILURE = 1;
 
 /**
- * 回复使用方的显示名.
- * @type {Readonly<Record<string, string>>}
- */
-const ROLE_LABELS = Object.freeze({
-  orchestrator: "编排会话",
-  executor: "执行会话",
-});
-
-/**
  * 级别的显示名.
  * @type {Readonly<Record<string, string>>}
  */
@@ -124,14 +110,11 @@ const SEVERITY_LABELS = Object.freeze({ problem: "问题", hint: "提示" });
  * @type {Readonly<Record<string, (context: GenerationContext) => string[]>>}
  */
 const GENERATORS = Object.freeze({
-  "executor-replies": ({ spec }) => executorReplySummaries(spec),
-  "test-boundary": ({ spec }) => testBoundaryBlock(spec),
   "receipt-structures": ({ spec }) => receiptStructures(spec),
   punctuation: ({ punctuation }) => punctuationRules(punctuation),
   "writing-rules": ({ spec }) => writingRulesTable(spec),
   "unit-rule": () => [UNIT_RULE],
   "writing-words": ({ spec }) => writingWords(spec),
-  "shared-commands": () => sharedCommandList(),
 });
 
 /**
@@ -239,18 +222,14 @@ async function formatMarkdown(file, content) {
  * @returns {string} 文档全文.
  */
 function repliesDocument({ spec }) {
-  const groups = Object.keys(ROLE_LABELS).flatMap((role) => [
-    "",
-    `## ${ROLE_LABELS[role]}的回复`,
-    ...Object.entries(spec.replies)
-      .filter(([, reply]) => reply.role === role)
-      .flatMap(([title, reply]) => ["", ...replySummary(title, reply, spec)]),
-  ]);
   return [
     "# 回复类型",
     "",
-    `每条回复都以 "# 类型" 开头, 第一节固定为 "## ${spec.format.progressTitle}", 结尾依次是一个选项块与一个人类总结块. 回复前运行 \`reply <编号> --option <组号>\` 取得填写要求与骨架, 按要求在骨架上填写.`,
-    ...groups,
+    `每条回复都以 "# 类型" 开头, 下方第一行是 "${spec.format.conclusionLabel}: ..." 一句话结论, 其后是脚本计算的进展行, 然后是各节, 最后是一个选项块. 回复前运行 \`project-navigator reply <编号> --option <组号>\` 取得填写要求与骨架, 按要求在骨架上填写. 回复结束时只校验结构: 标题, 结论行与选项块.`,
+    ...Object.entries(spec.replies).flatMap(([title, reply]) => [
+      "",
+      ...replySummary(title, reply),
+    ]),
     "",
   ].join("\n");
 }
@@ -260,15 +239,14 @@ function repliesDocument({ spec }) {
  *
  * @param {string} title 回复类型.
  * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").ReplySpec} reply 回复规格.
- * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TemplateSpec} spec 模板规格.
  * @returns {string[]} 各行.
  */
-function replySummary(title, reply, spec) {
+function replySummary(title, reply) {
   return [
-    `### ${title}`,
+    `## ${title}`,
     "",
     `- 编号: \`${reply.id}\``,
-    `- 各节: ${[{ title: spec.format.progressTitle, keys: spec.format.progressKeys }, ...reply.sections].map(sectionLabel).join("; ")}`,
+    `- 各节: ${reply.sections.map(sectionLabel).join("; ")}`,
     "- 选项:",
     ...reply.optionSets.map(
       (set, index) =>
@@ -278,7 +256,7 @@ function replySummary(title, reply, spec) {
 }
 
 /**
- * 描述一个节: 标题, 键名 (含骨架预填的值) 或表格, 是否放启动提示词, 是否为自由正文.
+ * 描述一个节: 标题, 键名 (含骨架预填的值) 或表格, 是否为自由正文.
  *
  * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").SectionSpec} section 节规格.
  * @returns {string} 描述.
@@ -290,9 +268,8 @@ function sectionLabel(section) {
       : ` (${section.keys.map((key) => keyLabel(key, section.presets)).join(", ")})`;
   const table =
     section.table === undefined ? "" : ` (${tableLabel(section.table)})`;
-  const launch = section.allowLaunchPrompt === true ? " (放启动提示词)" : "";
   const freeform = isFreeformSection(section) ? ` (${FREEFORM_RULE})` : "";
-  return `${section.title}${keys}${table}${launch}${freeform}`;
+  return `${section.title}${keys}${table}${freeform}`;
 }
 
 /**
@@ -331,7 +308,7 @@ function filesDocument({ spec }) {
   return [
     "# 记录文件",
     "",
-    `\`.navigator/\` 下的记录文件在写入前按以下结构校验, 不合格的写入会被拒绝. 新建文件前运行 \`template <种类>\` 取得填写要求与骨架, 按要求在骨架上填写. 每个文件以一级标题开头, 以人类总结块结尾. ${KEY_SECTION_RULE}.`,
+    `\`.navigator/\` 下的记录文件按以下结构编写. 新建文件前运行 \`project-navigator template <种类>\` 取得填写要求与骨架, 按要求在骨架上填写, 写完后运行 \`project-navigator check <文件>\` 自查. 每个文件以一级标题开头, 文件中不放代码块. ${KEY_SECTION_RULE}; 脚本按键值行读取记录.`,
     ...Object.entries(spec.files).flatMap(([kind, fileSpec]) => [
       "",
       `## ${fileSpec.title}`,
@@ -349,11 +326,6 @@ function filesDocument({ spec }) {
       ...(fileSpec.entryKeys === undefined
         ? []
         : [`- 条目键名: ${fileSpec.entryKeys.join(", ")}`]),
-      ...(fileSpec.entryBlock === undefined
-        ? []
-        : [
-            `- 条目代码块: 键值行之后恰好一个语言标记为 \`${fileSpec.entryBlock}\` 的代码块, 原样放输出; 输出含三个反引号时, 围栏改用更多反引号`,
-          ]),
       ...(fileSpec.closingSections === undefined
         ? []
         : [
@@ -365,28 +337,6 @@ function filesDocument({ spec }) {
 }
 
 /**
- * 生成执行会话三种回复的摘要.
- *
- * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TemplateSpec} spec 模板规格.
- * @returns {string[]} 各行.
- */
-function executorReplySummaries(spec) {
-  return Object.entries(spec.replies)
-    .filter(([, reply]) => reply.role === "executor")
-    .flatMap(([title, reply]) => [...replySummary(title, reply, spec), ""]);
-}
-
-/**
- * 生成测试边界的固定选项块, 取自 "测试授权" 的第一组选项.
- *
- * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TemplateSpec} spec 模板规格.
- * @returns {string[]} 各行.
- */
-function testBoundaryBlock(spec) {
-  return renderOptionBlock(spec.replies["测试授权"].optionSets[0]);
-}
-
-/**
  * 生成回执的两种结构说明.
  *
  * @param {import("../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TemplateSpec} spec 模板规格.
@@ -395,14 +345,14 @@ function testBoundaryBlock(spec) {
 function receiptStructures(spec) {
   const names = ["实现类工单", "选型类工单"];
   return [
-    `回执以 "# ${spec.files.receipt.title}" 开头, 第一节为 "## ${spec.format.progressTitle}", 以人类总结块结尾. 中间各节:`,
+    `回执以 "# ${spec.files.receipt.title}" 开头, 第一节为 "## ${spec.format.progressTitle}". 之后各节:`,
     "",
     ...spec.files.receipt.variants.map(
       (sections, index) =>
         `- ${names[index] ?? `结构 ${index + 1}`} (\`--option ${index + 1}\`): ${sections.map(sectionLabel).join("; ")}`,
     ),
     "",
-    `括号中是键名. ${KEY_SECTION_RULE}, 否则写入被拒. 表格与多行内容写进没有键名的节, 完整输出放进证据文件后在值中写出路径.`,
+    `括号中是键名. ${KEY_SECTION_RULE}, 编排会话的脚本按键值行读取回执. 表格与多行内容写进没有键名的节, 完整输出放进证据文件后在值中写出路径.`,
   ];
 }
 
@@ -437,15 +387,6 @@ function writingRulesTable(spec) {
       descriptions[key] ?? "",
     ]),
   );
-}
-
-/**
- * 生成所有会话都可以运行的插件命令清单, 作为上一行列表项的子列表.
- *
- * @returns {string[]} 各行.
- */
-function sharedCommandList() {
-  return SHARED_COMMANDS.map((name) => `  - \`${name}\``);
 }
 
 /**

@@ -1,13 +1,20 @@
 /**
- * @file 项目内各类路径的唯一定义, 以及路径归属判断.
+ * @file 项目内各类路径与插件命令名的唯一定义, 以及路径归属判断.
  *
- * 运行脚本在两处运行: 插件目录 (init 与 enter) 和项目的 `.navigator/bin/`
- * (hook 与其余命令). 所有相对路径都在这里定义, 其它模块不写路径字面量.
+ * 运行脚本只在插件目录中运行: 命令经插件 `bin/` 中的 `project-navigator` 调用,
+ * hook 由插件的 `hooks/hooks.json` 调用. 所有相对路径都在这里定义, 其它模块不写
+ * 路径字面量. 以 LEGACY 开头的常量是 1.0.0 之前写进项目的内容, 只供升级时清理.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+/**
+ * 插件命令名: 插件 `bin/` 中的可执行文件, 在 Bash 与 PowerShell 工具的 PATH 中.
+ * @type {string}
+ */
+export const COMMAND_NAME = "project-navigator";
 
 /**
  * 状态目录相对于项目根目录的路径.
@@ -21,11 +28,9 @@ export const NAVIGATOR_DIRECTORY = ".navigator";
  */
 export const NAVIGATOR_ENTRIES = Object.freeze({
   state: "state.json",
-  bin: "bin",
   plan: "plan",
   orders: "orders",
   drafts: "drafts",
-  guide: "guide",
   ignoreFile: ".gitignore",
 });
 
@@ -42,13 +47,7 @@ export const STATE_FILE = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.state}`;
 export const NAVIGATOR_IGNORE_FILE = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.ignoreFile}`;
 
 /**
- * 插件脚本目录, 相对于项目根目录; 受保护, 只有 init 能写.
- * @type {string}
- */
-export const BIN_DIRECTORY = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.bin}`;
-
-/**
- * 草稿目录, 相对于项目根目录; 编排会话在这里写命令行脚本的输入, 不入库.
+ * 草稿目录, 相对于项目根目录; 编排会话在这里写命令的输入, 不入库.
  * @type {string}
  */
 export const DRAFTS_DIRECTORY = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.drafts}`;
@@ -61,27 +60,20 @@ export const ORDERS_DIRECTORY = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.orde
 
 /**
  * 工单文件夹中各文件的文件名.
- * @type {Readonly<{order: string, receipt: string, review: string, userTests: string}>}
+ * @type {Readonly<{order: string, receipt: string, review: string}>}
  */
 export const ORDER_FILES = Object.freeze({
   order: "order.md",
   receipt: "receipt.md",
   review: "review.md",
-  userTests: "user-tests.md",
 });
 
 /**
- * 工单文件夹中存放证据文件的子目录名: 执行会话留下的抓包原文, 复现脚本等
+ * 工单文件夹中存放证据文件的子目录名: 执行子代理留下的抓包原文, 复现脚本等
  * 供验收独立复核的产物.
  * @type {string}
  */
 export const ORDER_ARTIFACTS_DIRECTORY = "artifacts";
-
-/**
- * 运行脚本在项目内的副本中, 记录其版本号的文件名.
- * @type {string}
- */
-export const RUNTIME_VERSION_FILE = "runtime-version.json";
 
 /**
  * 项目规范文件, 相对于项目根目录. 项目内所有会话自动加载, 由 standards 命令写入.
@@ -102,16 +94,6 @@ export const PROJECT_LOCAL_SETTINGS_FILE = ".claude/settings.local.json";
 export const PROJECT_SETTINGS_FILE = ".claude/settings.json";
 
 /**
- * 只能由插件脚本修改的项目配置文件, 相对于项目根目录.
- * @type {readonly string[]}
- */
-export const PROTECTED_CONFIG_FILES = Object.freeze([
-  PROJECT_SETTINGS_FILE,
-  PROJECT_LOCAL_SETTINGS_FILE,
-  ENGINEERING_RULES_FILE,
-]);
-
-/**
  * 推进路线文件, 相对于项目根目录; 由脚本从状态文件整份生成.
  * @type {string}
  */
@@ -130,46 +112,14 @@ export const RISKS_FILE = ".navigator/plan/risks.md";
 export const GLOSSARY_FILE = ".navigator/plan/glossary.md";
 
 /**
- * 执行手册, 相对于项目根目录; 由 init 从技能目录复制.
- * @type {string}
- */
-export const EXECUTOR_GUIDE_FILE = ".navigator/guide/executor.md";
-
-/**
- * 由脚本生成, 禁止直接编辑的文件, 相对于项目根目录.
+ * 由脚本生成, 禁止用工具直接编辑的文件, 相对于项目根目录.
  * @type {readonly string[]}
  */
 export const GENERATED_FILES = Object.freeze([
+  STATE_FILE,
   ROADMAP_FILE,
   RISKS_FILE,
-  EXECUTOR_GUIDE_FILE,
 ]);
-
-/**
- * 初始化自检时用于探测写入守卫的文件, 相对于项目根目录. 守卫拦下对它的写入
- * 时会留下心跳记录, init 据此确认 hook 已生效.
- * @type {string}
- */
-export const PROBE_FILE = `${BIN_DIRECTORY}/navigator-probe.txt`;
-
-/**
- * 自检心跳记录在运行期登记目录中的文件名.
- * @type {string}
- */
-export const PROBE_HEARTBEAT_FILE = "probe.json";
-
-/**
- * 编排会话最近收到的用户消息在运行期登记目录中的文件名, 供核对用户测试输出.
- * @type {string}
- */
-export const PROMPT_HISTORY_FILE = "prompts.json";
-
-/**
- * 编排会话登记在运行期登记目录中的文件名: 当前编排会话与曾经的编排会话.
- * 会话身份属于本机的运行环境, 不随 `git reset` 与 `checkout` 回退.
- * @type {string}
- */
-export const ORCHESTRATOR_REGISTRY_FILE = "orchestrator.json";
 
 /**
  * 工单审阅记录在运行期登记目录中的文件名: 用户在 "工单审阅" 中对哪张工单的
@@ -177,20 +127,6 @@ export const ORCHESTRATOR_REGISTRY_FILE = "orchestrator.json";
  * @type {string}
  */
 export const ORDER_APPROVAL_FILE = "order-approval.json";
-
-/**
- * 提交结算记录在运行期登记目录中的文件名: 哪一份状态文件的提交步骤由哪个提交
- * 完成. 提交完成的命令写这里, 不改写已随提交入库的状态文件.
- * @type {string}
- */
-export const COMMIT_SETTLEMENT_FILE = "commit-settlement.json";
-
-/**
- * 待并入快照的写入在运行期登记目录中的子目录名: 每次写入状态目录留下一个标记,
- * 等同一次工具调用的其它 hook (例如格式化) 结束后再并入快照.
- * @type {string}
- */
-export const PENDING_WRITES_DIRECTORY = "pending-writes";
 
 /**
  * 运行期登记信息在 Git 目录中的子目录名. 不入库, 也不受回退影响.
@@ -206,34 +142,53 @@ export const RUNTIME_REGISTRY_DIRECTORY = "navigator";
 export const EVIDENCE_CACHE_DIRECTORY = "evidence";
 
 /**
- * init 复制进 `.navigator/bin/` 的目录, 相对于技能目录. 复制后保持同样的相对
- * 布局, 因此运行脚本在插件目录与项目副本中用同一套相对路径找到规格文件.
- * 参考文件也复制进项目: 读取项目之外的插件文件在默认权限模式下需要用户批准.
- * @type {readonly string[]}
- */
-export const RUNTIME_COPY_DIRECTORIES = Object.freeze([
-  "runtime",
-  "spec",
-  "standards",
-  "references",
-]);
-
-/**
- * hook 命令引用的入口脚本, 以项目目录变量开头, 由 Claude Code 在运行时替换.
+ * 1.0.0 之前复制进项目的运行脚本目录, 相对于项目根目录.
  * @type {string}
  */
-export const HOOK_ENTRY_ARGUMENT =
+export const LEGACY_BIN_DIRECTORY = ".navigator/bin";
+
+/**
+ * 1.0.0 之前复制进项目的执行手册目录, 相对于项目根目录.
+ * @type {string}
+ */
+export const LEGACY_GUIDE_DIRECTORY = ".navigator/guide";
+
+/**
+ * 1.0.0 之前的项目级 hook 引用的入口脚本, 用于从项目配置中移除这些 hook.
+ * @type {string}
+ */
+export const LEGACY_HOOK_ENTRY_ARGUMENT =
   "${CLAUDE_PROJECT_DIR}/.navigator/bin/runtime/hook.mjs";
 
 /**
- * 编排会话调用项目内命令行脚本时使用的相对路径.
+ * 1.0.0 之前的放行规则中引用的项目内命令路径.
  * @type {string}
  */
-export const PROJECT_COMMAND_PATH = ".navigator/bin/runtime/navigator.mjs";
+export const LEGACY_COMMAND_PATH = ".navigator/bin/runtime/navigator.mjs";
 
 /**
- * 技能目录的绝对路径: 插件中为 `skills/project-navigator/`, 项目副本中为
- * `.navigator/bin/`. 由本文件位置 (`<技能目录>/runtime/lib/paths.mjs`) 推出.
+ * 1.0.0 之前写在运行期登记目录中的文件与目录: 会话登记, 待并入快照的写入,
+ * 用户消息记录, 提交结算记录, 自检请求与心跳.
+ * @type {readonly string[]}
+ */
+export const LEGACY_REGISTRY_ENTRIES = Object.freeze([
+  "orchestrator.json",
+  "sessions",
+  "pending-writes",
+  "prompts.json",
+  "commit-settlement.json",
+  "probe.json",
+  "probe-request.json",
+]);
+
+/**
+ * 1.0.0 之前存放状态目录快照的隐藏引用.
+ * @type {string}
+ */
+export const LEGACY_SNAPSHOT_REF = "refs/navigator/snapshots";
+
+/**
+ * 技能目录的绝对路径, 由本文件位置 (`<技能目录>/runtime/lib/paths.mjs`) 推出.
  * @type {string}
  */
 export const SKILL_ROOT = path.resolve(
@@ -259,10 +214,16 @@ export const STANDARDS_FILE = path.join(
 );
 
 /**
- * 技能目录中执行手册的绝对路径, 由生成脚本产出, init 复制进项目.
+ * 技能目录中执行手册的绝对路径, 由生成脚本产出.
  * @type {string}
  */
 export const GUIDE_SOURCE_FILE = path.join(SKILL_ROOT, "guide", "executor.md");
+
+/**
+ * 技能目录中参考文件所在目录的绝对路径.
+ * @type {string}
+ */
+export const REFERENCES_DIRECTORY = path.join(SKILL_ROOT, "references");
 
 /**
  * 当前平台的文件系统是否不区分大小写.

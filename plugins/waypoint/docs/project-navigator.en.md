@@ -6,7 +6,7 @@ English | [简体中文](project-navigator.md)
 
 Guides a large project from a single high-level idea through problem-domain research, framing, technology selection, and a minimal runnable skeleton, then moves it forward in vertical slices and milestones, handling changes in requirements or direction along the way.
 
-The session that invokes this skill only plans, records, issues work orders, and organizes reviews. It is called the orchestrator session. Writing code, choosing technologies, and testing happen in separate sessions you open, called executor sessions. Every step is recorded in the repository, so any new session can pick up where the last one left off.
+The session that invokes this skill only plans, records, issues work orders, and organizes reviews. It is called the orchestrator session. Writing code, building, and testing are done by executor subagents the orchestrator dispatches in the background, and reviews are done by a reviewer subagent with a fresh context. Every step is recorded in the repository, so any new session can pick up where the last one left off.
 
 The skill's replies and records are written in Simplified Chinese.
 
@@ -20,9 +20,9 @@ It is not meant for small tasks such as fixing a typo, patching a small bug, or 
 
 ## Requirements
 
-- [Git](https://git-scm.com): the project must be a Git repository. If it is not a repository yet, run [`/waypoint:repo-init`](repo-init.en.md) first; if it has no commit yet, the "阶段提交" (stage commit) after initialization makes the first commit.
-- [Node.js](https://nodejs.org) 22 or later: the guard hooks and the record scripts run on Node.js.
-- Start Claude Code in the project root. Executor sessions do not use worktrees.
+- [Git](https://git-scm.com): the project must be a Git repository. If it is not a repository yet, run [`/waypoint:repo-init`](repo-init.en.md) first.
+- [Node.js](https://nodejs.org) 22 or later: the hooks and commands run on Node.js.
+- Start Claude Code in the project root.
 - During selection, the public git repositories (https) of the chosen dependencies must be reachable: the review fetches source code from the original repositories to verify the evidence.
 
 ## Invocation
@@ -30,280 +30,219 @@ It is not meant for small tasks such as fixing a typo, patching a small bug, or 
 The skill runs only when you invoke it explicitly. Plain-language requests never trigger it:
 
 ```text
-/waypoint:project-navigator [init | check | uninstall | initial requirement]
+/waypoint:project-navigator [init | check | uninstall | initial idea]
 ```
 
 - No argument: show the current progress and continue as prompted.
-- `init`: initialize the project.
-- `check`: run a checkup on the records.
-- `uninstall`: remove the guard hooks and keep every record.
-- Any other text: the initial requirement, for example `/waypoint:project-navigator 做一个团队周报汇总工具`.
+- `init`: initialize the project, or upgrade a project initialized by an older version.
+- `check`: run a checkup on the record documents.
+- `uninstall`: stop using the skill in this project, keeping all records.
+- Any other text: used as the initial idea, for example `/waypoint:project-navigator build a tool that collects the team's weekly reports`.
 
-Invoking the skill from any new session takes over orchestration and resumes from the last position. The previous orchestrator session loses its orchestration rights and is told so the next time you send it a message; to continue orchestrating there, invoke the skill again in that session.
-
-Rewinding or editing a message of the orchestrator session in the desktop app, or forking it with `--fork-session`, continues the conversation under a new session id. The forked session is recognized and takes over orchestration automatically; you do not need to invoke the skill again.
-
-The same applies to executor sessions: after a rewind, an edit, or resending an interrupted message, the forked session keeps the original executor registration, with the alignment state as of the fork point (rewinding to before the kickoff alignment requires aligning again). If the forked session is not recognized, writing the receipt is denied; resend the order's launch prompt in the same session.
+Any session that invokes the skill continues from the recorded state; there is nothing to take over or register. After you rewind or edit a message in the desktop app, the session simply continues.
 
 ## Quick start
 
-Take "做一个团队周报汇总工具" (build a tool that combines a team's weekly reports) as an example, starting from a new repository that only has a README. Every reply ends with an option block, so you only need to reply with a letter. To add details, write them after the letter, for example `B 第 3 条假设不对, 我们用飞书` (B, assumption 3 is wrong, we use Feishu).
+Take "build a tool that collects the team's weekly reports" as an example, starting from a new repository that has only a README. Each reply starts with a one-line conclusion and ends with an option block, so you only need to answer with a letter. To add details, write them after the letter, for example `B assumption 3 is wrong, we use Feishu`.
 
 ### First invocation
 
-1. Start Claude Code in the project root and enter `/waypoint:project-navigator 做一个团队周报汇总工具`.
-2. The skill replies with "初始设置" (setup), listing the checks and what it will write. Reply `A`. In the default permission mode, Claude Code asks you to approve the initialization command once.
-3. After the self-check passes, the skill replies with "阶段提交" (stage commit) and asks how to commit the files written by initialization: `A` commits only the skill's files, `B` commits them together with the other changes in the working tree, and `C` does not commit for now.
-4. Then the skill replies with "首次接入" (first entry). Reply `A` for a new project, or `B` for a project with existing code.
+1. Start Claude Code in the project root and enter `/waypoint:project-navigator build a tool that collects the team's weekly reports`.
+2. The skill replies with "初始设置" (initial setup), listing the check results and what it will write. Answer `A`.
+3. The skill initializes, commits the written files through [`commit-message`](commit-message.en.md), and replies with "首次接入" (first entry). Answer `A` for a new project, or `B` for a project with existing code.
 
 ### Framing and main flow
 
-1. "需求理解" (requirement understanding) lists your own words separately from the skill's assumptions. Reply `B` with the numbers of any wrong assumptions, or `A` if they are right.
-2. The skill sends the researcher subagent to look into similar products, users, industry practice, and constraints, then replies with "调研报告" (research report). Research needs web access, which Claude Code may ask you to approve, and usually takes a few minutes.
-3. Each "头脑风暴" (brainstorming) round asks at most three questions, often with candidate answers and a recommended one. Answer by number. The skill asks for your consent before converging.
-4. The skill writes the project brief and replies with "产出确认" (confirm output). The main flow and roadmap that follow are confirmed the same way.
-5. Whenever a new stage begins while records from the previous stage are still uncommitted, the skill first replies with "阶段提交", with the same options as after initialization. Until you answer, the skill neither enters another stage nor creates a work order. When you choose `A` in stage 6's "项目收尾" (project closing) to confirm the closing, the closing records go through a "阶段提交" as well.
-6. Once the closing records are committed, the skill replies with "项目完成" (project complete), showing the last record commit, the working tree, and how far the branch is ahead of the remote. You can continue iterating, push to the remote, or leave it as is. Later invocations reply with "项目完成" again and no longer ask you to confirm the closing.
+1. "需求理解" (requirement understanding) lists your own words and the skill's assumptions separately. Answer `B` with the numbers of any wrong assumptions, or `A` if they are right.
+2. The skill sends a research subagent to look at similar products, target users, industry practice, and constraints, then replies with "调研报告" (research report). Research needs web access and usually takes a few minutes.
+3. Choose `A` to brainstorm the problem, users, and scope together, or `B` when you already know what you want or the project is small: the skill then drafts the brief from the research for you to correct.
+4. The skill writes the project brief and replies with "产出确认" (output confirmation). The main flow and the roadmap are confirmed the same way.
+5. When a new stage starts and records from the previous stage are not committed yet, the skill commits them through commit-message; other changes are listed for you to decide.
 
 ### Selection and the first work order
 
-1. "规范对照" (standards comparison) lists conflicting standards for you to decide one by one, and finally asks for the code comment language.
-2. Each selection question gets a work order. Before issuing it, the skill replies with "工单审阅" (work order review), quoting the work order's goal, scope, premises, rules, and every acceptance criterion as written. Reply `A` if it is right, or `B` with the changes you want.
-3. After you reply `A`, the skill issues the work order and replies with "工单发布" (work order issued). Then:
-   1. Open a new Claude Code session in the project root and paste the launch prompt from the "后续操作" (next steps) section of the reply.
-   2. After reading the work order, the executor replies with "开工对齐" (alignment). Check its plan; it starts working only after you reply `A`.
-   3. When done, the executor replies with "执行完成" (done). Reply `A` to have it write the receipt file, then go back to the orchestrator session and reply `A` in "等待回执" (awaiting receipt).
-4. The orchestrator sends the reviewer subagent to check the work and replies with "验收报告" (review report), listing the result for each requirement. Reply `A` to adopt the selection, or `B` with the direction you want to switch to.
-5. In "确认提交" (confirm commit), choose to commit only, commit and push, or hand over to commit-message.
+1. "规范对照" (standards comparison) lists conflicting engineering standards for you to decide one by one, then asks for the language of code comments.
+2. The skill may recommend technologies from the research; key dependencies such as the language, framework, and core libraries are verified with selection work orders.
+3. When a work order is written, the skill replies with "工单审阅" (work order review): the goal in one sentence, the decisions it needs from you, what is out of scope, and why the order has this size. Answer `A` if it is right, or `B` with the changes you want. The full order is at the path shown under the review points.
+4. After you answer `A`, the skill dispatches an executor subagent in the background and replies with "工单执行" (order running). You can do something else; the orchestrator continues on its own when the executor finishes.
+5. When the executor is blocked (for example, it needs an account from you, or a choice between approaches), the skill replies with "受阻处理" (blocked handling) for you to decide; the executor then continues.
+6. When the work is done, the skill sends the reviewer subagent and replies with "验收报告" (review report). If everything passes, choose `A` to commit, `B` to commit and push, or `C` if you found a problem. For a selection order, you decide whether to adopt the result or choose another option.
 
-The skeleton and every later slice move forward through the same work order round trip.
+The skeleton and every later slice follow the same work order round trip. Normally a work order needs two decisions from you: publish it at review, and accept and commit it after the review.
 
-### Every time after that
+### Coming back later
 
-Open a new session in the project root and enter `/waypoint:project-navigator` with no argument. The skill compares the records with the repository, then replies with "恢复进度" (resume), stating where you left off and what comes next.
+Open a new session in the project root and enter `/waypoint:project-navigator` without an argument. The skill replies with "恢复进度" (resume progress), stating where it stopped and what comes next.
 
 ## Initialization
 
-On the first invocation, the skill checks the environment and asks whether to set up. When you choose A, it:
+On the first invocation, the skill checks the environment and asks whether to set up. After you choose A, it:
 
-1. Creates the state directory `.navigator/`: the state file, the executor guide, the glossary, and the runtime scripts.
-2. Adds guard hooks and allow rules to `.claude/settings.json`, keeping your existing settings. The allow rules are also copied to the machine-local `.claude/settings.local.json`, which is not committed.
-3. Runs a self-check: it deliberately attempts one forbidden write to confirm the guard hooks are active.
+1. Creates the state directory `.navigator/`: the state file, the glossary, and the plan and order directories.
+2. Adds permission rules for the plugin command and for writing records to `.claude/settings.json`, keeping your existing settings. A copy of the permission rules goes into the local `.claude/settings.local.json`, which is not committed.
 
-Commit `.navigator/` and `.claude/settings.json`, so records survive rollbacks and moving to another machine. The skill guards against files being left out in three places:
+The hooks come from the plugin and are not written into project settings; in projects that are not initialized, the plugin's hooks do nothing.
 
-- The `.gitignore` inside `.navigator/` re-includes the plugin's files, so rules such as `lib/` or `bin/` in your project cannot leave them out.
-- On initialization and on every invocation, the skill checks the plugin's files against all of Git's ignore rules (the project's `.gitignore` files at every level, plus the machine-local and global excludes). If a rule ignores `.navigator/` as a whole, or the configuration under `.claude/`, the skill stops and names the rule, so you can change it before continuing.
-- After each work order commit and each stage commit, any file under `.navigator/` or in the plugin-managed configuration that is still uncommitted is listed, and the commit is complete only after a follow-up commit.
+Both `.navigator/` and `.claude/settings.json` must be under version control, so the records survive switching machines or rolling back. The `.gitignore` inside `.navigator/` re-includes the record files; at initialization and on every invocation, the skill checks the record files against all of Git's ignore rules, and if a rule ignores `.navigator/` entirely or the configuration under `.claude/`, it stops and names the rule.
 
-### After a plugin update
+### Upgrading from 0.x
 
-The project keeps a copy of the runtime scripts in `.navigator/bin/`, and a plugin update does not replace it by itself. The next time you invoke the skill after updating the plugin, it says the scripts in the project are older and replies with "初始设置" (setup). When you choose A, the skill replaces the copy with the new scripts from the plugin, repeats the self-check, and asks you to commit the upgrade through "阶段提交" (stage commit); all records are kept.
+1.0.0 changes a lot, so a project initialized by 0.x needs one upgrade. After updating the plugin, invoke the skill: it reports that the project was initialized by an older version and replies with "初始设置" (initial setup). After you choose A, it:
 
-If the skill still says the scripts are older when you invoke it again after the upgrade, the upgrade did not take effect: invoke `/waypoint:project-navigator init` to upgrade again. This could happen with 0.8.0 and earlier.
+- Removes the old project-level hooks and old permission rules from `.claude/settings.json` and writes the new permission rules.
+- Deletes the copies under `.navigator/bin/` and `.navigator/guide/`, and removes old session registrations and snapshot records from the local `.git/navigator/`.
+- Moves an issued work order without a receipt back to drafting, so it is reviewed again and then handled by an executor subagent.
+
+All records are kept. The upgrade is committed through commit-message.
 
 ## Roles
 
-| Role                 | Who                                                 | What it does                                                                                              |
-| -------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Orchestrator session | The session that invokes the skill                  | Plans, records, writes work orders, organizes reviews, runs checkups; writes only under `.navigator/`     |
-| Executor session     | A new session where you paste the launch prompt     | Researches, selects, codes, and tests for one work order, then writes a receipt; never commits or pushes  |
-| Reviewer subagent    | Dispatched by the orchestrator with a fresh context | Checks each criterion using only the tests and evidence tools you authorized, reports evidence; read-only |
-| Researcher subagent  | Dispatched by the orchestrator during framing       | Researches the problem domain: similar products, users, industry practice, constraints; read-only         |
-| You                  | The only decision maker                             | Every decision, test authorization, hands-on acceptance, and how to commit                                |
+| Role              | Who                                              | What it does                                                                                  |
+| ----------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Orchestrator      | The session that invokes the skill               | Plans, records, writes work orders, organizes reviews and checkups; writes only `.navigator/` |
+| Executor subagent | Dispatched by the orchestrator in the background | Writes code, tests, and the receipt for one work order; never commits or pushes               |
+| Reviewer subagent | Sent by the orchestrator, with a fresh context   | Checks each criterion, runs the code checks and tests, returns evidence; read-only            |
+| Research subagent | Sent by the orchestrator during framing          | Researches the problem domain: similar products, users, practice, constraints; read-only      |
+| You               | The only decision maker                          | Every decision: publishing orders, handling blocks, accepting reviews, how to commit          |
 
-The project's hooks enforce these boundaries. For example, the orchestrator is blocked from writing business code, and an executor is blocked from editing files before you approve its plan. Each denial explains why. Executor sessions and other sessions can run only the read-only plugin commands (show status, get skeletons, check source evidence, list backups); only the orchestrator can run commands that change the orchestration state.
+The hooks guard only a few boundaries: the orchestrator cannot write files outside `.navigator/`; the state file and the generated views can only be changed by plugin commands; under `.navigator/` the executor can write only its order's receipt and evidence files, and on run-check and analysis orders it cannot change business files; the reviewer cannot write files. Everything else is left to the skill's rules and is not blocked.
 
-The plugin-managed configuration is protected as well. Sessions cannot change the scripts under `.navigator/bin/`, `.claude/settings.local.json`, or `.claude/rules/engineering.md`. `.claude/settings.json` accepts only changes that wire up project hooks: an executor session (after you approve its plan) and other sessions may add or remove the project's own hooks in the `hooks` field, for example to run the code checks after a file is edited; the plugin's hooks and every setting outside `hooks` (such as permission rules) must stay as they are, or the write is denied. Change those settings by hand when you need to; the hooks do not restrict what you do yourself.
+### Permission prompts
+
+When the executor writes files in the background in the default permission mode, the write prompts appear in the orchestrator session. A work order often writes many files, so you may switch the session to "Accept edits" while an order runs to avoid repeated prompts. That is your choice.
 
 ## Stages
 
-| No. | Stage     | What happens                                                                                                                                                                                                     |
-| --- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | Survey    | Existing projects only: read the repository, run a build and test check, write a status report                                                                                                                   |
-| 1   | Framing   | Understand the requirement, research the problem domain, report, Socratic brainstorming, project brief                                                                                                           |
-| 2   | Main flow | Write the shortest path through the core scenario, split it into milestones and slices, register risks                                                                                                           |
-| 3   | Selection | Compare engineering standards and pick the comment language; executors select technologies and answer whether the library can do each requirement, backed by source or a temporary test that the review rechecks |
-| 4   | Skeleton  | The first slice: the smallest version that runs the main flow end to end                                                                                                                                         |
-| 5   | Slices    | Deliver slice by slice, with a review at the end of each milestone                                                                                                                                               |
-| 6   | Closing   | Overall acceptance against the brief, statistics, and a retrospective                                                                                                                                            |
+| No. | Stage     | What happens                                                                                                                                                                       |
+| --- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Survey    | Existing projects only: read the repository, run checks, write a status report                                                                                                     |
+| 1   | Framing   | Requirement understanding, problem-domain research, research report, brainstorming (optional), brief                                                                               |
+| 2   | Main flow | Write the shortest path through the core scenario, split it into milestones and slices, record risks                                                                               |
+| 3   | Selection | Compare engineering standards, choose the comment language; for key dependencies the executor answers per requirement whether the library can do it, with source evidence or tests |
+| 4   | Skeleton  | The first slice: the smallest version that runs the main flow end to end                                                                                                           |
+| 5   | Slices    | Move forward slice by slice, with a review at the end of each milestone                                                                                                            |
+| 6   | Closing   | Overall acceptance against the brief, statistics, and a retrospective                                                                                                              |
 
-A requirement change can come in at any stage and returns to the same position afterwards. Skipping a stage requires your explicit approval and a written reason.
+A requirement change can be inserted at any stage, and the work returns to where it was afterwards. Skipping a stage requires your explicit approval and a written reason.
 
-## Round trip of a work order
+## One work order round trip
 
-1. **Approve.** The orchestrator writes the work order and replies with "工单审阅", quoting the work order's goal, scope, premises, rules, and every acceptance criterion. The quoted sections come straight from the work order file, and the hook checks that they match it. The work order can be issued only after you choose A; if it changes after that, or it is issued again after being blocked, you review it again.
-2. **Issue.** The orchestrator issues the work order and replies with "工单发布", which contains a launch prompt. After you choose A, the orchestrator replies with "等待回执" (awaiting receipt), showing where the work order and the receipt are, and waits for the executor to finish. To change the work order after it is issued, choose B: the orchestrator withdraws it, asks you to review the changes, and after it is issued again the executor has to align again.
-3. **Start.** Open a new Claude Code session in the project root and paste the launch prompt. The executor reads the executor guide and the work order, checks the commit and the premises, makes a plan, and replies with "开工对齐". Its "模块划分" (module plan) section lists the modules to create and change, and what changes in the entry file; read it before you choose A. It can edit business files only after you choose A.
-4. **Report.** When done or blocked, the executor replies with "执行完成" or "执行受阻", and you choose how to report:
-   - A. Document report: the executor writes the receipt file; go back to the orchestrator and choose A in "等待回执". If the receipt is not there yet, the orchestrator replies with "等待回执" again and says the receipt was not found.
-   - B. Message report: the executor sends the receipt straight to the orchestrator. Both sessions must be open. The orchestrator registers its address every time it takes over or resumes (while none is registered, it is reminded on every message), and the executor sends to the "编排地址" (orchestrator address) shown by `status`. The address carries the session's ref, so the message reaches the orchestrator even when other sessions on the machine have the same name. When no address is registered, the orchestrator session was closed or restarted (its ref changed), or sending fails, the executor writes the receipt file instead and reminds you to choose A in the orchestrator session.
-5. **Review.** The orchestrator sends the reviewer subagent to check each criterion, with one of three verdicts: 通过 (pass), 不通过 (fail), or 未验证 (unverified). Only when every criterion passes does it ask you to verify by hand; any failed or unverified criterion fails the work order directly, and you are never asked to fill the gap by hand. Tests that need real accounts or have external effects run only after you agree; see [Test authorization and evidence tools](#test-authorization-and-evidence-tools) below.
-6. **Commit.** After acceptance, choose to commit only, commit and push, or hand over to [`commit-message`](commit-message.en.md). The business changes and the records of the round go into one commit. If there are changes outside the receipt (for example, editor project files), the orchestrator lists them and asks whether to include them.
+1. **Review.** The orchestrator writes the work order and replies with "工单审阅" (work order review), listing only the review points and the order file path. The order can be issued only after you choose A; if the order changes after that, it is reviewed again.
+2. **Execution.** The orchestrator dispatches an executor subagent in the background and replies with "工单执行" (order running). The executor checks the commit and assumptions, plans, implements, checks itself, and writes the receipt. To stop and change the order midway, choose B in "工单执行".
+3. **Blocked.** When the executor hits a specification problem, or needs an action or decision from you, it explains in the receipt and stops. The orchestrator replies with "受阻处理" (blocked handling); once you have handled it and the order does not need to change, the same executor continues without a new review.
+4. **Review of the work.** The orchestrator sends the reviewer subagent to check each criterion; the only verdicts are pass, fail, and unverified. In "验收报告" (review report):
+   - Everything passes: you may verify by hand following the "人工验收" (manual verification) steps, then choose to commit, or commit and push.
+   - Something fails: the orchestrator first judges why; an order that was too large is split, otherwise a fix order follows.
+   - Only unverified criteria remain: you decide to accept as is and commit, or to follow up; accepted unverified criteria are recorded as risks.
+5. **Commit.** After acceptance, the orchestrator calls commit-message, and the business changes and records of the round become one commit. Changes outside the receipt are listed for you to decide.
 
-Work orders run strictly one at a time. If the same slice fails review twice in a row, the orchestrator suggests splitting it smaller.
+Work orders run strictly one after another. The orchestrator sizes each order by four limits (one executor run can finish it, one review can check it, it runs afterwards, risky parts are separate), one slice per order by default, and states the reason in the review points.
 
-Run-check orders and analysis orders only produce records: a run check builds, runs, and tests with the existing commands and records the results; an analysis covers hands-on investigation such as reverse engineering or research, and produces documents and evidence scripts. Their executor sessions can write only the receipt and the order folder's `artifacts/`, and changes to business files are denied. They need no code check commands, so they can be issued before selection. When one fails review, another order of the same kind follows, not a fix order.
+Run-check and analysis orders only produce records: a run-check builds, runs, and tests with the existing commands and records the results; an analysis order covers hands-on investigation such as reverse engineering or research, producing documents and evidence scripts. Their executors can write only the receipt and the order folder's `artifacts/`; they need no check commands and can be issued before selection. A rejected one is followed by a new order of the same kind.
 
-Every work order that changes code carries a fixed criterion, "代码检查通过" (code checks pass). The check commands are chosen during selection, using each language's established check tools with function length and complexity rules enabled, and they do not check `.navigator/` or `.claude/`. If the checks fail, the work order cannot pass review.
+Every work order that changes code carries a fixed criterion, "代码检查通过" (code checks pass). The check commands are chosen during selection, using mature checkers for the language with function length and complexity rules enabled, and exclude `.navigator/` and `.claude/`.
 
-A selection answers one question: can the chosen library do each requirement the order lists? The receipt has one row per requirement with the answer "能" (yes) or "不能" (no). The basis is the library's source (repository, version, path, lines) or, when the source does not show it, a temporary test written by the executor. The reviewer subagent fetches the source from the original repository with the `evidence` command, or reruns the test, in a single round. A selection order does not ask you to verify by hand: the review report lists the result for each requirement and you choose to adopt the selection or switch to another option. Requirements that did not check out are listed as they are; you can still adopt, and they are recorded as risks.
+Tests that need real accounts, cost money, or have external side effects are not run by the executor; it lists them under "外部影响" (external effects) in the receipt, and the reviewer judges from the output in the receipt instead of rerunning them. When a criterion can only be confirmed with an MCP tool such as a packet capture tool, the executor names the tool and where to look in the receipt, and the reviewer makes read-only queries with the same tool.
 
-### Test authorization and evidence tools
+A selection answers one question: can the chosen library do each requirement listed in the order. The receipt has one row per requirement, with "能" (yes) or "不能" (no), backed by the library's source (repository, version, path, lines), or by a temporary test when the source does not show it. The reviewer runs `evidence` to fetch the source from the original repository at that version. You decide whether to adopt the result; requirements that did not check out are recorded as risks.
 
-Some criteria can be confirmed only through an external tool or a real environment, for example a flow driven by a server-side state machine that can only be compared against captured traffic. When a receipt contains such tests, the orchestrator first replies with "测试授权" (test authorization), and you choose:
+## What a reply looks like
 
-- **A. Authorize.** Registered test commands are run by the reviewer subagent itself. MCP tools (for example, the query tools of the Reqable capture tool) are registered by their full names as evidence tools, and the reviewer subagent uses the same tool to look again at the location given in the receipt's "取证记录" (evidence record). Only the reviewer subagent can call evidence tools, never the orchestrator, and the registration applies to later work orders too. Authorize read-only tools only; do not register tools that send requests or clear records.
-- **B. Run it yourself.** Run the command, or look in the tool yourself, and paste the complete output as one message. The orchestrator writes the output unchanged into `user-tests.md` in the work order folder, the hook checks that it matches your pasted text word for word, and the reviewer subagent judges the criteria from that output. Hooks cannot see the output of commands run with `!`, so copy and paste it.
-
-Either way, the reviewer subagent gives the verdict, and any unverified criterion still fails the work order.
-
-## What replies look like
-
-Every orchestrator reply has the same structure: a type heading, the current progress, a few fixed sections, one option block, and a closing summary of at most 80 characters. For example, a work order announcement:
+Every reply from the orchestrator has the same structure: a type heading, a one-line conclusion, a progress line, a few sections, and an option block at the end. For example:
 
 ````markdown
-# 工单发布
+# 工单审阅
 
-## 当前进展
+结论: 工单 0007 补齐 HTTP/2 指纹, 需要你决定是否在仓库内维护 fhttp 补丁.
 
-- 当前阶段: 5/6 (切片)
-- 当前里程: 1/3 (导出报表)
-- 当前切片: 2/4 (导出 CSV)
-- 当前工单: 0007
+阶段 5/6 (切片) · 里程 3/5 (引擎跑通主线) · 切片 4/10 (HTTP/2 指纹) · 工单 0007
 
-## 工单概况
+## 审阅要点
 
-- 文件路径: .navigator/orders/0007-export-csv/order.md
-- 任务目标: 在报表页点击 "导出" 后下载当月数据的 CSV 文件
-- 判据数量: 0003
-- 计划要求: 必须先计划
-
-## 后续操作
-
-在仓库根目录新开一个 Claude Code 会话, 粘贴下面的启动提示词.
-
-```markdown
-执行工单 0007.
-(rest omitted)
-```
+- 任务目标: 调用方用指纹配置控制 HTTP/2 层的全部维度
+- 需要决定: 在仓库内维护 fhttp v0.7.3 的补丁, 实现伪头不索引
+- 明确不做: HTTP/1.1 与头部大小写, 留给切片 0005
+- 粒度依据: 整个切片一张工单, 改动集中在适配层与补丁
+- 工单文件: .navigator/orders/0007-http2-fingerprint/order.md
 
 ```
-[如何继续]
+[是否发布]
 
-A. 已发工单, 等待回执.
-B. 修改工单, 请提需求.
-```
-
-```text
-<- ++++++++++ ->
-工单 0007 已发布: 导出当月 CSV, 3 条判据. 请新开会话粘贴启动提示词.
+A. 发布工单, 开始执行.
+B. 需要修改, 请提需求.
 ```
 ````
 
-You only need to reply with an option letter, adding details after it when needed.
+The conclusion line alone tells you what is asked of you; the details follow for when you need them.
 
-## Records
+## Record files
 
 ```text
 .navigator/
-├── state.json          Progress, numbers, and statuses; changed only by the scripts
-├── bin/                Runtime scripts and reference files copied by init
-├── guide/executor.md   Executor guide
-├── plan/               Brief, glossary, research, brainstorm, main flow, roadmap, risks, decisions, changes, reviews, checkups
+├── state.json          progress, numbers, and status; changed only by plugin commands
+├── plan/               brief, glossary, research, brainstorming, main flow, roadmap, risks, decisions, changes, reviews, checkups
 └── orders/0007-export-csv/
-    ├── order.md        Work order
-    ├── receipt.md      Receipt
-    ├── user-tests.md   Output of tests you ran yourself (only when you choose to run them)
-    ├── artifacts/      Evidence files left by the executor, such as raw captures or reproduction scripts (only when needed)
-    └── review.md       Review record
+    ├── order.md        the work order
+    ├── receipt.md      the receipt
+    ├── artifacts/      evidence files left by the executor, such as raw captures and reproduction scripts (only when needed)
+    └── review.md       the review record
 ```
 
-- `plan/roadmap.md` and `plan/risks.md` are generated from the state. Do not edit them by hand.
-- `.navigator/drafts/` holds drafts the orchestrator uses to pass Chinese text to the scripts, and is not committed.
-- `artifacts/` in a work order folder holds evidence files left by the executor, such as raw captures and reproduction scripts. The executor can write there only after you choose A; the files are committed with the work order whatever their type, and the reviewer subagent reads them by path. A script in it runs during review only after test authorization.
-- Whenever the plugin or a session under the hooks writes a record, the scripts add the written file to the backup kept in the hidden Git ref `refs/navigator/snapshots`. The ref is not part of any branch history, and neither `git reset` nor `git checkout` removes it. The backup takes in only those writes, so changes to the records made by anything else are never absorbed silently and reconciliation can find them.
-- Which session is the orchestrator, and your choices in work order reviews, are registered on your machine in `.git/navigator/` and are not committed. Rolling back or restoring the records does not change a session's identity; on another machine, the first session that invokes the skill becomes the orchestrator.
-
-## Rollbacks and anomalies
-
-On every invocation, the skill compares the recorded commit, the current commit, and the latest backup:
-
-- You rolled back a commit, switched branches, or committed outside the workflow: it replies with "验收异常", and you choose to align the records with the repository, adopt the new commits, or survey again.
-- You edited files under `.navigator/` by hand, or rolled the records back with git (for example `git reset --hard` to the last commit, discarding records written after it): you choose to keep the current state or restore the backup.
-- After a squash merge, the records are unchanged, so the skill recognizes it and asks you to adopt it.
-
-Until the anomaly is resolved, the orchestrator pauses other operations, so a new backup cannot hide the anomaly; commands that change the orchestration state are refused and list the changed files. Rolling back the records does not take the running orchestrator session's identity away, so it replies with "验收异常" as usual.
+- `plan/roadmap.md` and `plan/risks.md` are generated from the state by plugin commands. Do not edit them by hand.
+- `.navigator/drafts/` holds drafts the orchestrator uses to pass Chinese text to commands. It is not committed.
+- Your choices in work order reviews are registered in the local `.git/navigator/`, which is not committed.
+- All records are in Git. If you roll back or edit the records, the skill continues from the current records; when they do not match reality, it says so and asks you which side to trust.
 
 ## Engineering standards
 
-At the start of the selection stage, the orchestrator compares three sets of standards: the general engineering standards bundled with the plugin, the project's existing standards (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`, formatter settings), and your machine's global standards. You decide each conflict, at most three at a time. The result is written to `.claude/rules/engineering.md`, which every session in the project loads automatically.
+At the start of selection, the orchestrator compares three sets of standards: the general engineering standards bundled with the plugin, the project's existing standards (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`, formatter configuration), and your global standards on this machine. You decide each conflict, at most 3 per round. The result is written to `.claude/rules/engineering.md`, which every session in the project loads automatically. Code comments default to Chinese; you can choose English or another language.
 
-Code comments default to Chinese, and you can choose English or another language instead. Every "开工对齐" reply shows the comment language as a reminder.
-
-## Checkups
+## Checkup
 
 Run `/waypoint:project-navigator check`, or let it run automatically at each milestone review. A checkup has two layers:
 
-- Script checks: structure against the templates, overly long sentences and paragraphs, long or deeply nested lists, jargon, metaphors, translationese, and sentences that start with a bare "它" or "这是".
-- Semantic checks: a reader subagent looks for invented abbreviations, undefined terms, unclear references, empty phrases, and more.
+- Script checks: whether the structure matches the templates, whether sentences and paragraphs are too long, whether lists are too long or too deep, and whether there is jargon, metaphor, translationese, or a sentence starting with a bare "它" or "这是".
+- Semantic checks: a reader subagent looks for made-up abbreviations, undefined terms, unclear references, empty phrases, and so on.
 
-The results come as an issue list, and you decide whether to fix them one by one or just record them.
+The result is a list of problems, and you decide whether to fix them one by one or only record them.
 
 ## FAQ
 
-**Why did "help me plan a project" not trigger the skill?**
+**Why didn't "help me plan a project" trigger the skill?**
 
-The skill runs only through `/waypoint:project-navigator`, so an ordinary conversation never starts the whole workflow by accident.
+The skill runs only when invoked explicitly with `/waypoint:project-navigator`, so a whole workflow never starts by accident in an ordinary conversation.
 
-**Can the orchestrator write a bit of code for me?**
+**Can the orchestrator write some code for me?**
 
-No. The hooks block the orchestrator from writing business code. When code needs to change, the orchestrator issues a work order for an executor session.
+No. Writes outside `.navigator/` by the orchestrator are denied. When code needs to change, the orchestrator issues a work order and an executor subagent does it.
 
-**Can I ask the orchestrator to install a dependency?**
+**Can I keep talking to the orchestrator while the executor works?**
 
-No. Installing dependencies, building, and running business scripts are implementation work and are blocked as well.
+Yes. The executor runs in the background, so you can ask questions or do other things; the orchestrator is notified and continues when the executor finishes.
 
-**A criterion can be confirmed only with an MCP tool such as a traffic capture. How is it reviewed?**
+**What happens to the executor's work if I close the orchestrator session?**
 
-The executor writes the tool and where to look in the receipt's "取证记录" (evidence record). Choose A in "测试授权" and register the read-only query tools as evidence tools, and the reviewer subagent looks for itself; choose B, and you look and paste the result. Do not clear the records in the tool before the review ends.
+The executor belongs to the session that started it. When a new session invokes the skill, a written receipt is reviewed as usual; without one, the orchestrator dispatches a new executor.
 
-**I chose to commit only, but the orchestrator says it has no permission to commit?**
+**Can the orchestrator write something outside the workflow, such as a problem report for the plugin's maintainers?**
 
-In the commit step, the hooks allow only a few fixed forms: `git add -- <paths...>`, `git commit -F -` with the message on standard input, and `git push` without force options. `-m` and `-F <file>` are denied, and the denial gives the allowed forms, so the orchestrator switches to one of them; you do not need to commit by hand.
-
-**Can the orchestrator push to the remote after the project is closed?**
-
-Yes. Once the project is complete and all records are committed, choose B in "项目完成" and the orchestrator runs `git push` without force options. In the middle of orchestration it only pushes together with a commit in the commit step; at other times, run `git push` yourself.
-
-**Can the orchestrator write something outside the workflow, such as an issue report for the plugin maintainers?**
-
-Yes. Just ask. The orchestrator replies with "自由答复" (free-form answer) and writes the content under "答复内容" in the format you asked for, code blocks included. Choose `A` afterwards to go back to the workflow.
-
-**The work order is already issued. Can I still change it?**
-
-Yes. Choose B in "工单发布" or "等待回执" and describe the change. The orchestrator withdraws the work order, makes the change, and replies with "工单审阅" for you to confirm; after it is issued again, the executor has to align again, and the old receipt is archived automatically.
-
-**The previous orchestrator session says "本会话已不是编排会话" (this session is no longer the orchestrator). What now?**
-
-Another session invoked the skill and took over orchestration. Continue in that session, or invoke `/waypoint:project-navigator` again in the previous session to take orchestration back.
+Yes. Just ask. The orchestrator replies with "自由答复" (free answer) and writes it in "答复内容" (answer) in the format you ask for, code blocks included. Choose `A` afterwards to return to the workflow.
 
 **Can several work orders run in parallel?**
 
-No. Work orders run strictly one at a time, so each one has a well-defined base commit and review result.
+No. Work orders run strictly one after another, so each order's base commit and review result are well defined.
 
-**How do I stop using it?**
+**How do I stop using the skill?**
 
-Run `/waypoint:project-navigator uninstall`. The hooks and allow rules are removed, all records in `.navigator/` are kept, and you can initialize again later.
+Run `/waypoint:project-navigator uninstall`. The permission rules are removed, the plugin's hooks stop acting in this project, and all records in `.navigator/` are kept, so you can initialize again later.
 
 ## Known limitations
 
-- Every machine that works on the project needs Node.js 22 or later, or the guard hooks cannot run.
-- In an initialized project, every tool call starts Node.js once more, which took about 70 milliseconds in local measurements.
-- Writing requirements such as plain Chinese rely mainly on prompts and checkups. The script checks are approximations and can miss issues or flag false ones.
-- A reply with a format problem is sent back for one rewrite, but the faulty version stays on the screen.
-- File edits made through shell commands, and the way other sessions run plugin commands, are checked only roughly from the command text, and the hooks do not restrict what you do in your own editor or terminal.
-- Message reports require the orchestrator and executor sessions to be open at the same time on the same machine.
-- Source evidence supports only public git repositories; a dependency without a public repository is marked unverified, and you decide whether to accept that risk.
-- Evidence tools see the external tool's records as they are at review time. If the records were cleared before the review, or the tool is not running, the affected criteria are marked unverified.
-- The last 20 messages the orchestrator received are kept on your machine in `.git/navigator/prompts.json` to check the test output you paste. They are not committed.
+- Every machine that works on the project needs Node.js 22 or later.
+- The plugin's hooks fire in every project, starting Node.js once for each write tool call and each message; in projects that are not initialized the script exits at once, about 70 ms on a local measurement.
+- The guard checks only the target paths of write tools, not shell commands: if the orchestrator changes code or installs dependencies from the command line, only the skill's rules stop it.
+- Writing requirements such as plain Chinese rely mainly on prompts and checkups, and replies are not sent back for writing rules; the script checks are approximate.
+- A reply with a broken structure is sent back for one rewrite, but the broken version stays on screen.
+- The executor cannot ask you questions while it works; anything that needs your decision ends the run as blocked and is handled afterwards.
+- Source evidence supports only public git repositories; a dependency without one is judged unverified, and you decide whether to accept the risk.
+- MCP evidence tools see what the external tool recorded at the time. If the records are cleared before the review, or the tool is not running, the related criteria are judged unverified.

@@ -1,9 +1,8 @@
 /**
- * @file reply 命令在骨架之前给出的填写要求: 版式要点, 人类总结的字数上限,
- * 以及回复结束时会被打回的写作规则.
+ * @file reply 命令在骨架之前给出的填写要求: 版式要点, 结论行的写法, 以及写作建议.
  *
- * 要求在填写的时刻出现在模型眼前, 回复结束时的校验只做兜底. 内容全部由规格生成,
- * 与校验使用同一份阈值与词表. 输出格式与人类总结一条也供 template 的填写要求使用.
+ * 回复结束时只校验结构 (标题, 结论行, 选项块); 结论的字数与写作规则都是提醒,
+ * 不打回. 内容全部由规格生成, 与体检使用同一份阈值与词表.
  */
 
 import { FREEFORM_RULE } from "./freeform-sections.mjs";
@@ -13,10 +12,10 @@ import { UNIT_RULE } from "./text-units.mjs";
 import { describeWritingRules } from "./writing-rules.mjs";
 
 /**
- * 回复结束时会被打回的写作规则级别.
+ * 写作建议中列出的规则级别.
  * @type {string}
  */
-const BLOCKING_SEVERITY = "problem";
+const ADVISED_SEVERITY = "problem";
 
 /**
  * 按词表检查的写作规则, 填写要求中直接列出词表.
@@ -31,27 +30,41 @@ const WORD_LIST_RULES = Object.freeze(["jargon", "metaphor"]);
 const FILE_ONLY_RULES = Object.freeze(["structure"]);
 
 /**
- * 回复结束时会检查写作规则的回复方; 执行会话的回复只检查版式.
- * @type {string}
- */
-const WRITING_CHECKED_ROLE = "orchestrator";
-
-/**
  * 生成填写要求, 以 "骨架:" 与一个空行结束, 其后紧接骨架.
  *
  * @param {object} options 生成参数.
  * @param {string} options.type 回复类型, 即骨架的一级标题.
- * @param {"orchestrator" | "executor"} options.role 回复方.
  * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
  * @returns {string[]} 各行.
  */
-export function renderReplyGuide({ type, role, spec }) {
+export function renderReplyGuide({ type, spec }) {
   return wrapGuide([
-    `- 回复从下面的 "# ${type}" 写起, 前面不加引导语. 只替换 "${PLACEHOLDER}", 标题, 键名, 当前进展与选项块原样保留.`,
+    `- 回复从下面的 "# ${type}" 写起, 前面不加引导语. 只替换 "${PLACEHOLDER}", 标题, 进展行与选项块原样保留.`,
+    conclusionRule(spec.format),
     ...freeformLines(spec.replies[type]),
-    summaryRule(spec.format),
-    ...(role === WRITING_CHECKED_ROLE ? writingLines(spec.writing) : []),
+    ...writingLines(spec.writing),
   ]);
+}
+
+/**
+ * 给填写要求的各条加上开头 "填写要求:" 与结尾 "骨架:", 其后紧接骨架.
+ * reply 与 template 两个命令的输出共用这一格式.
+ *
+ * @param {readonly string[]} rules 各条要求, 每条一行.
+ * @returns {string[]} 各行.
+ */
+export function wrapGuide(rules) {
+  return ["填写要求:", "", ...rules, "", "骨架:", ""];
+}
+
+/**
+ * 结论行的写法: 用户只读这一行也能知道结果与要做的选择.
+ *
+ * @param {import("./spec.mjs").FormatSpec} format 全局版式规则.
+ * @returns {string} 一条要求.
+ */
+function conclusionRule(format) {
+  return `- "${format.conclusionLabel}:" 一行写给人看: 先说结果, 再说要用户做的选择, 尽量不超过 ${format.conclusionMaxLength} 字, 不铺垫, 不复述. 读者注意力有限, 只读这一行也要能做决定. ${UNIT_RULE}`;
 }
 
 /**
@@ -67,46 +80,25 @@ function freeformLines(reply) {
 }
 
 /**
- * 给填写要求的各条加上开头 "填写要求:" 与结尾 "骨架:", 其后紧接骨架.
- * reply 与 template 两个命令的输出共用这一格式.
- *
- * @param {readonly string[]} rules 各条要求, 每条一行.
- * @returns {string[]} 各行.
- */
-export function wrapGuide(rules) {
-  return ["填写要求:", "", ...rules, "", "骨架:", ""];
-}
-
-/**
- * 人类总结的写法与字数上限.
- *
- * @param {import("./spec.mjs").FormatSpec} format 全局版式规则.
- * @returns {string} 一条要求.
- */
-export function summaryRule(format) {
-  return `- 人类总结只写结论与要用户做的选择, 不超过 ${format.summaryMaxLength} 字. ${UNIT_RULE}`;
-}
-
-/**
- * 列出回复结束时会被打回的写作规则与禁用词.
+ * 列出写作建议与禁用词; 只作提醒, 回复结束时不按这些规则打回.
  *
  * @param {import("./spec.mjs").WritingSpec} writing 写作规则.
  * @returns {string[]} 各行.
  */
 function writingLines(writing) {
   const descriptions = describeWritingRules(writing);
-  const blocking = Object.entries(writing).filter(
+  const advised = Object.entries(writing).filter(
     ([key, rule]) =>
-      rule.severity === BLOCKING_SEVERITY && !FILE_ONLY_RULES.includes(key),
+      rule.severity === ADVISED_SEVERITY && !FILE_ONLY_RULES.includes(key),
   );
-  const conditions = blocking
+  const conditions = advised
     .filter(([key]) => !WORD_LIST_RULES.includes(key))
     .map(([key]) => descriptions[key]);
-  const words = blocking
+  const words = advised
     .filter(([key]) => WORD_LIST_RULES.includes(key))
     .flatMap(([, rule]) => rule.words ?? []);
   return [
-    `- 以下情况会被打回: ${conditions.join("; ")}.`,
+    `- 写作建议: 避免${conditions.join("; ")}.`,
     `- 不用这些词: ${words.join(", ")}.`,
   ];
 }

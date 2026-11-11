@@ -1,91 +1,82 @@
 /**
- * @file init 命令: 初始化或升级项目, 以及确认自检结果.
+ * @file init 命令: 初始化项目, 或把 1.0.0 之前初始化的项目升级到新的结构.
  *
- * 初始化分两步: 第一步写入状态目录, 运行脚本副本与 hook 配置, 并发出自检请求;
- * 编排会话随后尝试一次被禁止的写入, 守卫拦下时留下心跳; 第二步 (`--verify`)
- * 核对心跳, 确认 hook 在当前会话中已经生效. 写入之前先检查状态目录中必须入库的
- * 路径是否会被项目的忽略规则漏掉. 自检通过时有尚未入库的技能产物, 就登记一次
- * 阶段提交 (空仓库的首次提交也由此完成).
+ * 初始化写入状态目录, 术语表与放行规则; hook 由插件提供, 不写进项目配置, 也不
+ * 需要自检. 写入之前先检查必须入库的路径是否会被项目的忽略规则漏掉.
  *
- * 第一步只能由技能目录中的脚本运行, 项目中的副本拒绝运行 (原因见
- * lib/runtime-source.mjs); 第二步由项目中的副本运行.
+ * 升级时另外清理旧版本写进项目的内容: 项目配置中的项目级 hook 与旧放行规则,
+ * `.navigator/bin/` 下的脚本副本与 `.navigator/guide/`, 运行期登记目录中的会话
+ * 登记等文件, 以及快照引用. 已发布但还没有回执的工单撤回为起草中, 重新审阅后
+ * 由执行子代理处理. 编排记录全部保留.
  */
 
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { readSettledState } from "../lib/commit-settlement.mjs";
-import { requestStageCommit } from "../lib/commit-step.mjs";
 import { checkEnvironment } from "../lib/environment.mjs";
 import {
-  EXECUTOR_GUIDE_FILE,
   GLOSSARY_FILE,
-  GUIDE_SOURCE_FILE,
+  LEGACY_BIN_DIRECTORY,
+  LEGACY_GUIDE_DIRECTORY,
+  LEGACY_REGISTRY_ENTRIES,
+  LEGACY_SNAPSHOT_REF,
   NAVIGATOR_DIRECTORY,
   NAVIGATOR_ENTRIES,
   ORDER_ARTIFACTS_DIRECTORY,
-  PROBE_FILE,
-  PROJECT_COMMAND_PATH,
   PROJECT_LOCAL_SETTINGS_FILE,
   PROJECT_SETTINGS_FILE,
-  RUNTIME_COPY_DIRECTORIES,
-  RUNTIME_VERSION_FILE,
-  SKILL_ROOT,
   navigatorPath,
+  orderFilePath,
+  registryDirectory,
 } from "../lib/paths.mjs";
-import { clearPendingWrites } from "../lib/pending-writes.mjs";
-import { readProbeState, writeProbeRequest } from "../lib/registry.mjs";
 import { renderGlossarySeed } from "../lib/render-plan.mjs";
 import {
+  deleteRef,
   ensureLocallyIgnored,
   findIgnoredPaths,
-  headCommit,
 } from "../lib/repo.mjs";
-import { installCommand, isProjectCopy } from "../lib/runtime-source.mjs";
 import {
-  claimOrchestratorSession,
-  ensureOrchestratorRecord,
-} from "../lib/sessions.mjs";
-import {
-  mergeNavigatorHooks,
   mergeNavigatorPermissions,
   readSettingsFile,
+  removeLegacyHooks,
   writeSettingsFile,
 } from "../lib/settings.mjs";
-import { takeSnapshot } from "../lib/snapshots.mjs";
 import { loadSpec } from "../lib/spec.mjs";
 import {
   INIT_ACTIVE,
-  INIT_PENDING,
   createInitialState,
+  readStateIfValid,
   writeState,
 } from "../lib/state.mjs";
 import {
-  listUncommittedProducts,
   requiredTrackedPaths,
   summarizeIgnoredPaths,
 } from "../lib/tracked-paths.mjs";
 import { runtimeVersion } from "../lib/version.mjs";
-import { WorkflowError } from "../lib/workflow-error.mjs";
+import { recordCommitStep } from "./support.mjs";
 
 /**
  * 状态目录中需要预先创建的空目录.
- * @type {readonly ("plan" | "orders" | "drafts" | "guide")[]}
+ * @type {readonly ("plan" | "orders" | "drafts")[]}
  */
-const EMPTY_DIRECTORIES = Object.freeze(["plan", "orders", "drafts", "guide"]);
+const EMPTY_DIRECTORIES = Object.freeze(["plan", "orders", "drafts"]);
+
+/**
+ * 发布状态; 升级时没有回执的已发布工单撤回为起草中.
+ * @type {string}
+ */
+const ISSUED_STATUS = "issued";
 
 /**
  * 状态目录内 `.gitignore` 的内容. 先重新纳入各级目录与插件写入的文件类型,
- * 避免项目中 `bin/`, `lib/`, `*.json` 之类的规则漏掉运行脚本与记录; 工单的
- * 证据文件类型不固定 (例如脚本, 抓包导出), 整个目录重新纳入. 其它文件 (例如
- * 系统与编辑器生成的文件) 仍按项目规则处理. 最后排除草稿: 草稿只是命令行脚本
- * 的输入, 不入库. 后写的规则优先.
+ * 避免项目中 `*.json` 之类的规则漏掉记录; 工单的证据文件类型不固定 (例如脚本,
+ * 抓包导出), 整个目录重新纳入. 其它文件 (例如系统与编辑器生成的文件) 仍按项目
+ * 规则处理. 最后排除草稿: 草稿只是命令的输入, 不入库. 后写的规则优先.
  * @type {string}
  */
 const NAVIGATOR_GITIGNORE = [
   "!*/",
   "!*.md",
-  "!*.mjs",
   "!*.json",
   "!.gitignore",
   `!${NAVIGATOR_ENTRIES.orders}/*/${ORDER_ARTIFACTS_DIRECTORY}/**`,
@@ -98,13 +89,10 @@ const NAVIGATOR_GITIGNORE = [
  *
  * @param {object} options 命令参数.
  * @param {string} options.cwd 会话工作目录.
- * @param {string | undefined} options.sessionId 发起初始化的会话.
- * @param {boolean} options.isVerify 是否只确认自检结果.
  * @param {string} options.now 当前时间, ISO 格式.
  * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 用项目中的副本运行第一步时.
  */
-export function runInit({ cwd, sessionId, isVerify, now }) {
+export function runInit({ cwd, now }) {
   const environment = checkEnvironment(cwd);
   if (environment.repositoryRoot === undefined) {
     return [
@@ -118,27 +106,18 @@ export function runInit({ cwd, sessionId, isVerify, now }) {
       `- 运行环境: Node.js ${environment.nodeVersion} 版本过低, 需要 22 或更高版本`,
     ];
   }
-  if (isVerify) {
-    return verifyProbe(environment.repositoryRoot, now);
-  }
-  if (isProjectCopy(environment.repositoryRoot)) {
-    throw new WorkflowError(
-      `init 只能用技能目录中的脚本运行. 这条命令运行的是项目中的副本 (版本 ${runtimeVersion()}), 副本不能初始化, 修复或升级项目, 项目没有任何改动. 改为运行 ${installCommand(environment.repositoryRoot, sessionId)}: 技能目录是技能内容开头 "Base directory for this skill" 一行给出的路径, 完整的命令见技能内容 "初始设置" 第 2 步.`,
-    );
-  }
-  return installNavigator(environment.repositoryRoot, sessionId, now);
+  return installNavigator(environment.repositoryRoot, now);
 }
 
 /**
- * 写入状态目录, 运行脚本副本与 hook 配置, 并发出自检请求. 先写入状态目录的
+ * 写入状态目录, 术语表与放行规则, 并清理旧版本的内容. 先写入状态目录的
  * `.gitignore` 并检查必须入库的路径, 仍有路径被忽略时不做其它改动.
  *
  * @param {string} projectRoot 项目根目录.
- * @param {string | undefined} sessionId 发起初始化的会话.
  * @param {string} now 当前时间.
  * @returns {string[]} 输出各行.
  */
-function installNavigator(projectRoot, sessionId, now) {
+function installNavigator(projectRoot, now) {
   writeIgnoreFile(projectRoot);
   const ignored = findIgnoredPaths(
     projectRoot,
@@ -148,41 +127,62 @@ function installNavigator(projectRoot, sessionId, now) {
     return ignoredPathLines(ignored);
   }
   const version = runtimeVersion();
-  const existing = readSettledState(projectRoot);
+  const existing = readStateIfValid(projectRoot);
   createDirectories(projectRoot);
-  copyRuntime(projectRoot, version);
-  copyExecutorGuide(projectRoot);
   seedGlossary(projectRoot);
-  ensureOrchestratorRecord(projectRoot);
-  if (sessionId !== undefined) {
-    claimOrchestratorSession(projectRoot, sessionId, now);
-  }
-  const state =
-    existing === undefined
-      ? {
-          ...createInitialState({ skillVersion: version, now }),
-          lastCommit: headCommit(projectRoot) ?? null,
-        }
-      : {
-          ...existing,
-          skillVersion: version,
-          init: { ...existing.init, status: INIT_PENDING },
-        };
-  writeState(projectRoot, state, now);
   installSettings(projectRoot);
-  writeProbeRequest(projectRoot, now);
+  const removed = removeLegacyContent(projectRoot);
+  writeState(
+    projectRoot,
+    existing === undefined
+      ? createInitialState({ skillVersion: version, now })
+      : migrateState(projectRoot, existing, version),
+    now,
+  );
+  const commit = recordCommitStep(
+    projectRoot,
+    existing === undefined ? "初始化" : "升级",
+    { includeState: true },
+  );
   return [
-    `- 设置结果: ${existing === undefined ? "已写入" : "已升级"}, 等待自检`,
+    `- 设置结果: ${existing === undefined ? "已写入" : "已升级"}`,
     `- 状态目录: ${NAVIGATOR_DIRECTORY}/`,
-    `- 防护配置: hook 与放行规则已合并进 ${PROJECT_SETTINGS_FILE}, 放行规则另存一份到本机的 ${PROJECT_LOCAL_SETTINGS_FILE}`,
+    `- 放行规则: 已合并进 ${PROJECT_SETTINGS_FILE}, 另存一份到本机的 ${PROJECT_LOCAL_SETTINGS_FILE}`,
+    ...(removed.length === 0 ? [] : [`- 清理旧版本: ${removed.join(", ")}`]),
     `- 技能版本: ${version}`,
-    `- 自检步骤: 用 Write 工具写入 ${path.join(projectRoot, PROBE_FILE)}, 内容任意, 预期被拒绝; 然后运行 node ${PROJECT_COMMAND_PATH} init --verify`,
+    `- 下一动作: ${commit === undefined ? "" : `${commit}; 然后`}运行 status, 按其中的下一动作继续`,
   ];
 }
 
 /**
- * 合并配置: hook 与放行规则写入入库的项目配置, 放行规则另写一份到本机配置,
- * 并确保本机配置不被纳入版本控制.
+ * 升级已有状态: 更新技能版本, 恢复为已初始化; 已发布但还没有回执的工单撤回为
+ * 起草中, 重新审阅后由执行子代理处理.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @param {import("../lib/state.mjs").NavigatorState} state 已有状态.
+ * @param {string} version 技能版本.
+ * @returns {import("../lib/state.mjs").NavigatorState} 升级后的状态.
+ */
+function migrateState(projectRoot, state, version) {
+  const order = state.order;
+  const isWaitingIssued =
+    order !== null &&
+    order.status === ISSUED_STATUS &&
+    !existsSync(path.join(projectRoot, orderFilePath(order.folder, "receipt")));
+  return {
+    ...state,
+    skillVersion: version,
+    init: { ...state.init, status: INIT_ACTIVE },
+    order: isWaitingIssued ? { ...order, status: "drafting" } : order,
+    lastAction: isWaitingIssued
+      ? `升级到 ${version}, 工单 ${order.id} 撤回为起草中`
+      : `升级到 ${version}`,
+  };
+}
+
+/**
+ * 写入放行规则: 入库的项目配置与本机配置各一份, 项目配置中移除旧版本的
+ * 项目级 hook, 并确保本机配置不被纳入版本控制.
  *
  * @param {string} projectRoot 项目根目录.
  * @returns {void}
@@ -192,7 +192,7 @@ function installSettings(projectRoot) {
     projectRoot,
     PROJECT_SETTINGS_FILE,
     mergeNavigatorPermissions(
-      mergeNavigatorHooks(readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE)),
+      removeLegacyHooks(readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE)),
     ),
   );
   ensureLocallyIgnored(projectRoot, PROJECT_LOCAL_SETTINGS_FILE);
@@ -206,45 +206,32 @@ function installSettings(projectRoot) {
 }
 
 /**
- * 核对自检心跳, 通过后把初始化状态改为生效.
+ * 清理旧版本写进项目的内容: 脚本副本, 执行手册副本, 运行期登记中的旧文件,
+ * 快照引用.
  *
  * @param {string} projectRoot 项目根目录.
- * @param {string} now 当前时间.
- * @returns {string[]} 输出各行.
+ * @returns {string[]} 实际清理掉的项目, 用于输出.
  */
-function verifyProbe(projectRoot, now) {
-  const state = readSettledState(projectRoot);
-  if (state === undefined) {
-    return ["- 自检结果: 未通过, 尚未初始化, 请先运行 init"];
-  }
-  const { request, heartbeat } = readProbeState(projectRoot);
-  const isProbeFileAbsent = !existsSync(path.join(projectRoot, PROBE_FILE));
-  const isHeartbeatFresh =
-    request !== undefined &&
-    heartbeat !== undefined &&
-    heartbeat.deniedAt >= request.requestedAt;
-  if (!isHeartbeatFresh || !isProbeFileAbsent) {
-    rmSync(path.join(projectRoot, PROBE_FILE), { force: true });
-    return [
-      "- 自检结果: 未通过, 守卫没有拦下探测写入",
-      "- 可能原因: 当前会话尚未加载新的 hook 配置",
-      "- 处理办法: 重启 Claude Code 会话后重新调用技能, 再做一次自检",
-    ];
-  }
-  const verified = {
-    ...state,
-    init: { ...state.init, status: INIT_ACTIVE, verifiedAt: now },
-  };
-  writeState(
-    projectRoot,
-    listUncommittedProducts(projectRoot).length > 0
-      ? requestStageCommit(verified, state.stage === null ? "初始化" : "升级")
-      : verified,
-    now,
+function removeLegacyContent(projectRoot) {
+  const directories = [LEGACY_BIN_DIRECTORY, LEGACY_GUIDE_DIRECTORY].filter(
+    (directory) => existsSync(path.join(projectRoot, directory)),
   );
-  takeSnapshot(projectRoot, { now, head: headCommit(projectRoot) });
-  clearPendingWrites(projectRoot);
-  return ["- 自检结果: 通过, 防护已生效"];
+  for (const directory of directories) {
+    rmSync(path.join(projectRoot, directory), { recursive: true, force: true });
+  }
+  const registry = registryDirectory(projectRoot);
+  const entries = LEGACY_REGISTRY_ENTRIES.filter((entry) =>
+    existsSync(path.join(registry, entry)),
+  );
+  for (const entry of entries) {
+    rmSync(path.join(registry, entry), { recursive: true, force: true });
+  }
+  const isSnapshotRemoved = deleteRef(projectRoot, LEGACY_SNAPSHOT_REF);
+  return [
+    ...directories.map((directory) => `${directory}/`),
+    ...(entries.length === 0 ? [] : ["旧的会话登记与快照记录"]),
+    ...(isSnapshotRemoved ? [LEGACY_SNAPSHOT_REF] : []),
+  ];
 }
 
 /**
@@ -261,18 +248,6 @@ function seedGlossary(projectRoot) {
 }
 
 /**
- * 把技能目录中的执行手册复制进状态目录; 执行会话在仓库内读取这一份.
- *
- * @param {string} projectRoot 项目根目录.
- * @returns {void}
- */
-function copyExecutorGuide(projectRoot) {
-  if (existsSync(GUIDE_SOURCE_FILE)) {
-    cpSync(GUIDE_SOURCE_FILE, path.join(projectRoot, EXECUTOR_GUIDE_FILE));
-  }
-}
-
-/**
  * 生成必须入库的路径被忽略时的输出: 按忽略规则分组, 写明影响的路径数与一个例子.
  *
  * @param {import("../lib/repo.mjs").IgnoredPath[]} ignored 被忽略的路径.
@@ -280,7 +255,7 @@ function copyExecutorGuide(projectRoot) {
  */
 function ignoredPathLines(ignored) {
   return [
-    "- 设置结果: 未执行, 编排记录, 运行脚本或项目配置会被 Git 忽略, 无法入库",
+    "- 设置结果: 未执行, 编排记录或项目配置会被 Git 忽略, 无法入库",
     ...summarizeIgnoredPaths(ignored).map(
       (summary) => `- 忽略规则: ${summary}`,
     ),
@@ -313,25 +288,4 @@ function createDirectories(projectRoot) {
   for (const entry of EMPTY_DIRECTORIES) {
     mkdirSync(navigatorPath(projectRoot, entry), { recursive: true });
   }
-}
-
-/**
- * 把运行脚本与规格复制进 `.navigator/bin/`, 并写入版本文件.
- *
- * @param {string} projectRoot 项目根目录.
- * @param {string} version 技能版本.
- * @returns {void}
- */
-function copyRuntime(projectRoot, version) {
-  const binDirectory = navigatorPath(projectRoot, "bin");
-  for (const directory of RUNTIME_COPY_DIRECTORIES) {
-    const target = path.join(binDirectory, directory);
-    rmSync(target, { recursive: true, force: true });
-    cpSync(path.join(SKILL_ROOT, directory), target, { recursive: true });
-  }
-  writeFileSync(
-    path.join(binDirectory, RUNTIME_VERSION_FILE),
-    `${JSON.stringify({ version }, null, 2)}\n`,
-    "utf8",
-  );
 }
