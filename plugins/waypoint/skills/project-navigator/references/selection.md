@@ -9,7 +9,7 @@
 
 ## 规范对照 (standards)
 
-1. 运行 `ref standards` 取得插件默认包全文. 派 `waypoint:navigator-reader` 对比三处规范, 默认包全文放进委派提示词; 要求交回一致, 只有一方有, 互相矛盾三类条目, 每条附文件路径与原文摘录:
+1. 运行 `ref standards` 取得插件默认包全文. 派 `waypoint:navigator-reader` 对比三处规范, 默认包全文放进委派提示词; 子代理没回来就要结束本轮时, 回复 "等待结果". 要求交回一致, 只有一方有, 互相矛盾三类条目, 每条附文件路径与原文摘录:
    - 插件默认包: 委派提示词中的全文
    - 项目已有规范: `CLAUDE.md`, `AGENTS.md`, `.claude/rules/`, 格式化与检查配置
    - 本机全局规范: `~/.claude/CLAUDE.md`, `~/.claude/rules/`

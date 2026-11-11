@@ -83,6 +83,7 @@ allowed-tools: Bash(node *) PowerShell(node *) Bash(project-navigator *) PowerSh
 - 验收: `waypoint:navigator-reviewer`, 提示词是 `review-brief` 的输出原文.
 - 问题域调研: `waypoint:navigator-researcher`, 提示词以 `research-brief` 的输出开头, 其后只写调研问题.
 - 盘点, 规范对照与语义体检: `waypoint:navigator-reader`, 或 Explore.
+- 调研与阅读子代理在后台运行, 本轮要先结束时回复 "等待结果" (`reply waiting`): "等待对象" 写子代理, "任务内容" 写它在查什么, "后续动作" 写结果回来后做什么; 不写其它说明. 这条回复不带选项块.
 - 委派提示词原样使用, 不增删内容. 不建 Agent Team.
 
 ## 初始设置

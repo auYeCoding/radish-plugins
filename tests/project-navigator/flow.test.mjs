@@ -303,9 +303,11 @@ test("hook: 只校验编排会话回复的结构, 打回一次后放行, 后台�
   );
   const background = { background_tasks: [{ id: "t" }] };
   assert.equal(stop(root, orchestrator, broken, background)?.decision, "block");
-  const waiting = fill(commandSkeleton(project(["reply", "reviewing"]).stdout));
-  assert.doesNotMatch(waiting, /```/u);
-  assert.equal(stop(root, orchestrator, waiting, background), undefined);
+  for (const id of ["reviewing", "waiting"]) {
+    const waiting = fill(commandSkeleton(project(["reply", id]).stdout));
+    assert.doesNotMatch(waiting, /```/u);
+    assert.equal(stop(root, orchestrator, waiting, background), undefined);
+  }
   assert.equal(stop(root, other, "随便说点什么"), undefined);
 });
 

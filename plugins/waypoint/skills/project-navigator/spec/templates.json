@@ -313,6 +313,13 @@
       ],
       "optionSets": []
     },
+    "等待结果": {
+      "id": "waiting",
+      "sections": [
+        { "title": "等待情况", "keys": ["等待对象", "任务内容", "后续动作"] }
+      ],
+      "optionSets": []
+    },
     "验收报告": {
       "id": "review",
       "orderStage": "待你决定",

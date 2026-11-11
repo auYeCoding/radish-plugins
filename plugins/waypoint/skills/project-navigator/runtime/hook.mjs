@@ -239,7 +239,7 @@ function handleSessionStart({ input, state, isOrchestrator }) {
  * 或本轮不校验时, 开始等待用户对工单审阅的选择.
  *
  * `stop_hook_active` 为 true 表示本轮已被打回过, 此时不再校验, 避免循环.
- * 有后台任务时照常校验: 等待子代理的回复有自己的类型 ("工单执行", "工单验收").
+ * 有后台任务时照常校验: 等待子代理的回复有自己的类型 ("工单执行", "工单验收", "等待结果").
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.

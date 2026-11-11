@@ -15,7 +15,7 @@
 | survey-runcheck | 发布运行检查工单   | 工单审阅 |
 | survey-report   | 写现状报告         | 产出确认 |
 
-1. survey-read: 派 `waypoint:navigator-reader` (仓库很大时可以派 Explore). 要求交回以下内容, 每条附文件路径:
+1. survey-read: 派 `waypoint:navigator-reader` (仓库很大时可以派 Explore); 子代理没回来就要结束本轮时, 回复 "等待结果". 要求交回以下内容, 每条附文件路径:
    - 目录结构与模块划分, 技术栈与主要依赖, 程序入口.
    - 构建, 启动与测试命令.
    - 已有功能清单.
@@ -45,7 +45,7 @@
 
 ### 问题域调研 (research)
 
-1. 运行 `research-brief` 取得固定框架. 派 `waypoint:navigator-researcher`, 提示词是框架原文加上编号列出的调研问题. 守卫会核对框架没有被改动.
+1. 运行 `research-brief` 取得固定框架. 派 `waypoint:navigator-researcher`, 提示词是框架原文加上编号列出的调研问题. 守卫会核对框架没有被改动. 子代理没回来就要结束本轮时, 回复 "等待结果".
 2. 运行 `template research`, 用子代理交回的结果写 `.navigator/plan/research.md`. "关键术语" 同步写进术语表 `.navigator/plan/glossary.md` 的 "项目术语".
 3. 查到的技术话题只写进 "选型问题", 不讨论, 留给阶段 3.
 4. 回复 "调研报告": "已知事实", "关键假设", "未知事项" 三节各列最重要的条目, 每条附依据. 只问一个问题: 哪条与你的认知不符.
