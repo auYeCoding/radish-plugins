@@ -1,6 +1,6 @@
 /**
  * @file template 命令: 输出某种记录文件的填写要求与骨架, "当前进展" 已按状态填好.
- * 会改动代码的工单, 验收判据第一条预填代码检查判据.
+ * 工单骨架预填基准提交 (当前提交); 会改动代码的工单, 验收判据第一条预填代码检查判据.
  *
  * 用法: template <文件种类> [--option <结构编号>], 文件种类为规格 files 中的键,
  * 例如 order, receipt, review, brief. 回执有两种结构: 1 为实现类, 2 为选型类.
@@ -8,6 +8,7 @@
 
 import { orderSkeletonPrefills } from "../lib/code-checks.mjs";
 import { renderFileGuide } from "../lib/file-guide.mjs";
+import { orderSkeletonValues } from "../lib/order-base.mjs";
 import { fileSections, renderFileSkeleton } from "../lib/render.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import { loadSpec } from "../lib/spec.mjs";
@@ -15,7 +16,7 @@ import { readStateIfValid } from "../lib/state.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 
 /**
- * 工单文件的种类名; 工单骨架按当前工单预填代码检查判据.
+ * 工单文件的种类名; 工单骨架预填基准提交, 并按当前工单预填代码检查判据.
  * @type {string}
  */
 const ORDER_FILE_KIND = "order";
@@ -49,6 +50,7 @@ export function runTemplate({ positionals, values, cwd }) {
     state,
     spec,
     prefills: kind === ORDER_FILE_KIND ? orderSkeletonPrefills(state) : {},
+    values: kind === ORDER_FILE_KIND ? orderSkeletonValues(projectRoot) : {},
   });
   return [
     ...renderFileGuide({

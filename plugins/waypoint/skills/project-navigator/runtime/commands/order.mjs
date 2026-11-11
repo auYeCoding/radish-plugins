@@ -26,6 +26,7 @@ import {
   readApprovalStatus,
   readOrderText,
 } from "../lib/order-approval.mjs";
+import { baseCommitBlocker } from "../lib/order-base.mjs";
 import { orderFilePath, projectRelativePath } from "../lib/paths.mjs";
 import { headCommit } from "../lib/repo.mjs";
 import {
@@ -158,8 +159,9 @@ function changeStatus(context, status, values, now) {
 }
 
 /**
- * 发布当前工单: 核对能否发布, 把旧回执改名归档, 记下发布时的工单内容, 用掉审阅.
- * 受阻后内容没有改动的工单直接继续, 由原执行子代理接着做.
+ * 发布当前工单: 核对能否发布, 把旧回执改名归档, 记下发布时的工单内容与当前
+ * 提交 (基准提交), 用掉审阅. 受阻后内容没有改动的工单直接继续, 由原执行子代理
+ * 接着做, 基准提交不变.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {string} now 当前时间.
@@ -177,6 +179,7 @@ function issueOrder(context, now) {
     context,
     setOrderStatus(context.state, ISSUED_ORDER_STATUS, {
       issuedDigest: digestOrderFile(context.projectRoot, order),
+      baseCommit: isContinuing ? undefined : headCommit(context.projectRoot),
     }),
     now,
   );
@@ -193,7 +196,8 @@ function issueOrder(context, now) {
 
 /**
  * 核对当前工单能否发布: 会改动代码的工单必须带代码检查判据; 用户必须已在
- * "工单审阅" 中认可当前的工单内容, 或工单受阻后内容与上次发布时相同.
+ * "工单审阅" 中认可当前的工单内容, 且工单文件中的基准提交是当前提交; 或工单
+ * 受阻后内容与上次发布时相同.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @returns {boolean} 是受阻后内容没有改动的继续发布时返回 true.
@@ -212,6 +216,7 @@ function assertIssuable(context) {
   }
   const approval = readApprovalStatus(context.projectRoot, order);
   if (approval === APPROVAL_STATUSES.approved) {
+    assertBaseCommitCurrent(context, order);
     return false;
   }
   if (
@@ -226,6 +231,28 @@ function assertIssuable(context) {
       ? `工单 ${order.id} 正在等用户审阅: 用户在 "${APPROVAL_REPLY_TYPE}" 中选 A 之后才能发布.`
       : `工单 ${order.id} 还没有经用户审阅, 或审阅之后内容有改动: 先${replyStep(context.spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后再运行 order set issued.`,
   );
+}
+
+/**
+ * 核对工单文件中的基准提交是当前提交. 审阅时已核对过一次; 审阅之后仓库又有了
+ * 新提交时在这里拒绝, 改好后要重新审阅.
+ *
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @param {import("../lib/state.mjs").OrderState} order 当前工单.
+ * @returns {void}
+ * @throws {WorkflowError} 基准提交不是当前提交时.
+ */
+function assertBaseCommitCurrent(context, order) {
+  const blocker = baseCommitBlocker({
+    orderId: order.id,
+    orderText: readOrderText(context.projectRoot, order),
+    head: headCommit(context.projectRoot),
+  });
+  if (blocker !== undefined) {
+    throw new WorkflowError(
+      `${blocker} 改好后${replyStep(context.spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后再运行 order set issued.`,
+    );
+  }
 }
 
 /**

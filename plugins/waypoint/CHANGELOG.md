@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: the review brief used the commit recorded when the order was created as the base commit. When the repository got a new commit before the order was issued (for example the commit after a plugin upgrade), the reviewer compared against the wrong commit and listed unrelated changes. The base commit is now the current commit at issue time: the order skeleton prefills it, and both `reply approve` and `order set issued` refuse an order file whose "基准提交" (base commit) is not the current commit.
+
 ## [1.2.0] - 2026-11-10
 
 ### Added

@@ -132,6 +132,7 @@ export function renderReplySkeleton({
  * @param {import("./state.mjs").NavigatorState | undefined} options.state 状态.
  * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
  * @param {Readonly<Record<string, string[]>>} [options.prefills] 节标题到预填行的映射, 预填行放在占位标记之前.
+ * @param {Readonly<Record<string, string>>} [options.values] 键名到预填值的映射, 用于脚本已知的键值.
  * @returns {string} 骨架文本, 以换行结尾.
  * @throws {Error} 固定节序列不存在时.
  */
@@ -141,6 +142,7 @@ export function renderFileSkeleton({
   state,
   spec,
   prefills = {},
+  values = {},
 }) {
   const sections = fileSections(fileSpec, variantIndex);
   const lines = [
@@ -150,7 +152,7 @@ export function renderFileSkeleton({
       : []),
     ...sections.flatMap((section) => [
       "",
-      ...renderSection(section, {}, prefills[section.title]),
+      ...renderSection(section, values, prefills[section.title]),
     ]),
   ];
   return `${lines.join("\n")}\n`;
