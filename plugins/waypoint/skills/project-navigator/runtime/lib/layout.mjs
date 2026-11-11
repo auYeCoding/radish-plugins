@@ -1,12 +1,12 @@
 /**
- * @file 回复与文件共用的版式工具: 按二级标题切节, 校验键值节与表格节, 识别总结块.
+ * @file 回复与文件共用的版式工具: 按二级标题切节, 校验键值节与表格节.
  *
- * 回复校验 (reply-checks) 与文件校验 (file-checks) 都建立在这里的函数之上,
- * 保证两边对 "节", "键值行", "表格" 与 "人类总结" 的理解完全一致.
+ * 回复校验 (reply-checks), 文件校验 (file-checks) 与读取记录的模块都建立在这里的
+ * 函数之上, 保证各处对 "节", "键值行" 与 "表格" 的理解完全一致.
  */
 
+import { parseMarkdown } from "./markdown.mjs";
 import { parseTable } from "./table.mjs";
-import { countUnits, plainText } from "./text-units.mjs";
 
 /**
  * 键值行的格式: "- 键名: 值".
@@ -84,6 +84,36 @@ export function checkKeyLines(section, keys) {
 }
 
 /**
+ * 在 Markdown 全文中找出某个二级节.
+ *
+ * @param {string} text Markdown 全文.
+ * @param {string} title 节标题.
+ * @returns {Section | undefined} 节; 没有该节时为 undefined.
+ */
+export function findSection(text, title) {
+  return splitSections(parseMarkdown(text)).sections.find(
+    (section) => section.title === title,
+  );
+}
+
+/**
+ * 读取节中的键值行, 不是键值行的条目忽略.
+ *
+ * @param {Section} section 节.
+ * @returns {Record<string, string>} 键名到值的映射.
+ */
+export function readKeyValues(section) {
+  return Object.fromEntries(
+    section.items
+      .map((item) =>
+        item.kind === "text" ? KEY_LINE_PATTERN.exec(item.text) : null,
+      )
+      .filter((match) => match !== null)
+      .map((match) => [match[1], match[2]]),
+  );
+}
+
+/**
  * 读取节中的第一个表格.
  *
  * @param {Section} section 节.
@@ -146,43 +176,6 @@ function checkTableRow({ row, rowNumber, table, title }) {
           `${title} 的表格第 ${rowNumber} 行 "${column}" 只能是 ${allowed.join(", ")} 之一, 不能写 "${row[index]}".`,
         ];
   });
-}
-
-/**
- * 判断代码块是否为人类总结块.
- *
- * @param {import("./markdown.mjs").BlockItem} block 代码块.
- * @param {import("./spec.mjs").FormatSpec} format 全局版式规则.
- * @returns {boolean} 是总结块时返回 true.
- */
-export function isSummaryBlock(block, format) {
-  return (
-    block.language === format.summaryLanguage &&
-    block.content[0] === format.summarySeparator
-  );
-}
-
-/**
- * 校验结尾的人类总结: 必须存在, 位于最后, 正文不为空且不超过字数上限.
- *
- * @param {import("./markdown.mjs").BlockItem | undefined} block 最后一个代码块.
- * @param {import("./spec.mjs").FormatSpec} format 全局版式规则.
- * @returns {string[]} 问题列表.
- */
-export function checkSummary(block, format) {
-  if (block === undefined || !isSummaryBlock(block, format)) {
-    return [
-      `最后一个代码块必须是人类总结: 语言标记为 ${format.summaryLanguage}, 首行为 "${format.summarySeparator}".`,
-    ];
-  }
-  const body = block.content.slice(1).join("\n").trim();
-  if (body === "") {
-    return ["人类总结不能为空."];
-  }
-  const length = countUnits(plainText(body));
-  return length > format.summaryMaxLength
-    ? [`人类总结共 ${length} 字, 超过 ${format.summaryMaxLength} 字上限.`]
-    : [];
 }
 
 /**

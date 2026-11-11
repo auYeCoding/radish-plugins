@@ -1,15 +1,14 @@
 /**
- * @file evidence 命令: 从原仓库取回选型回执中引用的源码行, 供验收子代理与执行会话核对.
+ * @file evidence 命令: 从原仓库取回选型回执中引用的源码行, 供验收子代理与执行子代理核对.
  *
  * 用法:
  * - evidence: 核对当前选型工单回执 "能力核实" 表中的全部证据
- * - evidence check <仓库> <版本> <路径> <行号>: 核对一条证据, 执行会话写回执前自查
+ * - evidence check <仓库> <版本> <路径> <行号>: 核对一条证据, 执行子代理写回执前自查
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { EVIDENCE_COMMAND_NAME } from "../lib/command-access.mjs";
 import { evidenceCacheDirectory, orderFilePath } from "../lib/paths.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import {
@@ -21,6 +20,12 @@ import {
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import { SELECTION_ORDER_KIND } from "../lib/workflow-orders.mjs";
 import { openProject } from "./support.mjs";
+
+/**
+ * 本命令的命令名, 用于用法说明.
+ * @type {string}
+ */
+const EVIDENCE_COMMAND_NAME = "evidence";
 
 /**
  * 单条自查时 check 之后的参数个数: 仓库, 版本, 路径, 行号.

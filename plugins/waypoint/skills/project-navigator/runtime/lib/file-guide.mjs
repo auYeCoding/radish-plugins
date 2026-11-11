@@ -1,17 +1,24 @@
 /**
  * @file template 命令在骨架之前给出的填写要求: 标题与键名的保留, 键值节与表格节的
- * 写法, 代码块与人类总结.
+ * 写法, 代码块, 以及写完后的自查命令.
  *
- * 写入时的结构校验 (file-checks) 只在写入被拦下时才让模型看到规则; 要求在填写的时刻
- * 给出, 校验只做兜底. 内容全部由文件规格生成, 与校验使用同一份规格.
+ * 写入时不做结构校验; 要求在填写的时刻给出, 写完后用 check 命令自查. 内容全部
+ * 由文件规格生成, 与自查使用同一份规格.
  */
 
+import { COMMAND_NAME } from "./paths.mjs";
 import { PLACEHOLDER } from "./render.mjs";
-import { summaryRule, wrapGuide } from "./reply-guide.mjs";
+import { wrapGuide } from "./reply-guide.mjs";
 
 /**
- * 键值节的写法. 写入校验要求键值节只含规格中的键值行, 模型常在键下面接表格或
- * 列表; 参考文档与执行手册也引用这一句.
+ * 写完记录文件后自查结构的命令前缀, 其后接文件路径.
+ * @type {string}
+ */
+const SELF_CHECK_COMMAND = `${COMMAND_NAME} check`;
+
+/**
+ * 键值节的写法. 读取记录的脚本按键值行取值, 模型常在键下面接表格或列表;
+ * 参考文档与执行手册也引用这一句.
  * @type {string}
  */
 export const KEY_SECTION_RULE =
@@ -23,10 +30,9 @@ export const KEY_SECTION_RULE =
  * @param {object} options 生成参数.
  * @param {import("./file-checks.mjs").FileSpec} options.fileSpec 文件规格.
  * @param {readonly import("./spec.mjs").SectionSpec[]} options.sections 骨架使用的固定节序列.
- * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
  * @returns {string[]} 各行.
  */
-export function renderFileGuide({ fileSpec, sections, spec }) {
+export function renderFileGuide({ fileSpec, sections }) {
   return wrapGuide([
     `- 文件从下面的 "# ${fileSpec.title}" 写起. 只替换 "${PLACEHOLDER}", 标题与键名原样保留, 不增删二级标题.`,
     ...keySectionLines(sections),
@@ -34,8 +40,8 @@ export function renderFileGuide({ fileSpec, sections, spec }) {
       .filter((section) => section.table !== undefined)
       .map(tableSectionLine),
     ...entryLines(fileSpec),
-    `- 节正文中不放代码块${fileSpec.entryBlock === undefined ? "" : ` (条目末尾的 ${fileSpec.entryBlock} 输出块除外)`}, 不贴代码.`,
-    summaryRule(spec.format),
+    "- 文件中不放代码块, 不贴代码.",
+    `- 写完后运行 \`${SELF_CHECK_COMMAND} <文件路径>\` 自查结构.`,
   ]);
 }
 
@@ -91,12 +97,8 @@ function entryLines(fileSpec) {
     fileSpec.entryKeys === undefined
       ? ""
       : `, 依次写 ${fileSpec.entryKeys.map((key) => `"- ${key}: 值"`).join(", ")}, 每个键只占一行`;
-  const block =
-    fileSpec.entryBlock === undefined
-      ? ""
-      : `, 最后恰好一个语言标记为 ${fileSpec.entryBlock} 的代码块, 原样放输出`;
   return [
-    `- 条目在固定节之后逐条追加, 标题匹配 \`${fileSpec.entryPattern}\`${keys}${block}.`,
+    `- 条目在固定节之后逐条追加, 标题匹配 \`${fileSpec.entryPattern}\`${keys}.`,
     ...(fileSpec.closingSections ?? []).map(closingSectionLine),
   ];
 }

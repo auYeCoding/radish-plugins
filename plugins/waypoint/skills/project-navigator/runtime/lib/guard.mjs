@@ -1,19 +1,29 @@
 /**
- * @file 工具调用守卫: 根据会话身份, 工具与参数决定放行或拒绝.
+ * @file 写入守卫: 只看写入类工具的目标路径, 四条规则.
  *
- * 编排会话按工具白名单默认拒绝, 这样新出现的工具 (例如 Monitor, Workflow,
- * MCP 写工具) 也不能绕过限制; 执行会话与其它会话只限制写入路径与少数命令.
- * 本模块只做判定, 读文件通过注入的函数完成, 便于用决策表测试.
+ * 1. 任何会话与子代理都不能直接写状态文件与脚本生成的视图文件.
+ * 2. 验收子代理不能写任何文件.
+ * 3. 执行子代理在 `.navigator/` 下只能写当前工单的回执与证据文件; 只产出记录的
+ *    工单 (运行检查与分析) 不能写业务文件.
+ * 4. 编排会话不能写 `.navigator/` 之外的文件.
+ *
+ * 命令行与其它工具不检查: 守卫只管不会误伤正常工作的几条边界, 其余靠技能规则.
+ * 本模块只做判定, 是否为编排会话由调用方通过注入的函数判断 (需要读转录).
  */
 
 import {
-  checkOrchestratorCommand,
-  checkOtherCommand,
-  checkReviewerCommand,
-} from "./guard-commands.mjs";
-import { describeEvidenceTools } from "./evidence-tools.mjs";
-import { decideProjectWrite } from "./guard-paths.mjs";
-import { projectRelativePath } from "./paths.mjs";
+  GENERATED_FILES,
+  NAVIGATOR_DIRECTORY,
+  isUnderDirectory,
+  orderArtifactsPath,
+  orderFilePath,
+  projectRelativePath,
+  relativePathsEqual,
+} from "./paths.mjs";
+import {
+  ISSUED_ORDER_STATUS,
+  isRecordOnlyOrderKind,
+} from "./workflow-orders.mjs";
 
 /**
  * 会写入文件的工具名.
@@ -27,344 +37,140 @@ export const WRITE_TOOLS = Object.freeze([
 ]);
 
 /**
- * 插件自带的子代理类型, 以及编排会话可以派出的内置类型.
- * @type {Readonly<Record<string, string>>}
+ * 插件自带的子代理类型.
+ * @type {Readonly<{reader: string, researcher: string, reviewer: string, executor: string}>}
  */
 export const SUBAGENT_TYPES = Object.freeze({
   reader: "waypoint:navigator-reader",
-  reviewer: "waypoint:navigator-reviewer",
   researcher: "waypoint:navigator-researcher",
-  explore: "Explore",
+  reviewer: "waypoint:navigator-reviewer",
+  executor: "waypoint:navigator-executor",
 });
 
 /**
- * 编排会话在提交步骤可以调用的技能.
+ * 生成提交消息并提交的技能.
  * @type {string}
  */
 export const COMMIT_SKILL = "waypoint:commit-message";
 
 /**
- * 提交步骤中的工单状态: 验收通过等待提交, 以及正在提交.
- * @type {readonly string[]}
- */
-export const COMMIT_STEP_STATUSES = Object.freeze(["accepted", "committing"]);
-
-/**
- * 加载延迟工具定义的工具. 验收子代理调用 MCP 取证工具之前要先用它加载.
+ * 写生成文件时的拒绝理由.
  * @type {string}
  */
-export const TOOL_LOADER = "ToolSearch";
+const GENERATED_REASON =
+  "这个文件由插件命令生成: 状态只用插件命令修改, 推进路线与风险清单随状态自动更新.";
 
 /**
- * MCP 工具名的前缀.
+ * 验收子代理写文件时的拒绝理由.
  * @type {string}
  */
-const MCP_TOOL_PREFIX = "mcp__";
+const REVIEWER_REASON = "验收子代理只读, 不写任何文件; 只报告事实与证据.";
 
 /**
- * 只读工具, 编排会话与其子代理都可以使用.
- * @type {readonly string[]}
+ * 执行子代理写本工单回执与证据文件之外的编排记录时的拒绝理由.
+ * @type {string}
  */
-const READ_TOOLS = Object.freeze([
-  "Read",
-  "Grep",
-  "Glob",
-  "LS",
-  "NotebookRead",
-]);
+const EXECUTOR_RECORD_REASON =
+  ".navigator/ 下只能写本工单的回执, 以及本工单文件夹 artifacts/ 下的证据文件; 其它文件是编排记录, 执行中的发现写进回执.";
 
 /**
- * 编排会话额外可以使用的工具: 加载工具定义, 查看与联系其它会话, 任务清单.
- * @type {readonly string[]}
+ * 工单不在执行中时, 执行子代理改动业务文件的拒绝理由.
+ * @type {string}
  */
-const ORCHESTRATOR_EXTRA_TOOLS = Object.freeze([
-  TOOL_LOADER,
-  "ListAgents",
-  "SendMessage",
-  "TodoWrite",
-  "TaskCreate",
-  "TaskUpdate",
-  "TaskList",
-  "TaskGet",
-]);
+const EXECUTOR_INACTIVE_REASON =
+  "当前工单不在执行中 (已结束, 验收中, 受阻或被撤回修改), 不能再改动业务文件. 写进回执, 交回编排会话.";
 
 /**
- * 运行命令的工具.
- * @type {readonly string[]}
+ * 只产出记录的工单的执行子代理改动业务文件时的拒绝理由.
+ * @type {string}
  */
-const SHELL_TOOLS = Object.freeze(["Bash", "PowerShell"]);
+const EXECUTOR_RECORD_ONLY_REASON =
+  "本工单是运行检查或分析工单, 只产出记录: 只能写本工单的回执, 以及本工单文件夹 artifacts/ 下的文档, 脚本等证据文件, 不能改动业务文件与项目配置. 确实需要改代码时, 写进回执, 由编排会话另发实现工单.";
 
 /**
- * 派出子代理的工具.
- * @type {readonly string[]}
+ * 编排会话写业务文件时的拒绝理由.
+ * @type {string}
  */
-const AGENT_TOOLS = Object.freeze(["Agent", "Task"]);
+const ORCHESTRATOR_REASON =
+  "编排会话只写 .navigator/ 下的编排记录, 不写业务代码与项目配置; 需要改动时发布工单, 交给执行子代理.";
 
 /**
- * 联网工具, 只有调研子代理可以使用.
- * @type {readonly string[]}
- */
-const WEB_TOOLS = Object.freeze(["WebSearch", "WebFetch"]);
-
-/**
- * @typedef {import("./sessions.mjs").SessionRole} SessionRole 会话身份.
- */
-
-/**
- * @typedef {object} GuardContext 判定时需要的状态.
- * @property {string | undefined} orderStatus 当前工单状态.
- * @property {boolean} [isStageCommitting] 阶段提交是否正在提交.
- * @property {boolean} [isProjectFinished] 项目是否已确认收尾, 且没有待处理的阶段提交.
- * @property {string[]} authorizedTests 当前工单可以运行的测试命令: 代码检查命令与用户授权的测试.
- * @property {string[]} evidenceTools 用户授权验收子代理调用的 MCP 取证工具.
- * @property {string | undefined} executorFolder 执行会话绑定的工单文件夹名.
- * @property {boolean} isOrderActive 执行会话绑定的工单是否为当前工单且处于已发布状态.
- * @property {boolean} [isRecordOnly] 执行会话绑定的工单是否在执行中且只产出记录 (运行检查与分析工单).
- * @property {boolean} isAligned 执行会话是否已就本轮发布完成开工对齐.
- * @property {string | undefined} reviewBrief 当前工单的验收委派提示词.
- * @property {string} researchFrame 问题域调研委派提示词的固定框架.
- */
-
-/**
- * @typedef {object} GuardInput 守卫的输入.
- * @property {SessionRole} role 发起调用的会话身份.
+ * @typedef {object} WriteRequest 一次写入的判定输入.
+ * @property {string} projectRoot 项目根目录.
+ * @property {Record<string, any>} toolInput 工具参数.
  * @property {boolean} isSubagent 调用是否来自子代理.
  * @property {string | undefined} agentType 子代理类型.
- * @property {string} toolName 工具名.
- * @property {Record<string, any>} toolInput 工具参数.
- * @property {string} projectRoot 项目根目录.
- * @property {GuardContext} context 状态上下文.
- * @property {(relativePath: string) => string | undefined} readFile 读取项目内文件当前内容.
- * @property {() => string[]} readRecentPrompts 读取编排会话最近收到的用户消息.
- * @property {() => boolean} [hasUncommittedRecords] 查询状态目录与插件管理的项目配置中是否有未入库的改动; 只在需要时调用, 省略时视为没有.
- * @property {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @property {import("./state.mjs").OrderState | null} order 当前工单.
+ * @property {() => boolean} isOrchestrator 判断主会话是否为编排会话; 只在需要时调用.
  */
 
 /**
  * @typedef {object} GuardDecision 守卫的判定.
  * @property {"allow" | "deny"} decision 放行或拒绝.
  * @property {string} [reason] 拒绝理由.
- * @property {boolean} [isProbe] 是否为初始化自检的探测写入.
  */
 
 /**
- * 对一次工具调用作出判定.
+ * 判定一次写入类工具的调用.
  *
- * @param {GuardInput} input 守卫输入.
+ * @param {WriteRequest} request 判定输入.
  * @returns {GuardDecision} 判定结果.
  */
-export function decideToolUse(input) {
-  if (input.role === "orchestrator") {
-    return input.isSubagent
-      ? decideSubagentTool(input)
-      : decideOrchestratorTool(input);
-  }
-  if (WRITE_TOOLS.includes(input.toolName)) {
-    return decideWrite(input);
-  }
-  if (SHELL_TOOLS.includes(input.toolName)) {
-    return toDecision(
-      checkOtherCommand(String(input.toolInput.command ?? ""), input.role),
-    );
-  }
-  return allow();
-}
-
-/**
- * 判定编排会话主会话的工具调用: 白名单之外一律拒绝.
- *
- * @param {GuardInput} input 守卫输入.
- * @returns {GuardDecision} 判定结果.
- */
-function decideOrchestratorTool(input) {
-  const { toolName, toolInput, context } = input;
-  if (
-    READ_TOOLS.includes(toolName) ||
-    ORCHESTRATOR_EXTRA_TOOLS.includes(toolName)
-  ) {
-    return allow();
-  }
-  if (WRITE_TOOLS.includes(toolName)) {
-    return decideWrite(input);
-  }
-  if (SHELL_TOOLS.includes(toolName)) {
-    return toDecision(
-      checkOrchestratorCommand(String(toolInput.command ?? ""), {
-        authorizedTests: context.authorizedTests,
-        isCommitStep: isCommitStep(context),
-        canPush: () =>
-          context.isProjectFinished === true &&
-          input.hasUncommittedRecords?.() !== true,
-      }),
-    );
-  }
-  if (AGENT_TOOLS.includes(toolName)) {
-    return decideAgent(toolInput, context);
-  }
-  if (toolName === "Skill") {
-    return toolInput.skill === COMMIT_SKILL && isCommitStep(context)
-      ? allow()
-      : deny(
-          `编排会话只在提交步骤调用 ${COMMIT_SKILL}; 其它技能与其它时机都不调用.`,
-        );
-  }
-  if (toolName === "AskUserQuestion") {
-    return deny(
-      "编排会话不用提问框: 提问框之前的正文用户看不到. 请用回复末尾的选项块提问.",
-    );
-  }
-  return deny(
-    `编排会话不使用 ${toolName}: 调研交给调研子代理, 实现交给执行会话.`,
-  );
-}
-
-/**
- * 判断是否处于提交步骤: 工单验收通过等待提交或正在提交, 或阶段提交正在提交.
- *
- * @param {GuardContext} context 状态上下文.
- * @returns {boolean} 处于提交步骤时返回 true.
- */
-function isCommitStep(context) {
-  return (
-    COMMIT_STEP_STATUSES.includes(context.orderStatus ?? "") ||
-    context.isStageCommitting === true
-  );
-}
-
-/**
- * 判定编排会话派出子代理: 只能派规定的类型, 验收与调研子代理的提示词必须用
- * 插件命令生成, 防止编排会话在提示词里加入倾向性说明.
- *
- * @param {Record<string, any>} toolInput 工具参数.
- * @param {GuardContext} context 状态上下文.
- * @returns {GuardDecision} 判定结果.
- */
-function decideAgent(toolInput, context) {
-  const type = String(toolInput.subagent_type ?? "");
-  const prompt = String(toolInput.prompt ?? "");
-  if (!Object.values(SUBAGENT_TYPES).includes(type)) {
-    return deny(
-      `编排会话只能派以下子代理: ${Object.values(SUBAGENT_TYPES).join(", ")}.`,
-    );
-  }
-  if (
-    type === SUBAGENT_TYPES.reviewer &&
-    prompt.trim() !== (context.reviewBrief ?? "").trim()
-  ) {
-    return deny(
-      "验收子代理的提示词必须与 review-brief 命令的输出逐字一致, 不能增删内容.",
-    );
-  }
-  if (
-    type === SUBAGENT_TYPES.researcher &&
-    !prompt.startsWith(context.researchFrame)
-  ) {
-    return deny(
-      "调研子代理的提示词必须以 research-brief 命令输出的固定框架开头, 只在其后填写调研问题.",
-    );
-  }
-  return allow();
-}
-
-/**
- * 判定编排会话子代理的工具调用: 只读; 调研子代理可以联网; 验收子代理可以运行
- * 只读 git, 已授权测试与源码证据核对命令, 并可以加载与调用用户授权的 MCP 取证
- * 工具; 其它子代理只能运行只读 git.
- *
- * @param {GuardInput} input 守卫输入.
- * @returns {GuardDecision} 判定结果.
- */
-function decideSubagentTool(input) {
-  const { toolName, toolInput, agentType, context } = input;
-  if (READ_TOOLS.includes(toolName)) {
-    return allow();
-  }
-  if (agentType === SUBAGENT_TYPES.reviewer) {
-    const evidenceDecision = decideEvidenceTool(toolName, context);
-    if (evidenceDecision !== undefined) {
-      return evidenceDecision;
-    }
-  }
-  if (WEB_TOOLS.includes(toolName)) {
-    return agentType === SUBAGENT_TYPES.researcher
-      ? allow()
-      : deny("只有调研子代理可以联网.");
-  }
-  if (SHELL_TOOLS.includes(toolName)) {
-    const isReviewer = agentType === SUBAGENT_TYPES.reviewer;
-    return toDecision(
-      checkReviewerCommand(String(toolInput.command ?? ""), {
-        authorizedTests: isReviewer ? context.authorizedTests : [],
-        isCommitStep: false,
-        canVerifyEvidence: isReviewer,
-      }),
-    );
-  }
-  if (WRITE_TOOLS.includes(toolName)) {
-    return deny("编排会话派出的子代理只能读, 不能写任何文件.");
-  }
-  return deny(`编排会话派出的子代理不使用 ${toolName}.`);
-}
-
-/**
- * 判定验收子代理加载工具定义与调用 MCP 工具: 加载总是放行; MCP 工具只放行
- * 用户授权登记的取证工具.
- *
- * @param {string} toolName 工具名.
- * @param {GuardContext} context 状态上下文.
- * @returns {GuardDecision | undefined} 判定结果; 不是这两类工具时为 undefined.
- */
-function decideEvidenceTool(toolName, context) {
-  if (toolName === TOOL_LOADER || context.evidenceTools.includes(toolName)) {
-    return allow();
-  }
-  if (!toolName.startsWith(MCP_TOOL_PREFIX)) {
-    return undefined;
-  }
-  return deny(
-    `验收子代理只调用用户授权登记的取证工具 (当前登记: ${describeEvidenceTools(context.evidenceTools)}). ${toolName} 没有登记, 依赖它的判据写 "未验证", 并写明缺少这个工具.`,
-  );
-}
-
-/**
- * 判定写入类工具: 项目之外的写入只限制编排会话, 项目内按路径规则判定.
- *
- * @param {GuardInput} input 守卫输入.
- * @returns {GuardDecision} 判定结果.
- */
-function decideWrite(input) {
-  const value = input.toolInput.file_path ?? input.toolInput.notebook_path;
-  const target = typeof value === "string" && value !== "" ? value : undefined;
+export function decideWrite(request) {
+  const value = request.toolInput.file_path ?? request.toolInput.notebook_path;
   const relativePath =
-    target === undefined
-      ? undefined
-      : projectRelativePath(input.projectRoot, target);
+    typeof value === "string" && value !== ""
+      ? projectRelativePath(request.projectRoot, value)
+      : undefined;
   if (relativePath === undefined) {
-    return input.role === "orchestrator"
-      ? deny("编排会话只能写 .navigator/ 下的编排记录, 不能写项目之外的文件.")
-      : allow();
+    return allow();
   }
-  return decideProjectWrite({
-    role: input.role,
-    isSubagent: input.isSubagent,
-    relativePath,
-    toolName: input.toolName,
-    toolInput: input.toolInput,
-    context: input.context,
-    readFile: input.readFile,
-    readRecentPrompts: input.readRecentPrompts,
-    spec: input.spec,
-  });
+  if (GENERATED_FILES.some((file) => relativePathsEqual(relativePath, file))) {
+    return deny(GENERATED_REASON);
+  }
+  if (request.agentType === SUBAGENT_TYPES.reviewer) {
+    return deny(REVIEWER_REASON);
+  }
+  if (request.agentType === SUBAGENT_TYPES.executor) {
+    return decideExecutorWrite(relativePath, request.order);
+  }
+  if (request.isSubagent) {
+    return allow();
+  }
+  if (
+    !isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY) &&
+    request.isOrchestrator()
+  ) {
+    return deny(ORCHESTRATOR_REASON);
+  }
+  return allow();
 }
 
 /**
- * 把拒绝理由转换为判定: 有理由则拒绝, 否则放行.
+ * 判定执行子代理的写入: `.navigator/` 下只能写当前工单的回执与证据文件;
+ * 业务文件要求工单在执行中, 且不是只产出记录的工单.
  *
- * @param {string | undefined} reason 拒绝理由.
+ * @param {string} relativePath 目标的项目相对路径.
+ * @param {import("./state.mjs").OrderState | null} order 当前工单.
  * @returns {GuardDecision} 判定结果.
  */
-function toDecision(reason) {
-  return reason === undefined ? allow() : deny(reason);
+function decideExecutorWrite(relativePath, order) {
+  if (isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)) {
+    const isOwnRecord =
+      order !== null &&
+      (relativePathsEqual(
+        relativePath,
+        orderFilePath(order.folder, "receipt"),
+      ) ||
+        isUnderDirectory(relativePath, orderArtifactsPath(order.folder)));
+    return isOwnRecord ? allow() : deny(EXECUTOR_RECORD_REASON);
+  }
+  if (order === null || order.status !== ISSUED_ORDER_STATUS) {
+    return deny(EXECUTOR_INACTIVE_REASON);
+  }
+  return isRecordOnlyOrderKind(order.kind)
+    ? deny(EXECUTOR_RECORD_ONLY_REASON)
+    : allow();
 }
 
 /**

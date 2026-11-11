@@ -3,54 +3,31 @@
  *
  * 用法: stage <阶段编号>; step <步骤标识>; skip <阶段编号> --from <草稿>; finish.
  * skip 的草稿格式: {"reason": "跳过原因"}. 跳过必须先得到用户认可.
- * 进入新阶段, 或在最后一个阶段确认收尾时, 当前阶段有尚未入库的技能产物, 就登记
- * 一次阶段提交. 最后一个阶段之后不再推进, 收尾记录只能由 finish 登记的阶段提交入库.
- * 确认收尾的 finish 总会在状态文件中写下完成标记, 之后没有别的提交能带上它, 所以
- * 每次确认收尾都登记阶段提交, 即使收尾记录已经入库.
- *
- * 项目已确认收尾后, 写入的状态同样没有后续提交能带走. 这时再运行 finish: 记录
- * (含状态文件) 有未入库的改动就登记阶段提交, 例如收尾后处理验收异常时写下的状态;
- * 没有改动就什么也不写, 以免工作区留下没有提交途径的改动.
+ * 进入新阶段时, 上一阶段有尚未入库的技能产物, 输出中附上提交这些产物的一步;
+ * 确认收尾写下的完成标记也要入库, 所以 finish 总把状态文件算进去.
  */
 
-import {
-  STAGE_COMMIT_REPLY_TYPE,
-  assertNoStageCommit,
-  requestStageCommit,
-} from "../lib/commit-step.mjs";
-import { COMPLETE_REPLY_TYPE, replyStep } from "../lib/guidance.mjs";
-import { listUncommittedPaths } from "../lib/repo.mjs";
 import { lastStageNumber } from "../lib/spec.mjs";
-import {
-  COMMITTED_PATHSPECS,
-  listUncommittedProducts,
-} from "../lib/tracked-paths.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import {
   enterStage,
   finishProject,
-  isProjectFinished,
   setStep,
   skipStage,
 } from "../lib/workflow-plan.mjs";
 import {
   openProject,
   readDraftJson,
+  recordCommitStep,
   resultLines,
   saveState,
 } from "./support.mjs";
 
 /**
- * 项目收尾之后登记的阶段提交的名称, 也是登记时的最后动作.
+ * 确认收尾时提交的成果名.
  * @type {string}
  */
-const FINISHED_RECORDS_LABEL = "项目收尾后的记录更新";
-
-/**
- * 项目已确认收尾且记录都已入库时, 再次运行 finish 的执行结果.
- * @type {string}
- */
-const FINISHED_UNCHANGED_RESULT = "项目已确认收尾, 记录都已入库, 状态没有改动";
+const FINISH_LABEL = "项目收尾";
 
 /**
  * 执行阶段相关命令.
@@ -68,12 +45,17 @@ export function runStage({ command, positionals, values, cwd, now }) {
   const context = openProject(cwd);
   const lastStage = lastStageNumber(context.spec);
   if (command === "finish") {
-    return isProjectFinished(context.state, lastStage)
-      ? settleFinishedRecords(context, now)
-      : saveWithStageCommit(context, finishProject(context.state, lastStage), {
-          now,
-          mustCommitState: true,
-        });
+    const saved = saveState(
+      context,
+      finishProject(context.state, lastStage),
+      now,
+    );
+    return withCommitStep(
+      resultLines(saved),
+      recordCommitStep(context.projectRoot, FINISH_LABEL, {
+        includeState: true,
+      }),
+    );
   }
   const [argument] = positionals;
   if (argument === undefined) {
@@ -81,11 +63,7 @@ export function runStage({ command, positionals, values, cwd, now }) {
   }
   switch (command) {
     case "stage":
-      return saveWithStageCommit(
-        context,
-        enterStage(context.state, Number(argument), lastStage),
-        { now },
-      );
+      return advanceStage(context, Number(argument), now);
     case "step":
       return resultLines(
         saveState(context, setStep(context.state, argument), now),
@@ -111,67 +89,39 @@ export function runStage({ command, positionals, values, cwd, now }) {
 }
 
 /**
- * 项目已确认收尾后再次运行 finish: 记录 (含状态文件) 有未入库的改动时登记一次
- * 阶段提交, 否则不写状态.
+ * 进入新阶段; 上一阶段有尚未入库的技能产物时, 附上提交这些产物的一步.
  *
- * @param {import("./support.mjs").ProjectContext} context 项目上下文, 项目已确认收尾.
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @param {number} stage 要进入的阶段编号.
  * @param {string} now 当前时间.
  * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 有未处理的阶段提交时.
  */
-function settleFinishedRecords(context, now) {
+function advanceStage(context, stage, now) {
   const { state, spec, projectRoot } = context;
-  assertNoStageCommit(state, replyStep(spec, STAGE_COMMIT_REPLY_TYPE));
-  if (listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS).length === 0) {
-    return [
-      `- 执行结果: ${FINISHED_UNCHANGED_RESULT}`,
-      `- 下一动作: ${replyStep(spec, COMPLETE_REPLY_TYPE)}`,
-    ];
-  }
-  return saveWithStageCommit(
+  const saved = saveState(
     context,
-    { ...state, lastAction: FINISHED_RECORDS_LABEL },
-    { now, mustCommitState: true, label: FINISHED_RECORDS_LABEL },
+    enterStage(state, stage, lastStageNumber(spec)),
+    now,
+  );
+  const label =
+    state.stage === null
+      ? "开始阶段"
+      : `阶段 ${state.stage} (${spec.stages[state.stage]}) 完成`;
+  return withCommitStep(
+    resultLines(saved),
+    state.stage === null ? undefined : recordCommitStep(projectRoot, label),
   );
 }
 
 /**
- * 保存推进后的状态. 推进之前所在的阶段有尚未入库的技能产物, 或调用方要求带上
- * 状态文件时, 登记一次阶段提交, 下一动作是请用户选择提交范围; 未处理的阶段提交
- * 会拦住下一次推进.
+ * 有提交步骤时, 在输出末尾加上下一动作.
  *
- * @param {import("./support.mjs").ProjectContext} context 项目上下文, 其中的状态是推进之前的状态.
- * @param {import("../lib/state.mjs").NavigatorState} advanced 推进后的状态.
- * @param {object} options 其它参数.
- * @param {string} options.now 当前时间.
- * @param {boolean} [options.mustCommitState] 推进写下的状态必须入库, 即使没有其它产物.
- * @param {string} [options.label] 阶段提交的名称; 省略时为 "阶段 N (名称) 完成".
+ * @param {string[]} lines 输出各行.
+ * @param {string | undefined} commitStep 提交步骤; 不需要提交时为 undefined.
  * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 有未处理的阶段提交时.
  */
-function saveWithStageCommit(
-  context,
-  advanced,
-  { now, mustCommitState = false, label },
-) {
-  const { state, spec, projectRoot } = context;
-  const commitStep = replyStep(spec, STAGE_COMMIT_REPLY_TYPE);
-  assertNoStageCommit(state, commitStep);
-  const needsCommit =
-    state.stage !== null &&
-    (mustCommitState || listUncommittedProducts(projectRoot).length > 0);
-  const saved = saveState(
-    context,
-    needsCommit
-      ? requestStageCommit(
-          advanced,
-          label ?? `阶段 ${state.stage} (${spec.stages[state.stage]}) 完成`,
-        )
-      : advanced,
-    now,
-  );
-  return [
-    ...resultLines(saved),
-    ...(needsCommit ? [`- 下一动作: ${commitStep}`] : []),
-  ];
+function withCommitStep(lines, commitStep) {
+  return commitStep === undefined
+    ? lines
+    : [...lines, `- 下一动作: ${commitStep}, 然后继续`];
 }

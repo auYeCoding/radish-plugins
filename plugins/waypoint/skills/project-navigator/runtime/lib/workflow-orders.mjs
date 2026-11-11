@@ -1,16 +1,15 @@
 /**
- * @file 工单的状态转换. 所有函数都返回新状态, 不修改传入的状态.
+ * @file 工单的类型与状态转换. 所有函数都返回新状态, 不修改传入的状态.
  *
  * 状态流转:
- * drafting (起草) → issued (已发布) → reviewing (验收中) → accepted (已通过)
- * → committing (提交中) → committed (已提交).
- * issued 可转为 blocked (受阻), blocked 修改后重新 issued; issued 也可撤回为
- * drafting, 修改后经用户审阅重新发布; 验收不通过为 rejected; 任何未结束的工单
- * 都可以 voided (作废). committed, rejected, voided 是结束状态, 结束的工单
- * 移入历史, 当前工单清空.
+ * drafting (起草) → issued (已发布, 执行子代理工作中) → reviewing (验收中)
+ * → accepted (已通过).
+ * issued 可转为 blocked (受阻); blocked 处理后重新 issued, 或撤回为 drafting
+ * 修改; issued 也可撤回为 drafting; 验收不通过为 rejected; 任何未结束的工单
+ * 都可以 voided (作废). accepted, rejected, voided 是结束状态, 结束的工单移入
+ * 历史, 当前工单清空. 提交不是工单状态: 验收通过之后由编排会话提交.
  */
 
-import { COMMITTING_ORDER_STATUS } from "./commit-step.mjs";
 import { allocateNumber } from "./numbering.mjs";
 import { WorkflowError } from "./workflow-error.mjs";
 
@@ -21,10 +20,8 @@ import { WorkflowError } from "./workflow-error.mjs";
 export const ORDER_TRANSITIONS = Object.freeze({
   drafting: ["issued", "voided"],
   issued: ["reviewing", "blocked", "drafting", "voided"],
-  blocked: ["issued", "voided"],
+  blocked: ["issued", "drafting", "voided"],
   reviewing: ["accepted", "rejected"],
-  accepted: ["committing", "committed"],
-  committing: ["committed", "accepted"],
 });
 
 /**
@@ -32,10 +29,22 @@ export const ORDER_TRANSITIONS = Object.freeze({
  * @type {readonly string[]}
  */
 export const TERMINAL_ORDER_STATUSES = Object.freeze([
-  "committed",
+  "accepted",
   "rejected",
   "voided",
 ]);
+
+/**
+ * 发布状态.
+ * @type {string}
+ */
+export const ISSUED_ORDER_STATUS = "issued";
+
+/**
+ * 实现工单的类型名.
+ * @type {string}
+ */
+export const IMPLEMENTATION_ORDER_KIND = "implementation";
 
 /**
  * 选型工单的类型名.
@@ -66,7 +75,7 @@ export const FIX_ORDER_KIND = "fix";
  * @type {readonly string[]}
  */
 export const ORDER_KINDS = Object.freeze([
-  "implementation",
+  IMPLEMENTATION_ORDER_KIND,
   SELECTION_ORDER_KIND,
   RUNCHECK_ORDER_KIND,
   ANALYSIS_ORDER_KIND,
@@ -74,7 +83,7 @@ export const ORDER_KINDS = Object.freeze([
 ]);
 
 /**
- * 只产出记录的工单类型: 执行会话只能写回执与本工单的 artifacts/, 不改业务文件.
+ * 只产出记录的工单类型: 执行子代理只能写回执与本工单的 artifacts/, 不改业务文件.
  * @type {readonly string[]}
  */
 export const RECORD_ONLY_ORDER_KINDS = Object.freeze([
@@ -100,7 +109,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 /**
  * 新建工单, 成为当前工单. 工单严格串行: 已有未结束的工单时不能新建. 没有指定
- * 切片时挂在当前切片上, 这样连续不通过的次数与路线中的工单列表都按切片统计.
+ * 切片时挂在当前切片上, 这样路线中的工单列表按切片统计.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
  * @param {object} options 工单参数.
@@ -131,7 +140,7 @@ export function createOrder(state, { kind, slug, slice, baseCommit }) {
   ) {
     const ids = state.slices.map((entry) => entry.id).join(", ") || "无";
     throw new WorkflowError(
-      `切片 ${slice} 不存在. 切片编号是四位数字, 不是 "当前切片" 中的序号: 现有切片 ${ids}, 当前切片 ${state.slice ?? "无"}. 不带 --slice 时默认挂在当前切片.`,
+      `切片 ${slice} 不存在. 切片编号是四位数字, 不是进展中的序号: 现有切片 ${ids}, 当前切片 ${state.slice ?? "无"}. 不带 --slice 时默认挂在当前切片.`,
     );
   }
   const { id, next } = allocateNumber(state.next, "order");
@@ -147,24 +156,22 @@ export function createOrder(state, { kind, slug, slice, baseCommit }) {
       status: "drafting",
       round: 0,
       baseCommit,
-      authorizedTests: [],
     },
     lastAction: `新建工单 ${id}`,
   };
 }
 
 /**
- * 转换当前工单的状态; 每次发布 (含受阻或撤回后重新发布) 时发布轮次加一,
- * 执行会话需要就新一轮重新对齐;
- * 进入结束状态时移入历史, 提交时记录最近提交.
+ * 转换当前工单的状态. 每次发布 (含受阻或撤回后重新发布) 时发布轮次加一,
+ * 并记下发布时工单文件的摘要; 进入结束状态时移入历史.
  *
  * @param {import("./state.mjs").NavigatorState} state 当前状态.
  * @param {string} status 目标状态.
- * @param {string | undefined} head 当前 HEAD, 进入 committed 时必须提供.
+ * @param {{issuedDigest?: string}} [options] 发布时工单文件内容的摘要.
  * @returns {import("./state.mjs").NavigatorState} 新状态.
  * @throws {WorkflowError} 没有当前工单或转换不合法时.
  */
-export function setOrderStatus(state, status, head) {
+export function setOrderStatus(state, status, { issuedDigest } = {}) {
   const order = state.order;
   if (order === null) {
     throw new WorkflowError("当前没有工单.");
@@ -175,12 +182,9 @@ export function setOrderStatus(state, status, head) {
       `工单 ${order.id} 不能从 ${order.status} 转为 ${status}; 允许的下一状态: ${allowed.join(", ") || "无"}.`,
     );
   }
-  if (status === "committed" && head === undefined) {
-    throw new WorkflowError("仓库没有 HEAD 提交, 无法记录提交.");
-  }
   const updated =
-    status === "issued"
-      ? { ...order, status, round: (order.round ?? 0) + 1 }
+    status === ISSUED_ORDER_STATUS
+      ? { ...order, status, round: (order.round ?? 0) + 1, issuedDigest }
       : { ...order, status };
   if (!TERMINAL_ORDER_STATUSES.includes(status)) {
     return {
@@ -198,46 +202,7 @@ export function setOrderStatus(state, status, head) {
         ? { ...slice, orders: [...(slice.orders ?? []), order.id] }
         : slice,
     ),
-    lastCommit: status === "committed" ? head : state.lastCommit,
     lastAction: `工单 ${order.id} 转为 ${status}`,
-  };
-}
-
-/**
- * 把当前 HEAD 纳入记录. 当前工单正在提交时, 视为提交已完成.
- *
- * @param {import("./state.mjs").NavigatorState} state 当前状态.
- * @param {string} head 当前 HEAD.
- * @param {string} action 动作描述.
- * @returns {import("./state.mjs").NavigatorState} 新状态.
- */
-export function adoptCommit(state, head, action) {
-  const adopted =
-    state.order?.status === COMMITTING_ORDER_STATUS
-      ? setOrderStatus(state, "committed", head)
-      : { ...state, lastCommit: head };
-  return { ...adopted, lastAction: action };
-}
-
-/**
- * 记录用户已授权的测试命令, 覆盖此前的授权.
- *
- * @param {import("./state.mjs").NavigatorState} state 当前状态.
- * @param {string[]} commands 测试命令, 每条一行.
- * @returns {import("./state.mjs").NavigatorState} 新状态.
- * @throws {WorkflowError} 没有当前工单时.
- */
-export function authorizeTests(state, commands) {
-  if (state.order === null) {
-    throw new WorkflowError("当前没有工单, 无法授权测试命令.");
-  }
-  const cleaned = commands
-    .map((command) => command.trim())
-    .filter((command) => command !== "");
-  return {
-    ...state,
-    order: { ...state.order, authorizedTests: cleaned },
-    lastAction: `工单 ${state.order.id} 授权测试 ${cleaned.length} 条`,
   };
 }
 

@@ -1,23 +1,19 @@
 /**
- * @file project-navigator 的命令行入口.
+ * @file project-navigator 的命令行入口, 由插件 `bin/` 中的 `project-navigator`
+ * 调用; 技能加载时的 enter 直接用 node 运行本文件.
  *
- * 用法: node navigator.mjs <命令> [参数]
+ * 用法: project-navigator <命令> [参数]
  *
  * 命令:
- * - 初始化与进入: init [--session <编号>] [--verify], uninstall, enter --session <编号>, status
- * - 骨架: reply <回复类型> [--option <组号>], template <文件种类> [--option <结构编号>]
+ * - 初始化与进入: init, uninstall, enter, status
+ * - 骨架与参考: reply <回复类型> [--option <组号>], template <文件种类> [--option <结构编号>], ref <名称>
  * - 阶段: stage <阶段编号>, step <步骤标识>, skip <阶段编号> --from <草稿>, finish
  * - 推进路线: roadmap --from <草稿>, milestone <编号> <状态>, slice <编号> <状态>
- * - 工单: order new|set|tests, review-brief, research-brief
+ * - 工单: order new|set, exec-brief, review-brief, research-brief
  * - 源码证据: evidence, evidence check <仓库> <版本> <路径> <行号>
  * - 记录: risk, decision, change
- * - 对账: snapshots, restore <提交>, adopt
  * - 体检与规范: check [文件...], standards --from <草稿>, codecheck set --from <草稿>
- * - 取证工具: tools set --from <草稿>
- * - 编排地址: address set --from <草稿>
- * - 阶段提交: stagecommit start|done|skip
  *
- * 命令的访问级别见 `lib/command-access.mjs`, 由守卫按会话身份执行.
  * enter 由技能加载时的 `!` 命令调用, 任何情况下都以退出码 0 结束, 错误写进输出,
  * 否则 Claude Code 会中止整个技能调用. 其余命令出错时以退出码 1 结束.
  */
@@ -43,14 +39,13 @@ const ENTER_COMMAND = "enter";
  * @type {import("node:util").ParseArgsConfig["options"]}
  */
 const OPTIONS = {
-  session: { type: "string" },
-  verify: { type: "boolean", default: false },
   option: { type: "string", default: "1" },
   kind: { type: "string" },
   slug: { type: "string" },
   slice: { type: "string" },
   from: { type: "string" },
   by: { type: "string" },
+  "accept-unverified": { type: "boolean", default: false },
 };
 
 /**
@@ -95,7 +90,9 @@ function main() {
 function dispatch(invocation) {
   const { command } = invocation;
   if (command === undefined || !Object.hasOwn(COMMAND_HANDLERS, command)) {
-    throw new Error(`navigator: 未知命令 "${command ?? ""}"`);
+    throw new Error(
+      `navigator: 未知命令 "${command ?? ""}", 可用命令: ${Object.keys(COMMAND_HANDLERS).join(", ")}`,
+    );
   }
   return COMMAND_HANDLERS[command]({ ...invocation, command });
 }

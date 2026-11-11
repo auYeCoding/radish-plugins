@@ -1,10 +1,10 @@
 /**
- * @file 工单审阅: 发布工单之前, 用户在 "工单审阅" 中看过工单内容并选 A.
+ * @file 工单审阅: 发布工单之前, 用户在 "工单审阅" 中看过审阅要点并选 A.
  *
  * hook 在编排会话回复 "工单审阅" 时记下当时工单文件的摘要, 在用户回答时记下
  * 选择; `order set issued` 只接受摘要与当前工单文件一致的认可. 认可在发布时
- * 用掉, 每次发布 (含受阻或撤回后重新发布) 都要重新审阅. 审阅记录存在运行期
- * 登记目录中, hook 不写状态文件.
+ * 用掉; 工单内容改过之后重新发布要重新审阅, 受阻后内容没有改动时可以直接继续.
+ * 审阅记录存在运行期登记目录中, hook 不写状态文件.
  */
 
 import { createHash } from "node:crypto";
@@ -26,7 +26,7 @@ import {
 export const APPROVAL_REPLY_TYPE = "工单审阅";
 
 /**
- * "工单审阅" 中表示 "内容无误, 发布工单." 的选项位置: 第 1 组第 1 项.
+ * "工单审阅" 中表示发布工单的选项位置: 第 1 组第 1 项.
  * @type {Readonly<{optionSet: number, choice: number}>}
  */
 const APPROVE_CHOICE = Object.freeze({ optionSet: 0, choice: 0 });
@@ -63,6 +63,18 @@ export function digestOrderText(text) {
 export function readOrderText(projectRoot, order) {
   const file = path.join(projectRoot, orderFilePath(order.folder, "order"));
   return existsSync(file) ? readFileSync(file, "utf8") : undefined;
+}
+
+/**
+ * 计算当前工单文件内容的摘要.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @param {{folder: string}} order 当前工单.
+ * @returns {string | undefined} 摘要; 文件不存在时为 undefined.
+ */
+export function digestOrderFile(projectRoot, order) {
+  const text = readOrderText(projectRoot, order);
+  return text === undefined ? undefined : digestOrderText(text);
 }
 
 /**
@@ -146,7 +158,7 @@ export function applyApprovalAnswer({ projectRoot, order, prompt, spec, now }) {
 }
 
 /**
- * 工单发布之后用掉审阅记录; 下次发布要重新审阅.
+ * 工单发布之后用掉审阅记录; 内容改动后再发布要重新审阅.
  *
  * @param {string} projectRoot 项目根目录.
  * @returns {void}

@@ -1,5 +1,6 @@
 /**
- * @file project-navigator 测试共用的辅助函数: 临时仓库, 调用命令行与 hook.
+ * @file project-navigator 测试共用的辅助函数: 临时仓库, 调用命令行与 hook,
+ * 模拟编排会话的转录.
  */
 
 import { spawnSync } from "node:child_process";
@@ -7,6 +8,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { orchestratorMarker } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/orchestrator-marker.mjs";
 
 /**
  * 插件中技能目录的绝对路径.
@@ -33,22 +36,10 @@ export const PLUGIN_COMMAND = path.join(
 );
 
 /**
- * 项目内命令行入口, 相对于项目根目录.
+ * 插件中 hook 入口的绝对路径.
  * @type {string}
  */
-export const PROJECT_COMMAND = ".navigator/bin/runtime/navigator.mjs";
-
-/**
- * 项目内 hook 入口, 相对于项目根目录.
- * @type {string}
- */
-export const PROJECT_HOOK = ".navigator/bin/runtime/hook.mjs";
-
-/**
- * 初始化自检的探测文件, 相对于项目根目录.
- * @type {string}
- */
-export const PROBE_FILE = ".navigator/bin/navigator-probe.txt";
+export const PLUGIN_HOOK = path.join(SKILL_DIRECTORY, "runtime", "hook.mjs");
 
 /**
  * 临时仓库目录名中使用的前缀, 带空格与中文以覆盖路径处理.
@@ -100,15 +91,14 @@ export function createTemporaryDirectory() {
 }
 
 /**
- * 在指定目录运行命令行脚本.
+ * 在指定目录运行插件命令.
  *
- * @param {string} command 命令行入口的绝对路径.
  * @param {readonly string[]} args 参数.
  * @param {string} cwd 工作目录.
  * @returns {{status: number | null, stdout: string}} 退出码与标准输出.
  */
-export function runCommand(command, args, cwd) {
-  const result = spawnSync(process.execPath, [command, ...args], {
+export function runCommand(args, cwd) {
+  const result = spawnSync(process.execPath, [PLUGIN_COMMAND, ...args], {
     cwd,
     encoding: "utf8",
   });
@@ -126,44 +116,57 @@ export function commandSkeleton(output) {
 }
 
 /**
- * 在临时仓库中完成初始化与自检, 使指定会话成为编排会话. 初始化后的阶段提交
- * 选暂不提交, 让各测试自己决定提交什么.
+ * 在临时目录中写一份会话转录; 编排会话的转录带本项目的编排标记.
  *
- * @param {string} root 仓库根目录.
- * @param {string} sessionId 编排会话编号.
- * @returns {{project: (args: readonly string[]) => {status: number | null, stdout: string}, hook: (input: Record<string, unknown>) => {status: number | null, output: any}}} 调用项目内命令行与 hook 的函数.
- * @throws {Error} 自检未通过时.
+ * @param {string} root 项目根目录, 用于计算标记.
+ * @param {boolean} isOrchestrator 是否写成编排会话的转录.
+ * @returns {{path: string, cleanup: () => void}} 转录路径与清理函数.
  */
-export function initializeProject(root, sessionId) {
-  runCommand(PLUGIN_COMMAND, ["init", "--session", sessionId], root);
-  const hook = (input) => runHook(path.join(root, PROJECT_HOOK), input, root);
-  hook({
-    session_id: sessionId,
-    hook_event_name: "PreToolUse",
-    tool_name: "Write",
-    tool_input: { file_path: path.join(root, PROBE_FILE), content: "x" },
-  });
-  const project = (args) =>
-    runCommand(path.join(root, PROJECT_COMMAND), args, root);
-  const verify = project(["init", "--verify"]);
-  if (!verify.stdout.includes("通过, 防护已生效")) {
-    throw new Error(`自检未通过: ${verify.stdout}`);
-  }
-  project(["stagecommit", "skip"]);
-  runCommand(PLUGIN_COMMAND, ["enter", "--session", sessionId], root);
-  return { project, hook };
+export function writeTranscript(root, isOrchestrator) {
+  const directory = mkdtempSync(path.join(os.tmpdir(), TEMPORARY_PREFIX));
+  const file = path.join(directory, "transcript.jsonl");
+  const line = isOrchestrator
+    ? `- 编排标记: ${orchestratorMarker(root)}`
+    : "普通会话";
+  writeFileSync(
+    file,
+    `${JSON.stringify({ type: "user", message: { content: line } })}\n`,
+    "utf8",
+  );
+  return {
+    path: file,
+    cleanup: () => rmSync(directory, { recursive: true, force: true }),
+  };
 }
 
 /**
- * 以标准输入驱动 hook 脚本.
+ * 在临时仓库中初始化项目并提交初始化产物.
  *
- * @param {string} hookPath hook 入口的绝对路径.
+ * @param {string} root 仓库根目录.
+ * @returns {{project: (args: readonly string[]) => {status: number | null, stdout: string}, hook: (input: Record<string, unknown>) => {status: number | null, output: any}}} 调用命令行与 hook 的函数.
+ * @throws {Error} 初始化失败时.
+ */
+export function initializeProject(root) {
+  const init = runCommand(["init"], root);
+  if (!init.stdout.includes("设置结果: 已写入")) {
+    throw new Error(`初始化失败: ${init.stdout}`);
+  }
+  commitPaths(root, [".navigator", ".claude/settings.json"], "navigator init");
+  return {
+    project: (args) => runCommand(args, root),
+    hook: (input) => runHook(input, root),
+  };
+}
+
+/**
+ * 以标准输入驱动插件的 hook 脚本.
+ *
  * @param {Record<string, unknown>} input hook 输入.
  * @param {string} projectRoot 项目根目录, 作为 CLAUDE_PROJECT_DIR 传入.
  * @returns {{status: number | null, output: any}} 退出码与解析后的输出 (无输出时为 undefined).
  */
-export function runHook(hookPath, input, projectRoot) {
-  const result = spawnSync(process.execPath, [hookPath], {
+export function runHook(input, projectRoot) {
+  const result = spawnSync(process.execPath, [PLUGIN_HOOK], {
     input: JSON.stringify(input),
     encoding: "utf8",
     env: { ...process.env, CLAUDE_PROJECT_DIR: projectRoot },

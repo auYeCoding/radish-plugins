@@ -1,100 +1,67 @@
 /**
- * @file order 命令: 新建工单, 转换工单状态, 授权测试命令.
+ * @file order 命令: 新建工单, 转换工单状态.
  *
  * 用法:
  * - order new --kind <类型> --slug <短名> [--slice <切片编号>]
- * - order set <状态>
- * - order tests --from <草稿>, 草稿格式 {"commands": ["npm test"]}
+ * - order set <状态> [--accept-unverified]
  */
 
 import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { creationBlocker, issueBlocker } from "../lib/code-checks.mjs";
+import { COMMIT_SKILL, SUBAGENT_TYPES } from "../lib/guard.mjs";
 import {
-  COMMIT_STEP_KINDS,
-  settleCommitStep,
-} from "../lib/commit-settlement.mjs";
-import {
-  COMMITTING_ORDER_STATUS,
-  STAGE_COMMIT_REPLY_TYPE,
-  assertNoStageCommit,
-} from "../lib/commit-step.mjs";
-import { SELECTION_ADOPT_OPTION, replyStep } from "../lib/guidance.mjs";
+  REVIEW_OPTIONS,
+  REVIEW_REPLY_TYPE,
+  RUNNING_REPLY_TYPE,
+  replyStep,
+} from "../lib/guidance.mjs";
 import { formatNumber } from "../lib/numbering.mjs";
 import {
   APPROVAL_REPLY_TYPE,
   APPROVAL_STATUSES,
   consumeApproval,
+  digestOrderFile,
   readApprovalStatus,
   readOrderText,
 } from "../lib/order-approval.mjs";
 import { orderFilePath, projectRelativePath } from "../lib/paths.mjs";
 import { headCommit } from "../lib/repo.mjs";
 import {
-  DEFERRED_REVIEW_KEYS,
-  orderAcceptanceBlockers,
-  unfilledReviewKey,
+  readOrderVerdicts,
+  unfilledUserVerdict,
 } from "../lib/review-record.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import {
   FIX_ORDER_KIND,
+  ISSUED_ORDER_STATUS,
   SELECTION_ORDER_KIND,
-  authorizeTests,
   consecutiveRejections,
   createOrder,
   isRecordOnlyOrderKind,
   setOrderStatus,
 } from "../lib/workflow-orders.mjs";
-import {
-  assertRecordsCommitted,
-  openProject,
-  readDraftJson,
-  resultLines,
-  saveState,
-} from "./support.mjs";
+import { openProject, resultLines, saveState } from "./support.mjs";
 
 /**
- * 发布状态.
- * @type {string}
- */
-const ISSUED_STATUS = "issued";
-
-/**
- * 已提交状态.
- * @type {string}
- */
-const COMMITTED_ORDER_STATUS = "committed";
-
-/**
- * 工单提交完成后要运行的命令.
- * @type {string}
- */
-const COMMITTED_COMMAND = `order set ${COMMITTED_ORDER_STATUS}`;
-
-/**
- * 发布工单的回复类型.
- * @type {string}
- */
-const ISSUE_REPLY_TYPE = "工单发布";
-
-/**
- * 同一切片连续验收不通过达到这个次数时, 提示重新拆分切片.
+ * 同一切片连续验收不通过达到这个次数时, 提醒先考虑拆小工单或调整切片.
  * @type {number}
  */
 const RESPLIT_THRESHOLD = 2;
 
 /**
- * "验收报告" 中新建补正工单的选项组.
- * @type {number}
+ * 派出执行子代理并回复 "工单执行" 的一串动作.
+ * @type {string}
  */
-const FIX_OPTION = 2;
+const DISPATCH_ACTION = `运行 exec-brief, 把输出原样作为提示词, 用 Agent 工具在后台 (run_in_background) 派 ${SUBAGENT_TYPES.executor}`;
 
 /**
- * "验收报告" 中重新拆分切片的选项组.
- * @type {number}
+ * 提交范围的写法, 验收通过后的提交使用.
+ * @type {string}
  */
-const RESPLIT_OPTION = 3;
+const COMMIT_SCOPE =
+  "纳入范围: 回执改动清单中的文件, .navigator/ 下的改动, 以及插件命令改动的 .claude/settings.json 与 .claude/rules/engineering.md; 纳入范围之外的改动用文字列出并询问";
 
 /**
  * 执行 order 命令.
@@ -114,37 +81,22 @@ export function runOrder({ positionals, values, cwd, now }) {
     case "new":
       return createNewOrder(context, values, now);
     case "set":
-      return changeStatus(context, argument, now);
-    case "tests": {
-      const draft = readDraftJson(context.projectRoot, values.from);
-      const commands = Array.isArray(draft.commands)
-        ? draft.commands.map(String)
-        : [];
-      return resultLines(
-        saveState(context, authorizeTests(context.state, commands), now),
-      );
-    }
+      return changeStatus(context, argument, values, now);
     default:
-      throw new WorkflowError(
-        "order 的用法: new, set <状态>, tests --from <草稿>.",
-      );
+      throw new WorkflowError("order 的用法: new, set <状态>.");
   }
 }
 
 /**
- * 新建工单并输出工单文件夹的路径. 会改动代码的工单要求项目已登记检查命令.
+ * 新建工单并输出工单文件的路径. 会改动代码的工单要求项目已登记检查命令.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {Record<string, any>} values 选项值.
  * @param {string} now 当前时间.
  * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 有待处理的阶段提交, 仓库没有提交, 参数不合法, 或缺少检查命令时.
+ * @throws {WorkflowError} 仓库没有提交, 参数不合法, 或缺少检查命令时.
  */
 function createNewOrder(context, values, now) {
-  assertNoStageCommit(
-    context.state,
-    replyStep(context.spec, STAGE_COMMIT_REPLY_TYPE),
-  );
   const baseCommit = headCommit(context.projectRoot);
   if (baseCommit === undefined) {
     throw new WorkflowError("仓库还没有任何提交, 请先完成首次提交再发布工单.");
@@ -166,56 +118,38 @@ function createNewOrder(context, values, now) {
   );
   return [
     ...resultLines(state),
-    `- 下一动作: 运行 template order 取得骨架, 用 Write 写入 ${orderFile}, 再${replyStep(context.spec, APPROVAL_REPLY_TYPE)}, 请用户审阅; 用户选 A 后运行 order set issued`,
+    `- 下一动作: 运行 template order 取得骨架, 用 Write 写入 ${orderFile}, 再${replyStep(context.spec, APPROVAL_REPLY_TYPE)}; 用户选 A 后运行 order set issued`,
   ];
 }
 
 /**
- * 转换当前工单状态. 发布前核对代码检查判据与用户审阅; 通过验收前核对验收记录的
- * 判据结论; 重新发布时, 先把旧回执改名归档, 避免被当成新回执, 发布后用掉审阅
- * 记录; 验收不通过时, 按工单类型与同一切片连续不通过的次数提示下一动作.
+ * 转换当前工单状态. 发布前核对代码检查判据与用户审阅, 发布时把旧回执改名归档;
+ * 通过验收前核对验收记录的判据结论; 验收不通过时提示下一动作.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {string | undefined} status 目标状态.
+ * @param {Record<string, any>} values 选项值.
  * @param {string} now 当前时间.
  * @returns {string[]} 输出各行.
+ * @throws {WorkflowError} 缺少目标状态, 或不满足转换条件时.
  */
-function changeStatus(context, status, now) {
+function changeStatus(context, status, values, now) {
   if (status === undefined) {
     throw new WorkflowError("order set 缺少目标状态.");
   }
   const order = context.state.order;
-  const isIssuing = status === ISSUED_STATUS;
-  if (isIssuing) {
-    assertIssuable(context);
+  if (status === ISSUED_ORDER_STATUS) {
+    return issueOrder(context, now);
   }
   if (status === "accepted" && order?.status === "reviewing") {
-    assertAcceptable(context);
+    assertAcceptable(context, values["accept-unverified"] === true);
   }
-  if (status === COMMITTING_ORDER_STATUS && order !== null) {
-    assertReviewKeyFilled(context, DEFERRED_REVIEW_KEYS.commitChoice);
-  }
-  if (status === COMMITTED_ORDER_STATUS) {
-    return settleOrderCommit(context, now);
-  }
-  const next = setOrderStatus(
-    context.state,
-    status,
-    headCommit(context.projectRoot),
-  );
-  const archived =
-    isIssuing && order !== null
-      ? archiveReceipt(context.projectRoot, order.folder)
-      : undefined;
-  const state = saveState(context, next, now, {
-    writtenPaths: archived === undefined ? [] : [archived.from, archived.to],
-  });
-  if (isIssuing) {
-    consumeApproval(context.projectRoot);
-  }
+  const state = saveState(context, setOrderStatus(context.state, status), now);
   const lines = resultLines(state);
-  if (archived !== undefined) {
-    lines.push(`- 旧回执已归档: ${archived.to}`);
+  if (status === "accepted" && order !== null) {
+    lines.push(
+      `- 下一动作: 按用户在 "${REVIEW_REPLY_TYPE}" 中的选择调用 ${COMMIT_SKILL}: 只提交时参数写 "提交, ${COMMIT_SCOPE}"; 提交并推送时写 "提交并推送, ${COMMIT_SCOPE}"`,
+    );
   }
   if (status === "rejected" && order !== null) {
     lines.push(rejectionAction(context.spec, state, order));
@@ -224,88 +158,51 @@ function changeStatus(context, status, now) {
 }
 
 /**
- * 工单提交完成: 记录与插件管理的配置必须已全部入库, 然后按 HEAD 结算工单提交.
- * 状态文件已随提交入库, 不再改写, 以免工作区留下未入库的改动.
+ * 发布当前工单: 核对能否发布, 把旧回执改名归档, 记下发布时的工单内容, 用掉审阅.
+ * 受阻后内容没有改动的工单直接继续, 由原执行子代理接着做.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
  * @param {string} now 当前时间.
  * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 仓库还没有提交, 仍有未入库的记录, 或工单不在提交步骤中时.
+ * @throws {WorkflowError} 不能发布时.
  */
-function settleOrderCommit(context, now) {
-  const head = headCommit(context.projectRoot);
-  if (head === undefined) {
-    throw new WorkflowError("仓库没有 HEAD 提交, 无法记录提交.");
-  }
-  assertRecordsCommitted(context.projectRoot, COMMITTED_COMMAND);
-  return resultLines(
-    settleCommitStep({
-      projectRoot: context.projectRoot,
-      state: context.state,
-      kind: COMMIT_STEP_KINDS.order,
-      commit: head,
-      now,
-    }),
-  );
-}
-
-/**
- * 核对当前工单能否通过验收: 验收记录的判据核对表中每条都必须是通过. 选型工单
- * 例外: 是否采用选型结论由用户在看过逐条核对结果之后决定, 判据核对只供参考;
- * 两种工单都要求验收记录中已写下用户结论.
- *
- * @param {import("./support.mjs").ProjectContext} context 项目上下文.
- * @returns {void}
- * @throws {WorkflowError} 有判据不是通过, 或验收记录缺失时, 原因写明下一步.
- */
-function assertAcceptable(context) {
+function issueOrder(context, now) {
   const order = context.state.order;
   if (order === null) {
-    return;
+    throw new WorkflowError("当前没有工单.");
   }
-  const blockers = orderAcceptanceBlockers(context.projectRoot, order);
-  if (blockers.length > 0 && order.kind !== SELECTION_ORDER_KIND) {
-    throw new WorkflowError(
-      `工单 ${order.id} 不能通过验收: ${blockers.join(" ")} 有判据不通过或未验证时运行 order set rejected, 按输出处理.`,
-    );
-  }
-  assertReviewKeyFilled(context, DEFERRED_REVIEW_KEYS.userVerdict);
-}
-
-/**
- * 核对验收记录中等用户选择后才写的键已经写下: 通过验收之前写用户结论,
- * 进入提交之前写提交方式.
- *
- * @param {import("./support.mjs").ProjectContext} context 项目上下文.
- * @param {string} key 键名, 取值见 DEFERRED_REVIEW_KEYS.
- * @returns {void}
- * @throws {WorkflowError} 该键还没写时.
- */
-function assertReviewKeyFilled(context, key) {
-  const problem = unfilledReviewKey({
-    projectRoot: context.projectRoot,
-    order: context.state.order,
-    spec: context.spec,
-    key,
-  });
-  if (problem !== undefined) {
-    throw new WorkflowError(problem);
-  }
+  const isContinuing = assertIssuable(context);
+  const archived = archiveReceipt(context.projectRoot, order.folder);
+  const state = saveState(
+    context,
+    setOrderStatus(context.state, ISSUED_ORDER_STATUS, {
+      issuedDigest: digestOrderFile(context.projectRoot, order),
+    }),
+    now,
+  );
+  consumeApproval(context.projectRoot);
+  const running = replyStep(context.spec, RUNNING_REPLY_TYPE);
+  return [
+    ...resultLines(state),
+    ...(archived === undefined ? [] : [`- 旧回执已归档: ${archived}`]),
+    isContinuing
+      ? `- 下一动作: 用 SendMessage 让原执行子代理继续 (说明用户已完成的操作); 找不到它时${DISPATCH_ACTION}; 然后${running}`
+      : `- 下一动作: ${DISPATCH_ACTION}, 然后${running}`,
+  ];
 }
 
 /**
  * 核对当前工单能否发布: 会改动代码的工单必须带代码检查判据; 用户必须已在
- * "工单审阅" 中认可当前的工单内容.
+ * "工单审阅" 中认可当前的工单内容, 或工单受阻后内容与上次发布时相同.
  *
  * @param {import("./support.mjs").ProjectContext} context 项目上下文.
- * @returns {void}
+ * @returns {boolean} 是受阻后内容没有改动的继续发布时返回 true.
  * @throws {WorkflowError} 不能发布时, 原因写明补救办法.
  */
 function assertIssuable(context) {
-  const order = context.state.order;
-  if (order === null) {
-    return;
-  }
+  const order = /** @type {import("../lib/state.mjs").OrderState} */ (
+    context.state.order
+  );
   const blocker = issueBlocker(
     context.state,
     readOrderText(context.projectRoot, order),
@@ -315,14 +212,62 @@ function assertIssuable(context) {
   }
   const approval = readApprovalStatus(context.projectRoot, order);
   if (approval === APPROVAL_STATUSES.approved) {
-    return;
+    return false;
   }
-  const { spec } = context;
+  if (
+    order.status === "blocked" &&
+    order.issuedDigest !== undefined &&
+    order.issuedDigest === digestOrderFile(context.projectRoot, order)
+  ) {
+    return true;
+  }
   throw new WorkflowError(
     approval === APPROVAL_STATUSES.awaiting
       ? `工单 ${order.id} 正在等用户审阅: 用户在 "${APPROVAL_REPLY_TYPE}" 中选 A 之后才能发布.`
-      : `工单 ${order.id} 还没有经用户审阅, 或审阅之后内容有改动: 先${replyStep(spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后再运行 order set issued, 然后${replyStep(spec, ISSUE_REPLY_TYPE)}.`,
+      : `工单 ${order.id} 还没有经用户审阅, 或审阅之后内容有改动: 先${replyStep(context.spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后再运行 order set issued.`,
   );
+}
+
+/**
+ * 核对当前工单能否通过验收: 不能有不通过的判据; 有未验证的判据时, 要用户
+ * 在 "验收报告" 中明确接受. 选型工单例外: 是否采用由用户在看过逐条核对结果
+ * 之后决定. 两种工单都要求验收记录中已写下用户结论.
+ *
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @param {boolean} isUnverifiedAccepted 用户是否已接受未验证的判据.
+ * @returns {void}
+ * @throws {WorkflowError} 不能通过验收时, 原因写明下一步.
+ */
+function assertAcceptable(context, isUnverifiedAccepted) {
+  const order = /** @type {import("../lib/state.mjs").OrderState} */ (
+    context.state.order
+  );
+  const verdicts = readOrderVerdicts(context.projectRoot, order);
+  if (verdicts.problem !== undefined) {
+    throw new WorkflowError(
+      `工单 ${order.id} 不能通过验收: ${verdicts.problem}`,
+    );
+  }
+  if (order.kind !== SELECTION_ORDER_KIND) {
+    if (verdicts.failed.length > 0) {
+      throw new WorkflowError(
+        `工单 ${order.id} 不能通过验收: 判据 ${verdicts.failed.map((item) => `"${item}"`).join(", ")} 不通过. 运行 order set rejected, 按输出处理.`,
+      );
+    }
+    if (verdicts.unverified.length > 0 && !isUnverifiedAccepted) {
+      throw new WorkflowError(
+        `工单 ${order.id} 有未验证的判据: ${verdicts.unverified.map((item) => `"${item}"`).join(", ")}. 用 "${REVIEW_REPLY_TYPE}" 第 ${REVIEW_OPTIONS.unverified} 组请用户决定; 用户接受时运行 order set accepted --accept-unverified.`,
+      );
+    }
+  }
+  const unfilled = unfilledUserVerdict({
+    projectRoot: context.projectRoot,
+    order,
+    spec: context.spec,
+  });
+  if (unfilled !== undefined) {
+    throw new WorkflowError(unfilled);
+  }
 }
 
 /**
@@ -330,11 +275,10 @@ function assertIssuable(context) {
  *
  * @param {string} projectRoot 项目根目录.
  * @param {string} folder 工单文件夹名.
- * @returns {{from: string, to: string} | undefined} 归档前后的项目相对路径; 没有回执时为 undefined.
+ * @returns {string | undefined} 归档后的项目相对路径; 没有回执时为 undefined.
  */
 function archiveReceipt(projectRoot, folder) {
-  const from = orderFilePath(folder, "receipt");
-  const receipt = path.join(projectRoot, from);
+  const receipt = path.join(projectRoot, orderFilePath(folder, "receipt"));
   if (!existsSync(receipt)) {
     return undefined;
   }
@@ -346,17 +290,16 @@ function archiveReceipt(projectRoot, folder) {
     round += 1;
   }
   renameSync(receipt, archivedName(round));
-  return { from, to: projectRelativePath(projectRoot, archivedName(round)) };
+  return projectRelativePath(projectRoot, archivedName(round));
 }
 
 /**
- * 验收不通过后的下一动作. 修复工单要求已登记检查命令, 不能用于还没有检查命令的
- * 阶段, 所以按工单类型分三种:
- * - 选型工单只在用户于 "验收报告" 第 4 组选择另选方案之后才转为不通过, 下一步
- *   按用户给出的方向新建选型工单 (检查命令在选型采用后才登记).
- * - 运行检查与分析工单只产出记录, 补正就是在同一切片重发同类工单; 不提示重新拆分,
- *   这类工单的结果与切片大小无关.
- * - 其余工单在同一切片连续不通过达到阈值时重新拆分, 否则在同一切片发布修复工单.
+ * 验收不通过后的下一动作, 按工单类型分三种:
+ * - 选型工单只在用户选择另选方案之后才转为不通过, 下一步按用户给出的方向新建
+ *   选型工单 (检查命令在选型采用后才登记, 不能发修复工单).
+ * - 运行检查与分析工单只产出记录, 补正就是在同一切片重发同类工单.
+ * - 其余工单先判断不通过的原因: 工单太大就拆小, 规格不清或实现有误就发修复工单.
+ *   同一切片连续不通过时另加提醒.
  *
  * @param {import("../lib/spec.mjs").TemplateSpec} spec 模板规格.
  * @param {import("../lib/state.mjs").NavigatorState} state 写入后的状态.
@@ -365,16 +308,18 @@ function archiveReceipt(projectRoot, folder) {
  */
 function rejectionAction(spec, state, order) {
   if (order.kind === SELECTION_ORDER_KIND) {
-    return `- 下一动作: 按用户在 "验收报告" 第 ${SELECTION_ADOPT_OPTION} 组选 B 时给出的方向, 运行 order new --kind ${SELECTION_ORDER_KIND} 新建选型工单; 用户还没有选择时先${replyStep(spec, "验收报告", SELECTION_ADOPT_OPTION)}`;
+    return `- 下一动作: 按用户在 "${REVIEW_REPLY_TYPE}" 第 ${REVIEW_OPTIONS.selection} 组选 B 时给出的方向, 运行 order new --kind ${SELECTION_ORDER_KIND} 新建选型工单`;
   }
-  const remedyStep = replyStep(spec, "验收报告", FIX_OPTION);
+  const remedyStep = replyStep(spec, REVIEW_REPLY_TYPE, REVIEW_OPTIONS.fix);
   const sliceFlag = order.slice === null ? "" : ` --slice ${order.slice}`;
   if (isRecordOnlyOrderKind(order.kind)) {
     return `- 下一动作: ${remedyStep}; 用户选 A 后运行 order new --kind ${order.kind}${sliceFlag}, 重发同类工单 (这类工单只产出记录, 不发修复工单)`;
   }
   const count =
     order.slice === null ? 0 : consecutiveRejections(state, order.slice);
-  return count >= RESPLIT_THRESHOLD
-    ? `- 下一动作: 切片 ${order.slice} 已连续 ${count} 次验收不通过, ${replyStep(spec, "验收报告", RESPLIT_OPTION)}`
-    : `- 下一动作: ${remedyStep}; 用户选 A 后运行 order new --kind ${FIX_ORDER_KIND}${sliceFlag}`;
+  const warning =
+    count >= RESPLIT_THRESHOLD
+      ? ` 切片 ${order.slice} 已连续 ${count} 次不通过, 优先考虑工单是否太大.`
+      : "";
+  return `- 下一动作: ${remedyStep}; 用户选 A 后先判断不通过的原因: 工单超出一次执行或验收的能力时拆成更小的工单 (需要时更新推进路线), 规格不清或实现有误时运行 order new --kind ${FIX_ORDER_KIND}${sliceFlag}.${warning}`;
 }

@@ -14,11 +14,11 @@ WayPoint 是一个提供实用工作流技能的 [Claude Code](https://code.clau
 
 ## 技能列表
 
-| 技能                | 命令                                  | 用途                                                                                            | 文档                                                                                     |
-| ------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `commit-message`    | `/waypoint:commit-message [额外要求]` | 根据真实的 Git 改动生成符合 Conventional Commits 的简体中文提交消息, 并按需提交或推送.          | [使用说明](docs/commit-message.md)                                                       |
-| `repo-init`         | `/waypoint:repo-init`                 | 初始化 Git 仓库, 编写逐条附中文注释的 `.gitignore`, `.editorconfig` 与 `.gitattributes`.        | [使用说明](docs/repo-init.md)                                                            |
-| `project-navigator` | `/waypoint:project-navigator [参数]`  | 引导大型项目从一句需求走到立项, 选型, 骨架与逐个切片的交付; 只做规划与验收, 实现交给另开的会话. | [使用说明](docs/project-navigator.md), [维护文档](docs/project-navigator-maintaining.md) |
+| 技能                | 命令                                  | 用途                                                                                                  | 文档                                                                                     |
+| ------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `commit-message`    | `/waypoint:commit-message [额外要求]` | 根据真实的 Git 改动生成符合 Conventional Commits 的简体中文提交消息, 并按需提交或推送.                | [使用说明](docs/commit-message.md)                                                       |
+| `repo-init`         | `/waypoint:repo-init`                 | 初始化 Git 仓库, 编写逐条附中文注释的 `.gitignore`, `.editorconfig` 与 `.gitattributes`.              | [使用说明](docs/repo-init.md)                                                            |
+| `project-navigator` | `/waypoint:project-navigator [参数]`  | 引导大型项目从一句需求走到立项, 选型, 骨架与逐个切片的交付; 只做规划与验收, 实现交给后台的执行子代理. | [使用说明](docs/project-navigator.md), [维护文档](docs/project-navigator-maintaining.md) |
 
 `commit-message` 与 `repo-init` 会在你用自然语言提出相应请求时自动触发, 也可以用上表中的斜杠命令直接调用. `project-navigator` 只能用斜杠命令显式调用.
 
@@ -36,7 +36,7 @@ WayPoint 是一个提供实用工作流技能的 [Claude Code](https://code.clau
 ## 使用提示
 
 - 请停用其它生成提交消息的技能, 例如 `~/.claude/skills` 中的个人技能. 否则请求提交消息时, Claude 可能在两者之间任选其一.
-- 项目初始化 `project-navigator` 之后, 防护 hook 对该项目中的所有会话生效. 例如普通会话不能修改 `.navigator/` 下的记录, 也不能运行改变编排状态的插件命令; 不再需要时运行 `/waypoint:project-navigator uninstall`.
+- `project-navigator` 的 hook 由插件提供, 只在初始化过的项目中生效: 任何会话都不能直接改 `.navigator/state.json`, 调用过本技能的会话不能写 `.navigator/` 之外的文件. 不再需要时运行 `/waypoint:project-navigator uninstall`.
 
 ## 安装
 

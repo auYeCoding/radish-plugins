@@ -1,1423 +1,232 @@
 /**
- * @file 守卫决策表测试: 会话身份 × 工具 × 目标路径或命令 × 状态.
+ * @file 写入守卫的决策表测试: 四条规则各有放行例与拒绝例.
  */
 
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
 
-import { RESEARCH_FRAME } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/briefs.mjs";
-import { decideToolUse } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs";
 import {
-  mergeNavigatorHooks,
-  mergeNavigatorPermissions,
-} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/settings.mjs";
-import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
+  SUBAGENT_TYPES,
+  decideWrite,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs";
 
 /**
- * 测试中使用的项目根目录, 只参与路径计算, 不需要真实存在.
+ * 判定用的项目根目录; 守卫只做路径计算, 不访问文件.
  * @type {string}
  */
-const PROJECT_ROOT = path.resolve("guard-test-项目 根");
+const ROOT = path.resolve("/项目 根");
 
 /**
- * 模板规格.
- * @type {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs").TemplateSpec}
- */
-const SPEC = loadSpec();
-
-/**
- * 测试用的验收委派提示词.
+ * 当前工单的文件夹名.
  * @type {string}
  */
-const REVIEW_BRIEF = "# 验收委派 0001\n\n逐条核对判据.";
+const FOLDER = "0007-export";
 
 /**
- * 结构合格的术语定义文件.
- * @type {string}
- */
-const VALID_GLOSSARY = [
-  "# 术语定义",
-  "",
-  "## 流程术语",
-  "",
-  "- 工单: 交给执行会话的一项任务.",
-  "",
-  "## 项目术语",
-  "",
-  "- 报表: 按月汇总的销售数据.",
-  "",
-  "```text",
-  SPEC.format.summarySeparator,
-  "术语表已更新.",
-  "```",
-  "",
-].join("\n");
-
-/**
- * 测试用的已登记取证工具.
- * @type {string}
- */
-const EVIDENCE_TOOL = "mcp__Reqable__capture_live_filter";
-
-/**
- * 用户测试记录, 相对于项目根目录.
- * @type {string}
- */
-const USER_TESTS_FILE = ".navigator/orders/0001-x/user-tests.md";
-
-/**
- * 用户粘贴的测试输出, 带 Windows 换行与行尾空格.
- * @type {string}
- */
-const PASTED_OUTPUT = "HTTP/2 200   \r\nx-mid: aZ3f\r\n";
-
-/**
- * 生成结构合格的用户测试记录, 每段输出一个条目.
+ * 构造一张当前工单.
  *
- * @param {readonly string[]} outputs 各条目的输出.
- * @returns {string} 文件全文.
+ * @param {string} kind 工单类型.
+ * @param {string} [status] 工单状态.
+ * @returns {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs").OrderState} 工单.
  */
-function userTestsFile(outputs) {
-  return [
-    "# 用户测试",
-    "",
-    ...outputs.flatMap((output, index) => [
-      `## 测试 ${String(index + 1).padStart(4, "0")}: 注册第一步`,
-      "",
-      "- 测试命令: `python main.py --step 1`",
-      "- 对应判据: 判据 2",
-      "",
-      "```output",
-      output,
-      "```",
-      "",
-    ]),
-    "```text",
-    SPEC.format.summarySeparator,
-    "用户运行了注册第一步.",
-    "```",
-    "",
-  ].join("\n");
-}
-
-/**
- * 项目配置文件, 相对于项目根目录.
- * @type {string}
- */
-const SETTINGS_FILE = ".claude/settings.json";
-
-/**
- * 初始化之后的项目配置: 只有本技能的 hook 与放行规则.
- * @type {Record<string, any>}
- */
-const INSTALLED_SETTINGS = mergeNavigatorPermissions(mergeNavigatorHooks({}));
-
-/**
- * 项目自己的 hook 分组: 改完文件后运行代码检查.
- * @type {Record<string, any>}
- */
-const PROJECT_HOOK_GROUP = Object.freeze({
-  matcher: "Write|Edit",
-  hooks: [{ type: "command", command: 'node ".claude/hooks/verify.mjs"' }],
-});
-
-/**
- * 把配置对象写成配置文件的全文.
- *
- * @param {Record<string, any>} settings 配置对象.
- * @returns {string} 文件全文.
- */
-function settingsText(settings) {
-  return `${JSON.stringify(settings, null, 2)}\n`;
-}
-
-/**
- * 在初始化之后的配置中, 为工具调用后事件追加项目自己的 hook 分组.
- *
- * @returns {Record<string, any>} 新配置.
- */
-function settingsWithProjectHook() {
+function orderOf(kind, status = "issued") {
   return {
-    ...INSTALLED_SETTINGS,
-    hooks: {
-      ...INSTALLED_SETTINGS.hooks,
-      PostToolUse: [
-        ...INSTALLED_SETTINGS.hooks.PostToolUse,
-        PROJECT_HOOK_GROUP,
-      ],
-    },
+    id: "0007",
+    slug: "export",
+    folder: FOLDER,
+    kind,
+    slice: null,
+    status,
+    round: 1,
+    baseCommit: "a".repeat(40),
   };
 }
 
 /**
- * 默认的状态上下文: 当前工单已发布, 执行会话已对齐, 已授权 npm test 与一个取证工具.
- * @type {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardContext}
- */
-const BASE_CONTEXT = Object.freeze({
-  orderStatus: "issued",
-  authorizedTests: ["npm test"],
-  evidenceTools: [EVIDENCE_TOOL],
-  executorFolder: "0001-x",
-  isOrderActive: true,
-  isAligned: true,
-  reviewBrief: REVIEW_BRIEF,
-  researchFrame: RESEARCH_FRAME,
-});
-
-/**
- * @typedef {object} GuardCase 决策表中的一行.
- * @property {string} name 用例名.
- * @property {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/sessions.mjs").SessionRole} role 会话身份.
- * @property {boolean} [isSubagent] 是否来自子代理.
- * @property {string} [agentType] 子代理类型.
- * @property {string} tool 工具名.
- * @property {string} [target] 写入目标, 相对于项目根目录.
- * @property {Record<string, any>} [input] 其余工具参数.
- * @property {Partial<import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardContext>} [context] 覆盖的状态上下文.
- * @property {string} [previous] 写入目标的当前内容.
- * @property {string[]} [prompts] 编排会话最近收到的用户消息.
- * @property {boolean} [uncommittedRecords] 记录中是否有未入库的改动.
- * @property {"allow" | "deny"} expected 预期判定.
- * @property {RegExp} [reason] 拒绝理由必须匹配的内容.
- * @property {boolean} [isProbe] 是否预期为自检探测.
- */
-
-/**
- * 编排会话主会话的用例.
- * @type {readonly GuardCase[]}
- */
-const ORCHESTRATOR_CASES = Object.freeze([
-  { name: "读文件", role: "orchestrator", tool: "Read", expected: "allow" },
-  { name: "搜索", role: "orchestrator", tool: "Grep", expected: "allow" },
-  {
-    name: "加载工具",
-    role: "orchestrator",
-    tool: "ToolSearch",
-    expected: "allow",
-  },
-  {
-    name: "写结构合格的记录",
-    role: "orchestrator",
-    tool: "Write",
-    target: ".navigator/plan/glossary.md",
-    input: { content: VALID_GLOSSARY },
-    expected: "allow",
-  },
-  {
-    name: "写结构不合格的记录",
-    role: "orchestrator",
-    tool: "Write",
-    target: ".navigator/plan/glossary.md",
-    input: { content: VALID_GLOSSARY.replace("## 项目术语", "## 其它术语") },
-    expected: "deny",
-  },
-  {
-    name: "写草稿",
-    role: "orchestrator",
-    tool: "Write",
-    target: ".navigator/drafts/roadmap.json",
-    input: { content: "{}" },
-    expected: "allow",
-  },
-  {
-    name: "写业务代码",
-    role: "orchestrator",
-    tool: "Write",
-    target: "src/app.js",
-    expected: "deny",
-  },
-  {
-    name: "在项目配置中追加项目的 hook",
-    role: "orchestrator",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: { content: settingsText(settingsWithProjectHook()) },
-    expected: "deny",
-    reason: /只能由插件的 init 与 uninstall 命令修改/u,
-  },
-  {
-    name: "写状态文件",
-    role: "orchestrator",
-    tool: "Edit",
-    target: ".navigator/state.json",
-    expected: "deny",
-  },
-  {
-    name: "写生成的推进路线",
-    role: "orchestrator",
-    tool: "Write",
-    target: ".navigator/plan/roadmap.md",
-    expected: "deny",
-  },
-  {
-    name: "写执行手册",
-    role: "orchestrator",
-    tool: "Write",
-    target: ".navigator/guide/executor.md",
-    expected: "deny",
-  },
-  {
-    name: "写项目之外",
-    role: "orchestrator",
-    tool: "Write",
-    target: "../outside.md",
-    expected: "deny",
-  },
-  {
-    name: "改笔记本",
-    role: "orchestrator",
-    tool: "NotebookEdit",
-    target: "analysis.ipynb",
-    expected: "deny",
-  },
-  {
-    name: "改插件脚本",
-    role: "orchestrator",
-    tool: "Edit",
-    target: ".navigator/bin/runtime/hook.mjs",
-    expected: "deny",
-  },
-  {
-    name: "初始化探测写入",
-    role: "orchestrator",
-    tool: "Write",
-    target: ".navigator/bin/navigator-probe.txt",
-    expected: "deny",
-    isProbe: true,
-  },
-  {
-    name: "运行插件命令",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "node .navigator/bin/runtime/navigator.mjs status" },
-    expected: "allow",
-  },
-  {
-    name: "运行只读 git",
-    role: "orchestrator",
-    tool: "PowerShell",
-    input: { command: "git log --oneline -5" },
-    expected: "allow",
-  },
-  {
-    name: "安装依赖",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "npm install" },
-    expected: "deny",
-  },
-  {
-    name: "运行已授权测试",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "npm test" },
-    expected: "allow",
-  },
-  {
-    name: "运行复合命令",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git log | head" },
-    expected: "deny",
-  },
-  {
-    name: "提交步骤之外提交",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git commit -m x" },
-    expected: "deny",
-    reason: /只运行三类命令/u,
-  },
-  {
-    name: "提交步骤中用 -m 提交时理由给出放行的写法",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: 'git commit -m "feat: 导出" -m "- 新增导出"' },
-    context: { orderStatus: "committing" },
-    expected: "deny",
-    reason: /git commit -F -.*heredoc.*不用 `-m`/u,
-  },
-  {
-    name: "提交步骤中用 -F 文件提交时理由给出放行的写法",
-    role: "orchestrator",
-    tool: "PowerShell",
-    input: { command: "git commit -F .navigator/drafts/message.txt" },
-    context: { orderStatus: "committing" },
-    expected: "deny",
-    reason: /git commit -F -/u,
-  },
-  {
-    name: "提交步骤中运行复合命令时理由说明提交写法不受限",
-    role: "orchestrator",
-    tool: "Bash",
-    input: {
-      command:
-        "git rev-parse --is-inside-work-tree && git rev-parse -q --verify HEAD",
-    },
-    context: { orderStatus: "committing" },
-    expected: "deny",
-    reason: /复合命令.*heredoc/u,
-  },
-  {
-    name: "提交步骤中用 PowerShell 管道提交",
-    role: "orchestrator",
-    tool: "PowerShell",
-    input: {
-      command:
-        "$OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n@'\nfeat: 导出\n'@ | git commit -F -",
-    },
-    context: { orderStatus: "committing" },
-    expected: "allow",
-  },
-  {
-    name: "调用已登记的取证工具",
-    role: "orchestrator",
-    tool: EVIDENCE_TOOL,
-    expected: "deny",
-  },
-  {
-    name: "写用户测试记录且输出与用户消息一致",
-    role: "orchestrator",
-    tool: "Write",
-    target: USER_TESTS_FILE,
-    input: { content: userTestsFile(["HTTP/2 200\nx-mid: aZ3f"]) },
-    prompts: ["继续", `输出如下:\r\n${PASTED_OUTPUT}谢谢`],
-    expected: "allow",
-  },
-  {
-    name: "写用户测试记录且输出被改写",
-    role: "orchestrator",
-    tool: "Write",
-    target: USER_TESTS_FILE,
-    input: { content: userTestsFile(["HTTP/2 200\nx-mid: 已获取"]) },
-    prompts: [`输出如下:\r\n${PASTED_OUTPUT}`],
-    expected: "deny",
-    reason: /逐字/u,
-  },
-  {
-    name: "追加用户测试时不再核对已有的输出",
-    role: "orchestrator",
-    tool: "Write",
-    target: USER_TESTS_FILE,
-    input: { content: userTestsFile(["旧输出", "HTTP/2 200\nx-mid: aZ3f"]) },
-    previous: userTestsFile(["旧输出"]),
-    prompts: [PASTED_OUTPUT],
-    expected: "allow",
-  },
-  {
-    name: "写用户测试记录且输出为空",
-    role: "orchestrator",
-    tool: "Write",
-    target: USER_TESTS_FILE,
-    input: { content: userTestsFile([""]) },
-    prompts: [PASTED_OUTPUT],
-    expected: "deny",
-    reason: /不能为空/u,
-  },
-  {
-    name: "提交步骤中暂存",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git add -- src/app.js" },
-    context: { orderStatus: "accepted" },
-    expected: "allow",
-  },
-  {
-    name: "提交步骤中用标准输入提交",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git commit -F - <<'EOF'\nfeat: 导出\nEOF" },
-    context: { orderStatus: "committing" },
-    expected: "allow",
-  },
-  {
-    name: "提交步骤中强制推送",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git push --force" },
-    context: { orderStatus: "committing" },
-    expected: "deny",
-  },
-  {
-    name: "编排中途推送",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git push" },
-    expected: "deny",
-  },
-  {
-    name: "项目完成且记录都已入库后推送",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git push origin main" },
-    context: { isProjectFinished: true },
-    expected: "allow",
-  },
-  {
-    name: "项目完成后强制推送",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git push --force-with-lease" },
-    context: { isProjectFinished: true },
-    expected: "deny",
-  },
-  {
-    name: "项目完成但记录未入库时推送",
-    role: "orchestrator",
-    tool: "Bash",
-    input: { command: "git push" },
-    context: { isProjectFinished: true },
-    uncommittedRecords: true,
-    expected: "deny",
-  },
-  {
-    name: "提交步骤中调用提交技能",
-    role: "orchestrator",
-    tool: "Skill",
-    input: { skill: "waypoint:commit-message" },
-    context: { orderStatus: "accepted" },
-    expected: "allow",
-  },
-  {
-    name: "提交步骤之外调用提交技能",
-    role: "orchestrator",
-    tool: "Skill",
-    input: { skill: "waypoint:commit-message" },
-    expected: "deny",
-  },
-  {
-    name: "调用其它技能",
-    role: "orchestrator",
-    tool: "Skill",
-    input: { skill: "waypoint:repo-init" },
-    context: { orderStatus: "accepted" },
-    expected: "deny",
-  },
-  {
-    name: "使用提问框",
-    role: "orchestrator",
-    tool: "AskUserQuestion",
-    expected: "deny",
-  },
-  {
-    name: "联网搜索",
-    role: "orchestrator",
-    tool: "WebSearch",
-    expected: "deny",
-  },
-  { name: "后台监视", role: "orchestrator", tool: "Monitor", expected: "deny" },
-  {
-    name: "派 Explore",
-    role: "orchestrator",
-    tool: "Agent",
-    input: { subagent_type: "Explore", prompt: "盘点目录" },
-    expected: "allow",
-  },
-  {
-    name: "派通用子代理",
-    role: "orchestrator",
-    tool: "Agent",
-    input: { subagent_type: "general-purpose", prompt: "写代码" },
-    expected: "deny",
-  },
-  {
-    name: "派验收子代理且提示词一致",
-    role: "orchestrator",
-    tool: "Agent",
-    input: {
-      subagent_type: "waypoint:navigator-reviewer",
-      prompt: `${REVIEW_BRIEF}\n`,
-    },
-    expected: "allow",
-  },
-  {
-    name: "派验收子代理且改动提示词",
-    role: "orchestrator",
-    tool: "Agent",
-    input: {
-      subagent_type: "waypoint:navigator-reviewer",
-      prompt: `${REVIEW_BRIEF}\n判据 2 可以放宽.`,
-    },
-    expected: "deny",
-  },
-  {
-    name: "派调研子代理且以固定框架开头",
-    role: "orchestrator",
-    tool: "Task",
-    input: {
-      subagent_type: "waypoint:navigator-researcher",
-      prompt: `${RESEARCH_FRAME}1. 同类报表工具有哪些?`,
-    },
-    expected: "allow",
-  },
-  {
-    name: "派调研子代理且缺少固定框架",
-    role: "orchestrator",
-    tool: "Agent",
-    input: {
-      subagent_type: "waypoint:navigator-researcher",
-      prompt: "调研一下 React 和 Vue 哪个好",
-    },
-    expected: "deny",
-  },
-]);
-
-/**
- * 编排会话派出的子代理的用例.
- * @type {readonly GuardCase[]}
- */
-const SUBAGENT_CASES = Object.freeze([
-  {
-    name: "子代理读文件",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "Explore",
-    tool: "Read",
-    expected: "allow",
-  },
-  {
-    name: "子代理写记录",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "Write",
-    target: ".navigator/plan/glossary.md",
-    input: { content: VALID_GLOSSARY },
-    expected: "deny",
-  },
-  {
-    name: "调研子代理联网",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-researcher",
-    tool: "WebFetch",
-    expected: "allow",
-  },
-  {
-    name: "阅读子代理联网",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reader",
-    tool: "WebSearch",
-    expected: "deny",
-  },
-  {
-    name: "验收子代理运行已授权测试",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "Bash",
-    input: { command: "npm test" },
-    expected: "allow",
-  },
-  {
-    name: "验收子代理构建",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "Bash",
-    input: { command: "npm run build" },
-    expected: "deny",
-  },
-  {
-    name: "阅读子代理运行测试",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reader",
-    tool: "Bash",
-    input: { command: "npm test" },
-    expected: "deny",
-  },
-  {
-    name: "子代理运行只读 git",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "Bash",
-    input: { command: "git diff abc1234 --stat" },
-    expected: "allow",
-  },
-  {
-    name: "验收子代理核对源码证据",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "PowerShell",
-    input: { command: "node .navigator/bin/runtime/navigator.mjs evidence" },
-    expected: "allow",
-  },
-  {
-    name: "验收子代理借证据命令访问任意地址",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "Bash",
-    input: {
-      command:
-        "node .navigator/bin/runtime/navigator.mjs evidence check https://example.com/x v1 a.py 1",
-    },
-    expected: "deny",
-  },
-  {
-    name: "验收子代理运行其它插件命令",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "Bash",
-    input: {
-      command: "node .navigator/bin/runtime/navigator.mjs order set accepted",
-    },
-    expected: "deny",
-  },
-  {
-    name: "阅读子代理核对源码证据",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reader",
-    tool: "Bash",
-    input: { command: "node .navigator/bin/runtime/navigator.mjs evidence" },
-    expected: "deny",
-  },
-  {
-    name: "验收子代理加载工具定义",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "ToolSearch",
-    expected: "allow",
-  },
-  {
-    name: "验收子代理调用已登记的取证工具",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: EVIDENCE_TOOL,
-    expected: "allow",
-  },
-  {
-    name: "验收子代理调用未登记的 MCP 工具",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "mcp__Reqable__capture_live_clear",
-    expected: "deny",
-    reason: /未验证/u,
-  },
-  {
-    name: "验收子代理调用其它工具",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reviewer",
-    tool: "WebFetch",
-    expected: "deny",
-  },
-  {
-    name: "阅读子代理调用已登记的取证工具",
-    role: "orchestrator",
-    isSubagent: true,
-    agentType: "waypoint:navigator-reader",
-    tool: EVIDENCE_TOOL,
-    expected: "deny",
-  },
-]);
-
-/**
- * 执行会话的用例.
- * @type {readonly GuardCase[]}
- */
-const EXECUTOR_CASES = Object.freeze([
-  {
-    name: "执行会话对齐后写业务代码",
-    role: "executor",
-    tool: "Write",
-    target: "src/app.js",
-    expected: "allow",
-  },
-  {
-    name: "执行会话对齐前写业务代码",
-    role: "executor",
-    tool: "Write",
-    target: "src/app.js",
-    context: { isAligned: false },
-    expected: "deny",
-  },
-  {
-    name: "执行会话在工单结束后写业务代码",
-    role: "executor",
-    tool: "Edit",
-    target: "src/app.js",
-    context: { isOrderActive: false, isAligned: false },
-    expected: "deny",
-  },
-  {
-    name: "只产出记录的工单的执行会话写业务代码",
-    role: "executor",
-    tool: "Write",
-    target: "src/app.js",
-    context: { isRecordOnly: true },
-    expected: "deny",
-    reason: /只产出记录.*另发实现工单/u,
-  },
-  {
-    name: "只产出记录的工单的执行会话写本工单证据文件",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/artifacts/analysis.md",
-    context: { isRecordOnly: true },
-    expected: "allow",
-  },
-  {
-    name: "执行会话写本工单回执",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/receipt.md",
-    context: { isAligned: false },
-    expected: "allow",
-  },
-  {
-    name: "执行会话写其它工单回执",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0002-y/receipt.md",
-    expected: "deny",
-  },
-  {
-    name: "执行会话写本工单证据文件",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/artifacts/repro.py",
-    expected: "allow",
-  },
-  {
-    name: "执行会话写本工单证据子目录中的文件",
-    role: "executor",
-    tool: "Edit",
-    target: ".navigator/orders/0001-x/artifacts/capture/record-7.md",
-    expected: "allow",
-  },
-  {
-    name: "执行会话对齐前写本工单证据文件",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/artifacts/repro.py",
-    context: { isAligned: false },
-    expected: "deny",
-  },
-  {
-    name: "执行会话写其它工单证据文件",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0002-y/artifacts/repro.py",
-    expected: "deny",
-  },
-  {
-    name: "执行会话写工单文件夹中证据目录之外的文件",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/repro.py",
-    expected: "deny",
-  },
-  {
-    name: "执行会话借证据目录写回上级的工单文件",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/artifacts/../order.md",
-    expected: "deny",
-  },
-  {
-    name: "执行会话在工单结束后写证据文件",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/artifacts/repro.py",
-    context: { isOrderActive: false },
-    expected: "deny",
-  },
-  {
-    name: "执行会话写编排记录",
-    role: "executor",
-    tool: "Write",
-    target: ".navigator/plan/brief.md",
-    expected: "deny",
-  },
-  {
-    name: "执行会话在项目配置中追加项目的 hook",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: { content: settingsText(settingsWithProjectHook()) },
-    expected: "allow",
-  },
-  {
-    name: "执行会话用 Edit 在项目配置中追加新事件的 hook",
-    role: "executor",
-    tool: "Edit",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: {
-      old_string: '  "hooks": {',
-      new_string: `  "hooks": {\n    "Notification": [${JSON.stringify(PROJECT_HOOK_GROUP)}],`,
-    },
-    expected: "allow",
-  },
-  {
-    name: "执行会话对齐前改项目配置",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: { content: settingsText(settingsWithProjectHook()) },
-    context: { isAligned: false },
-    expected: "deny",
-    reason: /开工对齐尚未完成/u,
-  },
-  {
-    name: "执行会话在工单结束后改项目配置",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: { content: settingsText(settingsWithProjectHook()) },
-    context: { isOrderActive: false },
-    expected: "deny",
-    reason: /已不在执行中/u,
-  },
-  {
-    name: "执行会话删掉项目配置中本技能的 hook",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: {
-      content: settingsText({
-        ...INSTALLED_SETTINGS,
-        hooks: { PostToolUse: [PROJECT_HOOK_GROUP] },
-      }),
-    },
-    expected: "deny",
-    reason: /改动了本技能的 hook 分组.+只改 hooks 字段/u,
-  },
-  {
-    name: "执行会话把项目的 hook 塞进本技能的分组",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: {
-      content: settingsText({
-        ...INSTALLED_SETTINGS,
-        hooks: {
-          ...INSTALLED_SETTINGS.hooks,
-          Stop: INSTALLED_SETTINGS.hooks.Stop.map((group) => ({
-            ...group,
-            hooks: [...group.hooks, ...PROJECT_HOOK_GROUP.hooks],
-          })),
-        },
-      }),
-    },
-    expected: "deny",
-    reason: /改动了本技能的 hook 分组/u,
-  },
-  {
-    name: "执行会话改项目配置中的放行规则",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: {
-      content: settingsText({
-        ...settingsWithProjectHook(),
-        permissions: { allow: ["Bash(*)"] },
-      }),
-    },
-    expected: "deny",
-    reason: /改动了 hooks 之外的字段: permissions/u,
-  },
-  {
-    name: "执行会话在项目配置中停用全部 hook",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: {
-      content: settingsText({ ...INSTALLED_SETTINGS, disableAllHooks: true }),
-    },
-    expected: "deny",
-    reason: /改动了 hooks 之外的字段: disableAllHooks/u,
-  },
-  {
-    name: "执行会话把项目配置写成结构不对的内容",
-    role: "executor",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: {
-      content: settingsText({
-        ...INSTALLED_SETTINGS,
-        hooks: { PreToolUse: [{ hooks: "node" }] },
-      }),
-    },
-    expected: "deny",
-    reason: /hooks 字段的结构不对/u,
-  },
-  {
-    name: "执行会话用找不到原文的 Edit 改项目配置",
-    role: "executor",
-    tool: "Edit",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: { old_string: "不存在的片段", new_string: "{}" },
-    expected: "deny",
-    reason: /无法确定写入后的内容/u,
-  },
-  {
-    name: "执行会话改本机配置",
-    role: "executor",
-    tool: "Write",
-    target: ".claude/settings.local.json",
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: { content: settingsText(settingsWithProjectHook()) },
-    expected: "deny",
-    reason: /只能由插件的 init 与 uninstall 命令修改/u,
-  },
-  {
-    name: "执行会话写项目自己的 hook 脚本",
-    role: "executor",
-    tool: "Write",
-    target: ".claude/hooks/verify.mjs",
-    expected: "allow",
-  },
-  {
-    name: "执行会话用命令覆盖项目配置",
-    role: "executor",
-    tool: "Bash",
-    input: { command: "cp merged.json .claude/settings.json" },
-    expected: "deny",
-  },
-  {
-    name: "执行会话提交",
-    role: "executor",
-    tool: "Bash",
-    input: { command: "git commit -m x" },
-    expected: "deny",
-  },
-  {
-    name: "执行会话带全局参数推送",
-    role: "executor",
-    tool: "PowerShell",
-    input: { command: "git -c core.quotePath=false push" },
-    expected: "deny",
-  },
-  {
-    name: "执行会话运行测试",
-    role: "executor",
-    tool: "Bash",
-    input: { command: "npm test" },
-    expected: "allow",
-  },
-  {
-    name: "执行会话用命令删除状态文件",
-    role: "executor",
-    tool: "Bash",
-    input: { command: "rm .navigator/state.json" },
-    expected: "deny",
-  },
-  {
-    name: "执行会话取回执骨架",
-    role: "executor",
-    tool: "Bash",
-    input: {
-      command: "node .navigator/bin/runtime/navigator.mjs template receipt",
-    },
-    expected: "allow",
-  },
-  {
-    name: "执行会话自查一条源码证据",
-    role: "executor",
-    tool: "PowerShell",
-    input: {
-      command:
-        "node .navigator/bin/runtime/navigator.mjs evidence check https://github.com/a/b v1 src/a.py 1-3",
-    },
-    expected: "allow",
-  },
-  {
-    name: "执行会话截取源码证据核对的输出",
-    role: "executor",
-    tool: "Bash",
-    input: {
-      command:
-        "node .navigator/bin/runtime/navigator.mjs evidence check https://github.com/a/b v1 src/a.py 1-40 2>&1 | head -60",
-    },
-    expected: "allow",
-  },
-  {
-    name: "执行会话把插件命令的错误输出丢弃",
-    role: "executor",
-    tool: "PowerShell",
-    input: {
-      command:
-        'node "C:\\My Project\\.navigator\\bin\\runtime\\navigator.mjs" status 2>$null',
-    },
-    expected: "allow",
-  },
-  {
-    name: "执行会话把插件命令的输出重定向到编排记录",
-    role: "executor",
-    tool: "Bash",
-    input: {
-      command:
-        "node .navigator/bin/runtime/navigator.mjs template receipt > .navigator/orders/0001-x/receipt.md",
-    },
-    expected: "deny",
-    reason: /不能用命令行改写/u,
-  },
-  {
-    name: "执行会话用命令覆盖插件脚本",
-    role: "executor",
-    tool: "Bash",
-    input: { command: "cp x.mjs .navigator/bin/runtime/navigator.mjs" },
-    expected: "deny",
-  },
-  {
-    name: "执行会话把工单转为验收中",
-    role: "executor",
-    tool: "Bash",
-    input: {
-      command: "node .navigator/bin/runtime/navigator.mjs order set reviewing",
-    },
-    expected: "deny",
-    reason: /执行会话只能运行只读的插件命令.+order 会改变编排状态/u,
-  },
-  {
-    name: "执行会话在复合命令中改编排状态",
-    role: "executor",
-    tool: "Bash",
-    input: {
-      command:
-        "cd .navigator/bin/runtime && node navigator.mjs status && node navigator.mjs stage 5",
-    },
-    expected: "deny",
-  },
-  {
-    name: "执行会话用带引号的绝对路径接管编排",
-    role: "executor",
-    tool: "PowerShell",
-    input: {
-      command:
-        '& node "C:\\My Project\\.navigator\\bin\\runtime\\navigator.mjs" enter --session x',
-    },
-    expected: "deny",
-  },
-]);
-
-/**
- * 被接管的原编排会话的用例.
- * @type {readonly GuardCase[]}
- */
-const SUPERSEDED_CASES = Object.freeze([
-  {
-    name: "被接管的会话写编排记录",
-    role: "superseded",
-    tool: "Write",
-    target: ".navigator/plan/brief.md",
-    expected: "deny",
-    reason: /已不是编排会话.+重新调用 \/waypoint:project-navigator/u,
-  },
-  {
-    name: "被接管的会话写草稿",
-    role: "superseded",
-    tool: "Write",
-    target: ".navigator/drafts/change.json",
-    expected: "deny",
-    reason: /已不是编排会话/u,
-  },
-  {
-    name: "被接管的会话改编排状态",
-    role: "superseded",
-    tool: "Bash",
-    input: { command: "node .navigator/bin/runtime/navigator.mjs change add" },
-    expected: "deny",
-    reason: /已不是编排会话.+change/u,
-  },
-  {
-    name: "被接管的会话查看状态",
-    role: "superseded",
-    tool: "Bash",
-    input: { command: "node .navigator/bin/runtime/navigator.mjs status" },
-    expected: "allow",
-  },
-]);
-
-/**
- * 其它会话的用例.
- * @type {readonly GuardCase[]}
- */
-const OTHER_CASES = Object.freeze([
-  {
-    name: "其它会话写业务代码",
-    role: "other",
-    tool: "Edit",
-    target: "src/app.js",
-    expected: "allow",
-  },
-  {
-    name: "其它会话写工单",
-    role: "other",
-    tool: "Write",
-    target: ".navigator/orders/0001-x/order.md",
-    expected: "deny",
-    reason: /只有编排会话能写.+调用 \/waypoint:project-navigator.+启动提示词/u,
-  },
-  {
-    name: "其它会话提交工单",
-    role: "other",
-    tool: "Bash",
-    input: {
-      command: "node .navigator/bin/runtime/navigator.mjs order set committed",
-    },
-    expected: "deny",
-    reason: /只有编排会话能运行插件命令 order/u,
-  },
-  {
-    name: "其它会话初始化并接管编排",
-    role: "other",
-    tool: "Bash",
-    input: {
-      command:
-        'node "C:/Users/x/.claude/plugins/cache/waypoint/skills/project-navigator/runtime/navigator.mjs" init --session y',
-    },
-    expected: "deny",
-  },
-  {
-    name: "其它会话查看快照列表",
-    role: "other",
-    tool: "Bash",
-    input: { command: "node .navigator/bin/runtime/navigator.mjs snapshots" },
-    expected: "allow",
-  },
-  {
-    name: "其它会话搜索提到脚本名的文件",
-    role: "other",
-    tool: "Bash",
-    input: { command: "grep -rn navigator.mjs README.md docs" },
-    expected: "allow",
-  },
-  {
-    name: "其它会话改项目配置",
-    role: "other",
-    tool: "Edit",
-    target: SETTINGS_FILE,
-    expected: "deny",
-  },
-  {
-    name: "其它会话在项目配置中追加项目的 hook",
-    role: "other",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(INSTALLED_SETTINGS),
-    input: { content: settingsText(settingsWithProjectHook()) },
-    expected: "allow",
-  },
-  {
-    name: "其它会话删掉项目配置中本技能的 hook",
-    role: "other",
-    tool: "Write",
-    target: SETTINGS_FILE,
-    previous: settingsText(settingsWithProjectHook()),
-    input: { content: settingsText({ hooks: {} }) },
-    expected: "deny",
-  },
-  {
-    name: "其它会话改本机配置",
-    role: "other",
-    tool: "Write",
-    target: ".claude/settings.local.json",
-    expected: "deny",
-  },
-  {
-    name: "其它会话改项目规范",
-    role: "other",
-    tool: "Edit",
-    target: ".claude/rules/engineering.md",
-    expected: "deny",
-  },
-  {
-    name: "其它会话写项目之外",
-    role: "other",
-    tool: "Write",
-    target: "../outside.md",
-    expected: "allow",
-  },
-  {
-    name: "其它会话提交",
-    role: "other",
-    tool: "Bash",
-    input: { command: "git commit -m x" },
-    expected: "allow",
-  },
-  {
-    name: "其它会话用重定向改状态文件",
-    role: "other",
-    tool: "Bash",
-    input: { command: "echo {} > .navigator/state.json" },
-    expected: "deny",
-  },
-  {
-    name: "其它会话查看状态并截取输出",
-    role: "other",
-    tool: "Bash",
-    input: {
-      command:
-        "node .navigator/bin/runtime/navigator.mjs status 2>&1 | head -40",
-    },
-    expected: "allow",
-  },
-  {
-    name: "其它会话查看编排记录的改动并丢弃错误输出",
-    role: "other",
-    tool: "Bash",
-    input: { command: "git diff -- .navigator 2>/dev/null" },
-    expected: "allow",
-  },
-  {
-    name: "其它会话用 tee 改编排记录",
-    role: "other",
-    tool: "Bash",
-    input: {
-      command:
-        "node .navigator/bin/runtime/navigator.mjs status 2>&1 | tee .navigator/plan/brief.md",
-    },
-    expected: "deny",
-  },
-  { name: "其它会话联网", role: "other", tool: "WebSearch", expected: "allow" },
-]);
-
-/**
- * 按用例构造守卫输入并作出判定.
+ * 判定一次写入.
  *
- * @param {GuardCase} testCase 用例.
- * @returns {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardDecision} 判定结果.
+ * @param {object} options 参数.
+ * @param {string} options.target 目标的项目相对路径.
+ * @param {string} [options.agentType] 子代理类型; 省略时为主会话.
+ * @param {boolean} [options.isOrchestrator] 主会话是否为编排会话.
+ * @param {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs").OrderState | null} [options.order] 当前工单.
+ * @returns {import("../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs").GuardDecision} 判定.
  */
-function decide(testCase) {
-  const toolInput = {
-    ...(testCase.target === undefined
-      ? {}
-      : { file_path: path.resolve(PROJECT_ROOT, testCase.target) }),
-    ...testCase.input,
-  };
-  return decideToolUse({
-    role: testCase.role,
-    isSubagent: testCase.isSubagent === true,
-    agentType: testCase.agentType,
-    toolName: testCase.tool,
-    toolInput,
-    projectRoot: PROJECT_ROOT,
-    context: { ...BASE_CONTEXT, ...testCase.context },
-    readFile: () => testCase.previous,
-    readRecentPrompts: () => testCase.prompts ?? [],
-    hasUncommittedRecords: () => testCase.uncommittedRecords === true,
-    spec: SPEC,
+function decide({
+  target,
+  agentType,
+  isOrchestrator = false,
+  order = orderOf("implementation"),
+}) {
+  return decideWrite({
+    projectRoot: ROOT,
+    toolInput: { file_path: path.join(ROOT, target) },
+    isSubagent: agentType !== undefined,
+    agentType,
+    order,
+    isOrchestrator: () => isOrchestrator,
   });
 }
 
-for (const testCase of [
-  ...ORCHESTRATOR_CASES,
-  ...SUBAGENT_CASES,
-  ...EXECUTOR_CASES,
-  ...SUPERSEDED_CASES,
-  ...OTHER_CASES,
-]) {
-  test(`守卫: ${testCase.role} ${testCase.name}`, () => {
-    const decision = decide(testCase);
-    assert.equal(decision.decision, testCase.expected, decision.reason);
-    assert.equal(decision.isProbe === true, testCase.isProbe === true);
-    if (testCase.expected === "deny") {
-      assert.ok((decision.reason ?? "").length > 0, "拒绝时必须给出理由");
-    }
-    if (testCase.reason !== undefined) {
-      assert.match(decision.reason ?? "", testCase.reason);
-    }
-  });
-}
-
-test("守卫: 写入类工具缺少目标路径时按项目之外处理", () => {
-  const decision = decide({
-    name: "缺少目标",
-    role: "orchestrator",
-    tool: "Write",
-    expected: "deny",
-  });
-  assert.equal(decision.decision, "deny");
+test("守卫: 状态文件与生成的视图文件谁都不能直接写", () => {
+  for (const target of [
+    ".navigator/state.json",
+    ".navigator/plan/roadmap.md",
+    ".navigator/plan/risks.md",
+  ]) {
+    assert.equal(decide({ target, isOrchestrator: true }).decision, "deny");
+    assert.equal(
+      decide({ target, agentType: SUBAGENT_TYPES.executor }).decision,
+      "deny",
+    );
+    assert.equal(decide({ target }).decision, "deny");
+  }
 });
 
-test("守卫: 复合命令与带全局参数的 git 被拒时, 理由写明正确写法", () => {
-  const reason = (command, { isSubagent, context = BASE_CONTEXT }) =>
-    decideToolUse({
-      role: "orchestrator",
-      isSubagent,
-      agentType: isSubagent ? "waypoint:navigator-reviewer" : undefined,
-      toolName: "Bash",
-      toolInput: { command },
-      projectRoot: PROJECT_ROOT,
-      context,
-      readFile: () => undefined,
-      readRecentPrompts: () => [],
-      spec: SPEC,
-    }).reason ?? "";
-  assert.match(
-    reason("git status && git diff", { isSubagent: true }),
-    /一次只运行一条命令/u,
+test("守卫: 验收子代理不能写任何项目文件", () => {
+  assert.equal(
+    decide({ target: "src/app.js", agentType: SUBAGENT_TYPES.reviewer })
+      .decision,
+    "deny",
   );
-  assert.match(
-    reason("git -C /repo diff --stat", { isSubagent: true }),
-    /不带 `-C <目录>`/u,
+  assert.equal(
+    decide({
+      target: `.navigator/orders/${FOLDER}/review.md`,
+      agentType: SUBAGENT_TYPES.reviewer,
+    }).decision,
+    "deny",
   );
-  assert.match(
-    reason("git -C /repo log", { isSubagent: false }),
-    /不带 `-C <目录>`/u,
-  );
-  assert.equal(reason("git diff --stat", { isSubagent: true }), "");
 });
 
-test("守卫: 阶段提交中放行 commit-message 与提交命令", () => {
-  const decisionFor = (toolName, toolInput, isStageCommitting) =>
-    decideToolUse({
-      role: "orchestrator",
-      isSubagent: false,
-      agentType: undefined,
-      toolName,
-      toolInput,
-      projectRoot: PROJECT_ROOT,
-      context: { ...BASE_CONTEXT, orderStatus: undefined, isStageCommitting },
-      readFile: () => undefined,
-      readRecentPrompts: () => [],
-      spec: SPEC,
-    }).decision;
-  const skill = { skill: "waypoint:commit-message" };
-  const add = { command: "git add -- .navigator" };
-  assert.equal(decisionFor("Skill", skill, false), "deny");
-  assert.equal(decisionFor("Skill", skill, true), "allow");
-  assert.equal(decisionFor("Bash", add, false), "deny");
-  assert.equal(decisionFor("Bash", add, true), "allow");
+test("守卫: 执行子代理在 .navigator/ 下只能写本工单的回执与证据文件", () => {
+  const executor = SUBAGENT_TYPES.executor;
+  assert.equal(
+    decide({
+      target: `.navigator/orders/${FOLDER}/receipt.md`,
+      agentType: executor,
+    }).decision,
+    "allow",
+  );
+  assert.equal(
+    decide({
+      target: `.navigator/orders/${FOLDER}/artifacts/capture.txt`,
+      agentType: executor,
+    }).decision,
+    "allow",
+  );
+  assert.equal(
+    decide({
+      target: `.navigator/orders/${FOLDER}/order.md`,
+      agentType: executor,
+    }).decision,
+    "deny",
+  );
+  assert.equal(
+    decide({
+      target: ".navigator/orders/0006-old/receipt.md",
+      agentType: executor,
+    }).decision,
+    "deny",
+  );
 });
 
-test("守卫: Windows 风格的反斜杠路径同样受保护", () => {
-  const decision = decideToolUse({
-    role: "other",
+test("守卫: 执行子代理在工单执行中可以写业务文件与项目配置", () => {
+  const executor = SUBAGENT_TYPES.executor;
+  assert.equal(
+    decide({ target: "src/app.js", agentType: executor }).decision,
+    "allow",
+  );
+  assert.equal(
+    decide({ target: ".claude/settings.json", agentType: executor }).decision,
+    "allow",
+  );
+});
+
+test("守卫: 工单不在执行中时, 执行子代理不能写业务文件", () => {
+  const executor = SUBAGENT_TYPES.executor;
+  for (const order of [null, orderOf("implementation", "reviewing")]) {
+    const decision = decide({
+      target: "src/app.js",
+      agentType: executor,
+      order,
+    });
+    assert.equal(decision.decision, "deny");
+    assert.match(decision.reason ?? "", /不在执行中/u);
+  }
+});
+
+test("守卫: 运行检查与分析工单的执行子代理不能写业务文件, 理由指向实现工单", () => {
+  const executor = SUBAGENT_TYPES.executor;
+  for (const kind of ["runcheck", "analysis"]) {
+    const decision = decide({
+      target: "src/app.js",
+      agentType: executor,
+      order: orderOf(kind),
+    });
+    assert.equal(decision.decision, "deny");
+    assert.match(decision.reason ?? "", /实现工单/u);
+    assert.equal(
+      decide({
+        target: `.navigator/orders/${FOLDER}/artifacts/notes.md`,
+        agentType: executor,
+        order: orderOf(kind),
+      }).decision,
+      "allow",
+    );
+  }
+});
+
+test("守卫: 编排会话只能写 .navigator/ 下的记录", () => {
+  assert.equal(
+    decide({ target: "src/app.js", isOrchestrator: true }).decision,
+    "deny",
+  );
+  assert.equal(
+    decide({ target: ".claude/settings.json", isOrchestrator: true }).decision,
+    "deny",
+  );
+  assert.equal(
+    decide({ target: ".navigator/plan/brief.md", isOrchestrator: true })
+      .decision,
+    "allow",
+  );
+  assert.equal(
+    decide({ target: ".navigator/drafts/roadmap.json", isOrchestrator: true })
+      .decision,
+    "allow",
+  );
+});
+
+test("守卫: 其它会话与其它子代理不受限制, 项目之外的写入不受限制", () => {
+  assert.equal(decide({ target: "src/app.js" }).decision, "allow");
+  assert.equal(
+    decide({ target: "src/app.js", agentType: "general-purpose" }).decision,
+    "allow",
+  );
+  const outside = decideWrite({
+    projectRoot: ROOT,
+    toolInput: { file_path: path.resolve("/别处/notes.md") },
     isSubagent: false,
     agentType: undefined,
-    toolName: "Write",
-    toolInput: {
-      file_path: `${PROJECT_ROOT}${path.sep}.navigator${path.sep}plan${path.sep}brief.md`,
-    },
-    projectRoot: PROJECT_ROOT,
-    context: BASE_CONTEXT,
-    readFile: () => undefined,
-    readRecentPrompts: () => [],
-    spec: SPEC,
+    order: null,
+    isOrchestrator: () => true,
   });
-  assert.equal(decision.decision, "deny");
+  assert.equal(outside.decision, "allow");
+});
+
+test("守卫: 只有需要时才判断是否为编排会话", () => {
+  let calls = 0;
+  decideWrite({
+    projectRoot: ROOT,
+    toolInput: { file_path: path.join(ROOT, ".navigator/plan/brief.md") },
+    isSubagent: false,
+    agentType: undefined,
+    order: null,
+    isOrchestrator: () => {
+      calls += 1;
+      return true;
+    },
+  });
+  assert.equal(calls, 0);
 });

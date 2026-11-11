@@ -21,10 +21,12 @@ The skill is not used to explain or review existing commits, rewrite past commit
 - "commit it", "帮我提交"
 - "commit and push", "提交并推送"
 
-**Slash command.** `/waypoint:commit-message [extra request]`. The extra request overrides the skill's own judgment, for example:
+**Slash command.** `/waypoint:commit-message [extra request]`.
 
-- `/waypoint:commit-message fix`: forces the `fix` type.
-- `/waypoint:commit-message emphasize the performance improvement`: highlights the performance work in the message.
+- Without an argument (a bare invocation): includes every change, unstaged and untracked files included, writes the message, and commits right away without pushing or asking.
+- With an extra request: the request overrides the skill's own judgment, and what to include and what happens next follow the rules below, for example:
+  - `/waypoint:commit-message fix`: forces the `fix` type.
+  - `/waypoint:commit-message emphasize the performance improvement`: highlights the performance work in the message.
 
 ## Workflow
 
@@ -36,19 +38,20 @@ The skill is not used to explain or review existing commits, rewrite past commit
 2. **List the changes**, including untracked files. With no changes at all, it replies that there is nothing to commit.
 3. **Decide what to include**, as described in the next section.
 4. **Read the changes and write the message.** For large changes it reads the summary first; lock files, generated files, and binary files are summarized from their statistics only.
-5. **Show the message and decide what happens next.** If you stated your intent up front, it acts on it; otherwise it shows the message and asks you to choose A or B.
+5. **Show the message and decide what happens next.** A bare invocation commits right away; if you stated your intent up front, it acts on it; otherwise it shows the message and asks you to choose A or B.
 6. **Commit or push**, then report the short commit hash and the remote branch it pushed to.
 
 ## What gets included
 
 | Situation                                                     | Behavior                                                                                     |
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| A bare `/waypoint:commit-message`                             | Includes every change, unstaged and untracked files included, without asking                 |
 | Claude edited files in this session, and other files changed  | Asks first whether to include the other files: all of them, only this session's, or a subset |
 | Claude edited files in this session, and nothing else changed | Includes those files                                                                         |
 | Claude edited no files, and some changes are staged           | Includes only the staged changes, treating them as your selection                            |
 | Claude edited no files, and nothing is staged                 | Includes every change, untracked files included                                              |
 
-This question comes before the message is written, whether you asked to "write a commit message", "commit", or "commit and push".
+Except for a bare invocation, this question comes before the message is written, whether you asked to "write a commit message", "commit", or "commit and push". A bare invocation still warns before including files that look like secrets.
 
 ## Message format
 
@@ -99,6 +102,10 @@ B. 提交并推送
 
 When you say "commit and push", the skill shows the message and acts without asking, then reports the result, for example that it committed `a1b2c3d` and pushed to `origin/feat/parser`.
 
+### A bare invocation
+
+When you enter only `/waypoint:commit-message`, the skill includes every current change, shows the message, commits right away, and reports the short hash, for example that it committed `a1b2c3d`. It does not push.
+
 ### Other files changed too
 
 Claude edited `src/parser.js` in this session, and you edited `README.md` yourself. Before writing the message, Claude lists `README.md` and asks whether to include it.
@@ -128,7 +135,7 @@ Another skill that writes commit messages is probably installed, and Claude pick
 
 **Why are my unstaged changes missing from the message?**
 
-When Claude edited no files in the session and you staged some changes, the skill treats the staged changes as your selection and writes the message for them only.
+When Claude edited no files in the session and you staged some changes, the skill treats the staged changes as your selection and writes the message for them only. A bare `/waypoint:commit-message` is the exception and always includes every change; to commit only the staged changes, ask in plain language, for example "commit it".
 
 **Can it write English commit messages?**
 

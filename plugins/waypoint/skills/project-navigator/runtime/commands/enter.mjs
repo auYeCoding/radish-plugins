@@ -1,72 +1,53 @@
 /**
- * @file enter 与 status 命令: 检查环境与初始化情况, 对账, 登记编排会话,
- * 输出当前状态与下一动作.
+ * @file enter 与 status 命令: 检查环境与初始化情况, 输出当前状态与下一动作.
  *
  * enter 由技能加载时的 `!` 命令调用, 输出会原样注入技能内容, 因此必须始终以
- * 退出码 0 结束, 且输出中只含由状态决定的内容. 调用技能的会话由 enter 接管编排.
- * status 只查询, 不写状态目录; 对账之前与 enter 一样, 先把待并入快照的写入并入快照.
+ * 退出码 0 结束. enter 的输出带本项目的编排标记: 技能内容记在会话转录中, hook
+ * 据此认出编排会话, 不需要登记. status 只查询, 不输出标记, 不写任何文件.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 
-import {
-  COMMIT_STEP_KINDS,
-  settleCommitStep,
-} from "../lib/commit-settlement.mjs";
-import { isCommitInProgress, isStageCommitting } from "../lib/commit-step.mjs";
 import { checkEnvironment } from "../lib/environment.mjs";
-import { ANOMALY_GUIDES, nextAction, replyStep } from "../lib/guidance.mjs";
+import { nextAction, replyStep } from "../lib/guidance.mjs";
+import { digestOrderFile, readApprovalStatus } from "../lib/order-approval.mjs";
+import { orchestratorMarker } from "../lib/orchestrator-marker.mjs";
 import {
+  LEGACY_BIN_DIRECTORY,
   NAVIGATOR_IGNORE_FILE,
-  PROBE_FILE,
-  PROJECT_COMMAND_PATH,
+  PROJECT_LOCAL_SETTINGS_FILE,
   PROJECT_SETTINGS_FILE,
-  STATE_FILE,
   navigatorPath,
-  orderFilePath,
+  registryDirectory,
 } from "../lib/paths.mjs";
-import { flushPendingWrites } from "../lib/pending-writes.mjs";
-import { RECONCILE_LABELS, reconcile } from "../lib/reconcile.mjs";
-import { renderProgressSection } from "../lib/render.mjs";
+import { readReceiptStatus } from "../lib/receipt-record.mjs";
+import { progressLine } from "../lib/render.mjs";
 import {
   countTrackedFiles,
   findIgnoredPaths,
-  headCommit,
   listUncommittedPaths,
-  readGitBlob,
-  shortHash,
 } from "../lib/repo.mjs";
-import { readApprovalStatus } from "../lib/order-approval.mjs";
-import { installStep } from "../lib/runtime-source.mjs";
-import { ADDRESS_REGISTRATION_STEP } from "../lib/session-notices.mjs";
 import {
-  claimOrchestratorSession,
-  orchestratorMarker,
-  readOrchestrators,
-} from "../lib/sessions.mjs";
-import { hasAllNavigatorHooks, readSettingsFile } from "../lib/settings.mjs";
-import { listSnapshots } from "../lib/snapshots.mjs";
+  NAVIGATOR_PERMISSION_RULES,
+  hasLegacyHooks,
+  readSettingsFile,
+} from "../lib/settings.mjs";
 import { lastStageNumber, loadSpec } from "../lib/spec.mjs";
-import { INIT_ACTIVE, INIT_PENDING, INIT_UNINSTALLED } from "../lib/state.mjs";
+import {
+  INIT_ACTIVE,
+  INIT_UNINSTALLED,
+  readStateIfValid,
+} from "../lib/state.mjs";
 import {
   COMMITTED_PATHSPECS,
   requiredTrackedPaths,
   summarizeIgnoredPaths,
 } from "../lib/tracked-paths.mjs";
-import { compareVersions, runtimeVersion } from "../lib/version.mjs";
-import { adoptCommit } from "../lib/workflow-orders.mjs";
 import { isProjectFinished } from "../lib/workflow-plan.mjs";
-import { SNAPSHOT_MODES, readStateIfValid, saveState } from "./support.mjs";
 
 /**
- * 寻找可恢复快照时最多查看的快照数.
- * @type {number}
- */
-const SNAPSHOT_SEARCH_LIMIT = 50;
-
-/**
- * "初始设置" 中请用户确认初始化的选项组.
+ * "初始设置" 中请用户确认初始化或升级的选项组.
  * @type {number}
  */
 const SETUP_OPTION = 1;
@@ -78,16 +59,21 @@ const SETUP_OPTION = 1;
 const SETUP_BLOCKED_OPTION = 2;
 
 /**
+ * 1.0.0 之前登记编排会话的文件名. 升级之前旧版 hook 仍会运行, 它按这个文件
+ * 判断编排会话并按白名单拦下命令; 进入时删掉, 旧 hook 就不再拦下升级命令.
+ * @type {string}
+ */
+const LEGACY_ORCHESTRATOR_FILE = "orchestrator.json";
+
+/**
  * 执行 enter 或 status 命令.
  *
  * @param {object} options 命令参数.
  * @param {string} options.cwd 会话工作目录.
- * @param {string | undefined} options.sessionId 调用技能的会话.
- * @param {boolean} options.shouldClaim 是否登记编排会话并自动纳入自己的提交.
- * @param {string} options.now 当前时间, ISO 格式.
+ * @param {boolean} options.isEntry 是否为调用技能时的进入.
  * @returns {string[]} 输出各行.
  */
-export function runEnter({ cwd, sessionId, shouldClaim, now }) {
+export function runEnter({ cwd, isEntry }) {
   const spec = loadSpec();
   const environment = checkEnvironment(cwd);
   const nodeLine = `- 运行环境: Node.js ${environment.nodeVersion}${environment.isNodeSupported ? "" : ", 版本过低, 需要 22 或更高版本"}`;
@@ -99,332 +85,176 @@ export function runEnter({ cwd, sessionId, shouldClaim, now }) {
     ];
   }
   const projectRoot = environment.repositoryRoot;
+  const markerLines = isEntry
+    ? [`- 编排标记: ${orchestratorMarker(projectRoot)}`]
+    : [];
   const state = readStateIfValid(projectRoot);
   if (state === undefined && existsSync(navigatorPath(projectRoot, "state"))) {
     return [
+      ...markerLines,
       "- 初始标记: 状态文件损坏",
       nodeLine,
-      `- 下一动作: ${replyStep(spec, "运行受阻")}, 说明状态文件损坏; 用户同意后运行 snapshots 查看快照, 再运行 restore <快照>`,
+      `- 下一动作: ${replyStep(spec, "运行受阻")}, 说明状态文件不是合法的 JSON; 请用户用 git 恢复 .navigator/state.json 后重新调用技能`,
     ];
   }
-  const claim = claimIfActive({
-    projectRoot,
-    state,
-    sessionId: shouldClaim ? sessionId : undefined,
-    now,
-  });
-  const isHookInstalled = hasAllNavigatorHooks(
-    readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE),
-  );
+  const isLegacy = isLegacyInstall(projectRoot);
+  if (isEntry && isLegacy) {
+    rmSync(
+      path.join(registryDirectory(projectRoot), LEGACY_ORCHESTRATOR_FILE),
+      {
+        force: true,
+      },
+    );
+  }
   const lines = [
+    ...markerLines,
     `- 版本控制: Git 仓库, 已跟踪 ${countTrackedFiles(projectRoot)} 个文件`,
     nodeLine,
-    `- 初始标记: ${describeInit(state)}`,
-    `- 防护配置: ${isHookInstalled ? "已安装" : "未安装"}`,
+    `- 初始标记: ${describeInit(state, isLegacy)}`,
+    `- 放行规则: ${hasPermissionRules(projectRoot) ? "已写入" : "未写入"}`,
   ];
   const blocker = findBlocker({
     state,
-    isHookInstalled,
+    isLegacy,
     isNodeSupported: environment.isNodeSupported,
     projectRoot,
-    sessionId,
     spec,
   });
-  if (blocker !== undefined) {
-    return [...lines, `- 下一动作: ${blocker}`];
+  if (blocker !== undefined || state === undefined) {
+    return [...lines, `- 下一动作: ${blocker ?? ""}`];
   }
-  return [
-    ...lines,
-    ...describeProgress({
-      projectRoot,
-      state,
-      sessionId,
-      isNewSession: claim.isNewSession,
-      shouldClaim,
-      now,
-      spec,
-    }),
-  ];
+  return [...lines, ...describeProgress({ projectRoot, state, isEntry, spec })];
 }
 
 /**
- * 调用技能的会话接管编排. 放在其它检查之前: 升级与自检等后续步骤要由这个会话
- * 运行编排命令, 守卫按登记判断身份. 项目尚未初始化或已卸载时不登记.
+ * 描述记录情况与下一动作.
  *
  * @param {object} options 参数.
  * @param {string} options.projectRoot 项目根目录.
- * @param {import("../lib/state.mjs").NavigatorState | undefined} options.state 状态.
- * @param {string | undefined} options.sessionId 要接管编排的会话; 只查询时为 undefined.
- * @param {string} options.now 当前时间.
- * @returns {{isNewSession: boolean}} 本会话是否刚刚接管编排.
- */
-function claimIfActive({ projectRoot, state, sessionId, now }) {
-  if (
-    sessionId === undefined ||
-    state === undefined ||
-    state.init.status === INIT_UNINSTALLED
-  ) {
-    return { isNewSession: false };
-  }
-  const { previous } = claimOrchestratorSession(projectRoot, sessionId, now);
-  return { isNewSession: previous !== sessionId };
-}
-
-/**
- * 对账, 按需纳入自己的提交与标记对账异常, 然后描述记录情况与下一动作.
- *
- * @param {object} options 参数.
- * @param {string} options.projectRoot 项目根目录.
- * @param {import("../lib/state.mjs").NavigatorState} options.state 进入前的状态.
- * @param {string | undefined} options.sessionId 调用方的会话编号.
- * @param {boolean} options.isNewSession 本会话是否刚刚接管编排.
- * @param {boolean} options.shouldClaim 是否写入状态.
- * @param {string} options.now 当前时间.
+ * @param {import("../lib/state.mjs").NavigatorState} options.state 当前状态.
+ * @param {boolean} options.isEntry 是否为调用技能时的进入.
  * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
  * @returns {string[]} 输出各行.
  */
-function describeProgress({
-  projectRoot,
-  state,
-  sessionId,
-  isNewSession,
-  shouldClaim,
-  now,
-  spec,
-}) {
-  if (state.pendingAnomaly === undefined) {
-    flushPendingWrites(projectRoot, { now, head: headCommit(projectRoot) });
-  }
-  const reconciliation = reconcile(projectRoot, state);
-  const isAnomaly = Object.hasOwn(ANOMALY_GUIDES, reconciliation.kind);
-  const current = shouldClaim
-    ? persistEntry({
-        context: { projectRoot, state, spec },
-        reconciliation,
-        isAnomaly,
-        now,
-      })
-    : state;
-  const order = current.order;
-  const hasReceipt =
-    order !== null &&
-    existsSync(path.join(projectRoot, orderFilePath(order.folder, "receipt")));
-  const restoreTarget = isAnomaly
-    ? findRestoreTarget(projectRoot, reconciliation)
-    : undefined;
-  const isAdopted = shouldClaim && reconciliation.kind === "own";
-  const orchestrators = readOrchestrators(projectRoot);
+function describeProgress({ projectRoot, state, isEntry, spec }) {
+  const order = state.order;
+  const receiptStatus =
+    order === null ? undefined : readReceiptStatus(projectRoot, order);
+  const uncommitted = listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS);
   return [
-    `- 会话登记: ${describeSession(orchestrators, sessionId)}`,
-    `- 编排地址: ${describeAddress(orchestrators)}`,
-    ...(shouldClaim ? [`- 地址登记: ${ADDRESS_REGISTRATION_STEP}`] : []),
     "",
-    ...renderProgressSection(current, spec),
-    "",
+    `- 当前进展: ${progressLine(state, spec)}`,
     `- 最后动作: ${state.lastAction}`,
     `- 记录时间: ${state.updatedAt}`,
-    `- 对账结果: ${RECONCILE_LABELS[reconciliation.kind]}${isAdopted ? ", 已自动纳入" : ""}`,
-    `- 记录提交: ${shortHash(reconciliation.recorded)}`,
-    `- 当前提交: ${shortHash(reconciliation.head)}`,
-    `- 差异提交: ${reconciliation.commits.map(shortHash).join(", ") || "无"}`,
-    ...(reconciliation.files.length === 0
-      ? []
-      : [`- 改动文件: ${reconciliation.files.join(", ")}`]),
-    ...(isAnomaly ? [`- 可用快照: ${shortHash(restoreTarget)}`] : []),
     ...(order === null
       ? []
       : [
-          `- 工单状态: ${order.id} ${order.status}, 回执${hasReceipt ? "已写入" : "未写入"}`,
+          `- 工单状态: ${order.id} ${order.status}, 回执${describeReceipt(receiptStatus)}`,
         ]),
+    `- 工作区域: ${uncommitted.length === 0 ? "技能产物都已入库" : `${uncommitted.length} 个技能产物未入库`}`,
     `- 下一动作: ${nextAction({
-      state: current,
-      reconciliation,
-      hasReceipt,
+      state,
+      receiptStatus,
       orderApproval:
         order === null ? undefined : readApprovalStatus(projectRoot, order),
+      isOrderUnchanged:
+        order === null
+          ? undefined
+          : order.issuedDigest === digestOrderFile(projectRoot, order),
       hasUncommittedRecords:
-        isProjectFinished(current, lastStageNumber(spec)) &&
-        listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS).length > 0,
-      isNewSession: shouldClaim && isNewSession,
-      restoreTarget,
+        isProjectFinished(state, lastStageNumber(spec)) &&
+        uncommitted.length > 0,
+      isEntry,
       spec,
     })}`,
   ];
 }
 
 /**
- * 写入进入时的状态变化: 纳入自己的提交, 标记或清除对账异常.
- * 对账异常时不拍快照, 以免新快照掩盖异常. 提交步骤中发现自己的提交时 (例如提交后
- * 会话中断, 没有运行提交完成的命令), 按这个提交结算, 不改写已随提交入库的状态文件.
+ * 描述回执的情况.
  *
- * @param {object} options 参数.
- * @param {import("./support.mjs").ProjectContext} options.context 项目上下文.
- * @param {import("../lib/reconcile.mjs").ReconcileResult} options.reconciliation 对账结果.
- * @param {boolean} options.isAnomaly 对账是否异常.
- * @param {string} options.now 当前时间.
- * @returns {import("../lib/state.mjs").NavigatorState} 写入或结算后的状态; 没有变化时为原状态.
+ * @param {string | undefined} receiptStatus 回执中的执行状态; 回执不存在时为 undefined.
+ * @returns {string} 描述.
  */
-function persistEntry({ context, reconciliation, isAnomaly, now }) {
-  const { state } = context;
-  const isOwn =
-    reconciliation.kind === "own" && reconciliation.head !== undefined;
-  if (
-    isOwn &&
-    isCommitInProgress(state) &&
-    state.pendingAnomaly === undefined
-  ) {
-    return settleCommitStep({
-      projectRoot: context.projectRoot,
-      state,
-      kind: isStageCommitting(state)
-        ? COMMIT_STEP_KINDS.stage
-        : COMMIT_STEP_KINDS.order,
-      commit: reconciliation.head,
-      now,
-    });
+function describeReceipt(receiptStatus) {
+  if (receiptStatus === undefined) {
+    return "未写入";
   }
-  const adopted = isOwn
-    ? adoptCommit(
-        state,
-        reconciliation.head,
-        `纳入提交 ${shortHash(reconciliation.head)}`,
-      )
-    : state;
-  const anomaly = isAnomaly ? reconciliation.kind : undefined;
-  const flagged =
-    adopted.pendingAnomaly === anomaly
-      ? adopted
-      : { ...adopted, pendingAnomaly: anomaly };
-  return flagged === state
-    ? state
-    : saveState(context, flagged, now, {
-        snapshot: isAnomaly ? SNAPSHOT_MODES.none : SNAPSHOT_MODES.changes,
-      });
+  return receiptStatus === "" ? "已写入" : `已写入, 执行状态 ${receiptStatus}`;
 }
 
 /**
- * 找出 "回退记录" 时建议恢复的提交: 回退与分叉时优先用当前提交中入库的记录,
- * 其次用当时 HEAD 相同的最近快照; 记录被改动时用最近的快照.
+ * 判断项目是否由 1.0.0 之前的版本初始化: 项目配置中还有项目级 hook, 或状态目录中
+ * 还有运行脚本副本.
  *
  * @param {string} projectRoot 项目根目录.
- * @param {import("../lib/reconcile.mjs").ReconcileResult} reconciliation 对账结果.
- * @returns {string | undefined} 提交; 没有合适来源时为 undefined.
+ * @returns {boolean} 是旧版本的安装时返回 true.
  */
-function findRestoreTarget(projectRoot, reconciliation) {
-  const snapshots = listSnapshots(projectRoot, SNAPSHOT_SEARCH_LIMIT);
-  if (reconciliation.kind === "mismatch") {
-    return snapshots[0]?.commit;
-  }
-  const head = reconciliation.head;
-  if (head === undefined) {
-    return undefined;
-  }
-  if (readGitBlob(projectRoot, `${head}:${STATE_FILE}`) !== undefined) {
-    return head;
-  }
-  return snapshots.find((entry) => entry.head === head)?.commit;
+function isLegacyInstall(projectRoot) {
+  return (
+    existsSync(path.join(projectRoot, LEGACY_BIN_DIRECTORY)) ||
+    hasLegacyHooks(readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE))
+  );
 }
 
 /**
- * 描述编排会话的登记情况. 调用方没有提供会话编号时 (例如在命令行中运行
- * status), 无法判断是不是本会话, 只报告是否已有登记.
+ * 判断本机配置中是否已有本技能的全部放行规则.
  *
- * @param {import("../lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
- * @param {string | undefined} sessionId 调用方的会话编号.
- * @returns {string} 描述.
+ * @param {string} projectRoot 项目根目录.
+ * @returns {boolean} 全部写入时返回 true.
  */
-function describeSession(orchestrators, sessionId) {
-  if (orchestrators.current === undefined) {
-    return "尚无编排会话";
-  }
-  if (sessionId === undefined) {
-    const time = orchestrators.current.claimedAt;
-    return time === ""
-      ? "已有编排会话登记"
-      : `已有编排会话登记, 接管时间 ${time}`;
-  }
-  return orchestrators.current.id === sessionId
-    ? `本会话是编排会话, ${orchestratorMarker(sessionId)}`
-    : "本会话不是编排会话";
-}
-
-/**
- * 描述编排地址的登记情况, 供执行会话消息汇报时查询.
- *
- * @param {import("../lib/registry.mjs").OrchestratorRecord} orchestrators 编排会话登记.
- * @returns {string} 描述.
- */
-function describeAddress(orchestrators) {
-  const current = orchestrators.current;
-  return current?.address === undefined
-    ? "未登记, 执行会话改用文档汇报"
-    : `${current.address}, 登记于 ${current.addressedAt ?? ""}`;
+function hasPermissionRules(projectRoot) {
+  const allow =
+    readSettingsFile(projectRoot, PROJECT_LOCAL_SETTINGS_FILE).permissions
+      ?.allow ?? [];
+  return NAVIGATOR_PERMISSION_RULES.every((rule) => allow.includes(rule));
 }
 
 /**
  * 描述初始化情况.
  *
  * @param {import("../lib/state.mjs").NavigatorState | undefined} state 状态.
+ * @param {boolean} isLegacy 是否为 1.0.0 之前的安装.
  * @returns {string} 描述.
  */
-function describeInit(state) {
+function describeInit(state, isLegacy) {
   if (state === undefined) {
     return "未找到";
   }
-  switch (state.init.status) {
-    case INIT_ACTIVE:
-      return `已初始化, 版本 ${state.skillVersion}`;
-    case INIT_PENDING:
-      return "已写入配置, 自检未完成";
-    case INIT_UNINSTALLED:
-      return "已卸载";
-    default:
-      return `未知状态 ${state.init.status}`;
+  if (state.init.status === INIT_UNINSTALLED) {
+    return "已卸载";
   }
+  return isLegacy
+    ? `由旧版本 ${state.skillVersion} 初始化, 需要升级`
+    : `已初始化, 版本 ${state.skillVersion}`;
 }
 
 /**
- * 找出阻止进入编排的问题, 并给出下一动作. 必须入库的路径被忽略规则漏掉时也要停下:
- * 否则新写的记录会悄悄漏提交. 这一项放在升级检查之后, 旧版本写的状态目录
- * `.gitignore` 由升级改正. 初始化, 修复与升级的下一动作都写出完整的 init 命令:
- * 只说 "运行 init" 时, 编排会话会用项目中的副本运行, 什么也升级不了.
+ * 找出阻止进入编排的问题, 并给出下一动作. 必须入库的路径被忽略规则漏掉时也要
+ * 停下: 否则新写的记录会悄悄漏提交.
  *
  * @param {object} options 判断参数.
  * @param {import("../lib/state.mjs").NavigatorState | undefined} options.state 状态.
- * @param {boolean} options.isHookInstalled hook 是否已全部安装.
+ * @param {boolean} options.isLegacy 是否为 1.0.0 之前的安装.
  * @param {boolean} options.isNodeSupported Node.js 版本是否满足要求.
  * @param {string} options.projectRoot 项目根目录.
- * @param {string | undefined} options.sessionId 调用方的会话编号.
  * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
  * @returns {string | undefined} 下一动作; 没有问题时为 undefined.
  */
-function findBlocker({
-  state,
-  isHookInstalled,
-  isNodeSupported,
-  projectRoot,
-  sessionId,
-  spec,
-}) {
+function findBlocker({ state, isLegacy, isNodeSupported, projectRoot, spec }) {
   if (!isNodeSupported) {
     return `${replyStep(spec, "初始设置", SETUP_BLOCKED_OPTION)}, 提示先安装 Node.js 22 或更高版本`;
   }
-  const setup = `${replyStep(spec, "初始设置", SETUP_OPTION)}, 用户选 A 后${installStep(projectRoot, sessionId)}`;
-  if (state === undefined || state.init.status === INIT_UNINSTALLED) {
+  const setup = `${replyStep(spec, "初始设置", SETUP_OPTION)}, 用户选 A 后运行 init`;
+  if (state === undefined || state.init.status !== INIT_ACTIVE) {
     return setup;
   }
-  if (!isHookInstalled) {
-    return `初始化不完整, 防护配置需要修复: ${setup}`;
-  }
-  if (state.init.status === INIT_PENDING) {
-    return `完成自检: 用 Write 工具写入 ${path.join(projectRoot, PROBE_FILE)} (预期被拒绝), 再运行 node ${PROJECT_COMMAND_PATH} init --verify`;
-  }
-  if (compareVersions(state.skillVersion, runtimeVersion()) < 0) {
-    return `项目中的运行脚本较旧 (${state.skillVersion}), 需要升级到 ${runtimeVersion()}: ${setup}`;
+  if (isLegacy) {
+    return `项目由 1.0.0 之前的版本初始化, 需要升级 (移除项目中的旧 hook 与脚本副本, 记录保留): ${setup}`;
   }
   const ignored = findIgnoredPaths(projectRoot, requiredTrackedPaths(spec));
   if (ignored.length > 0) {
-    return `${replyStep(spec, "运行受阻")}, 说明编排记录, 运行脚本或项目配置会被 Git 忽略, 无法入库: ${summarizeIgnoredPaths(ignored).join("; ")}. 用户修改这些规则后重新调用技能; 规则在 ${NAVIGATOR_IGNORE_FILE} 中时, 用 init 参数重新调用技能即可恢复`;
+    return `${replyStep(spec, "运行受阻")}, 说明编排记录或项目配置会被 Git 忽略, 无法入库: ${summarizeIgnoredPaths(ignored).join("; ")}. 用户修改这些规则后重新调用技能; 规则在 ${NAVIGATOR_IGNORE_FILE} 中时, 运行 init 即可恢复`;
   }
   return undefined;
 }

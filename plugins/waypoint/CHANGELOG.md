@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+This release reworks `project-navigator` and is not compatible with projects initialized by 0.x: invoke the skill in such a project and run `init` when asked. The upgrade removes the old project-level hooks, permission rules and script copies; all records are kept.
+
+### Added
+
+- `project-navigator`: work orders are carried out by a new executor subagent, `waypoint:navigator-executor`, which the orchestrator dispatches in the background with the prompt from a new `exec-brief` command. When it finishes, the orchestrator is notified and continues on its own. Users used to open a second session, paste a launch prompt, confirm a kickoff alignment and choose how to report back.
+- `project-navigator`: a new reply "工单执行" (order running) shown while the executor works, and a new reply type layout: a one-line "结论:" (conclusion) under the heading, written for a reader with little time, then a single progress line such as `阶段 5/6 (切片) · 里程 3/5 (...) · 切片 4/10 (...) · 工单 0007`, then the sections and the option block.
+- `project-navigator`: the plugin ships its hooks in `hooks/hooks.json` and a `project-navigator` command in `bin/` (with a `.cmd` for PowerShell). Hooks do nothing in projects that are not initialized. Commands are now `project-navigator <command>` instead of `node .navigator/bin/runtime/navigator.mjs <command>`.
+- `project-navigator`: `ref <name>` prints a reference file, the executor guide (`executor`) or the engineering standards (`standards`) from the plugin, so nothing is copied into the project.
+- `project-navigator`: work orders have a "审阅要点" (review points) section written for the user: goal, decisions needed, out of scope, and why the order has this size. "工单审阅" (order review) now shows only these points and the file path, prefilled by `reply approve`, instead of quoting five sections of the order.
+- `project-navigator`: "调研报告" (research report) has an option to skip brainstorming and draft the brief directly.
+- `project-navigator`: when a blocked order is unchanged after the user acts, `order set issued` continues without a new review and tells the orchestrator to resume the same executor with SendMessage.
+- `project-navigator`: `order set accepted --accept-unverified` lets the user accept an order whose only open verdicts are unverified, through a new third option group of "验收报告" (review report). Unverified criteria used to always fail the order.
+
+### Changed
+
+- `commit-message`: a bare `/waypoint:commit-message` (no argument, no other text) now includes every change, unstaged and untracked files included, and commits right after showing the message, without asking and without pushing. Plain-language requests and invocations with an argument keep the previous behavior. The secret file warning still applies.
+- `project-navigator`: a work order now needs two user decisions: publish it in "工单审阅" (order review) and accept and commit it in "验收报告" (review report). The replies "工单发布", "等待回执", "测试授权", "确认提交" and "阶段提交" are gone; the commit choice is part of the review report, and committing records after a stage, initialization or closing is a step in the command output.
+- `project-navigator`: the guard checks only four things, all by write path: nobody writes `state.json` or the generated roadmap and risk views directly; the reviewer writes nothing; the executor writes only its own receipt and `artifacts/` under `.navigator/`, and no business files on run-check and analysis orders; the orchestrator writes only under `.navigator/`. Shell commands, tool whitelists, delegation prompts and record structure are no longer checked at write time.
+- `project-navigator`: the Stop hook checks only the structure of the orchestrator's replies (heading, conclusion line, option block). Writing rules and length are suggestions shown before the skeleton; `check <file>` reports structure problems for self-checks without numbering a checkup.
+- `project-navigator`: sessions are no longer registered. The orchestrator is recognized by a project-specific marker that the skill's entry output leaves in the session transcript, so any session that invokes the skill continues from the recorded state, and forked sessions keep working without re-registering.
+- `project-navigator`: work order size is decided by four limits (one executor run, one review, runnable afterwards, risky parts separate) instead of "at most 5 criteria"; a slice is one order by default, and each criterion checks one thing. A rejection asks whether the order was too large before issuing a fix order.
+- `project-navigator`: the orchestrator may recommend technologies; only key dependencies go through selection orders.
+- `project-navigator`: the engineering standards drop "modules: finer is better" in favor of splitting by responsibility without splitting ahead of need.
+- `project-navigator`: the reviewer runs the code checks and the receipt's test commands except those the executor lists under the new "外部影响" (external effects) key, and uses MCP tools named in the receipt for read-only queries. Test authorization, `order tests`, `tools set` and `user-tests.md` are gone.
+
+### Removed
+
+- `project-navigator`: snapshots and reconciliation (`snapshots`, `restore`, `adopt`, the "验收异常" reply), the commit settlement record, `stagecommit`, `address set`, `init --verify`, executor sessions with kickoff alignment, and the human summary block at the end of replies and records.
+
 ## [0.11.0] - 2026-11-08
 
 ### Added
@@ -15,7 +44,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - `project-navigator`: run-check and analysis orders now only produce records, and the guard enforces it: their executor sessions can write only the receipt and the order's `artifacts/`, and writes to business files or `.claude/settings.json` are denied with a reason that points to an implementation order. "Changes no files" used to be only a sentence in the survey instructions. Their launch prompts state the narrower scope, and the reviewer marks the wiring check as not applicable instead of tracing new code from the entry point.
-
 - `project-navigator`: `order new --kind implementation` and `--kind fix` are refused while no check commands are registered, with the same instructions `reply approve` gave. The problem used to surface only after the order file was written.
 - `project-navigator`: option A of the second option group of "验收报告" (review report) now reads "补正工单, 立即发布." (follow-up order, issue now), since the follow-up is not always a fix order.
 

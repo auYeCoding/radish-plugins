@@ -1,5 +1,5 @@
 /**
- * @file 代码检查测试: 登记, 固定判据, 新建与发布前核对, 可运行的测试命令与骨架预填.
+ * @file 代码检查测试: 登记, 固定判据, 新建与发布前核对, 要运行的检查命令与骨架预填.
  */
 
 import assert from "node:assert/strict";
@@ -10,17 +10,14 @@ import {
   codeCheckCriterion,
   creationBlocker,
   issueBlocker,
+  orderCheckCommands,
   orderSkeletonPrefills,
-  orderTestCommands,
   registerCodeChecks,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/code-checks.mjs";
 import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
 import { createInitialState } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs";
 import { WorkflowError } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-error.mjs";
-import {
-  authorizeTests,
-  createOrder,
-} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-orders.mjs";
+import { createOrder } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-orders.mjs";
 
 /**
  * 测试用的时间.
@@ -161,18 +158,16 @@ test("代码检查: 验收判据中缺少检查判据时不能发布", () => {
   );
 });
 
-test("代码检查: 检查命令算作当前工单可运行的测试, 并与授权测试去重", () => {
-  const state = authorizeTests(
-    stateWithOrder("implementation", [...COMMANDS]),
-    ["pytest", "ruff check ."],
-  );
-  assert.deepEqual(orderTestCommands(state), [...COMMANDS, "pytest"]);
+test("代码检查: 只有会改动代码的工单要运行检查命令", () => {
   assert.deepEqual(
-    orderTestCommands(
-      authorizeTests(stateWithOrder("selection", [...COMMANDS]), ["pytest"]),
-    ),
-    ["pytest"],
+    orderCheckCommands(stateWithOrder("implementation", [...COMMANDS])),
+    [...COMMANDS],
   );
+  assert.deepEqual(
+    orderCheckCommands(stateWithOrder("selection", [...COMMANDS])),
+    [],
+  );
+  assert.deepEqual(orderCheckCommands(stateWithOrder("fix", undefined)), []);
 });
 
 test("代码检查: 实现工单的骨架预填检查判据, 选型工单不预填", () => {

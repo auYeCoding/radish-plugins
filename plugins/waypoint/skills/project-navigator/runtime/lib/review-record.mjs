@@ -1,16 +1,15 @@
 /**
- * @file 验收记录的判据结论: 读取 review.md 的判据核对表, 找出妨碍验收通过的判据;
+ * @file 验收记录的判据结论: 读取 review.md 的判据核对表, 按结论分类;
  * 核对等用户选择后才写的键已经写下.
  *
- * "有判据不通过或未验证时不能通过验收" 由脚本执行: order set accepted 与
- * "验收报告" 请用户人工验收的选项组都先核对这里.
+ * "有判据不通过时不能通过验收, 有未验证的判据时要用户明确接受" 由脚本执行:
+ * order set accepted 与 "验收报告" 的选项组都先核对这里.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { readSectionTable, splitSections } from "./layout.mjs";
-import { parseMarkdown } from "./markdown.mjs";
+import { findSection, readSectionTable } from "./layout.mjs";
 import { orderFilePath } from "./paths.mjs";
 
 /**
@@ -42,6 +41,19 @@ export const VERDICTS = Object.freeze({
 });
 
 /**
+ * 验收记录中等用户选择后才写的键. 骨架预填规格中的值, 用户选择之后改写.
+ * @type {string}
+ */
+export const USER_VERDICT_KEY = "用户结论";
+
+/**
+ * @typedef {object} ReviewVerdicts 验收记录中判据结论的分类.
+ * @property {string | undefined} problem 记录缺失或没有判据核对表时的原因.
+ * @property {string[]} failed 结论为不通过的判据.
+ * @property {string[]} unverified 结论为未验证, 或写了其它说法的判据.
+ */
+
+/**
  * 从规格中取出验收记录判据核对表的规格.
  *
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
@@ -61,80 +73,83 @@ export function criteriaTableSpec(spec) {
 }
 
 /**
- * 找出验收记录中妨碍验收通过的原因.
+ * 按结论给验收记录中的判据分类.
  *
  * @param {string | undefined} reviewText 验收记录全文; 文件不存在时为 undefined.
- * @returns {string[]} 原因列表; 为空表示全部判据通过.
+ * @returns {ReviewVerdicts} 分类结果.
  */
-export function acceptanceBlockers(reviewText) {
+export function classifyVerdicts(reviewText) {
   if (reviewText === undefined) {
-    return ["验收记录 review.md 还没有写入."];
+    return {
+      problem: "验收记录 review.md 还没有写入.",
+      failed: [],
+      unverified: [],
+    };
   }
-  const section = splitSections(parseMarkdown(reviewText)).sections.find(
-    (entry) => entry.title === CRITERIA_CHECK_SECTION,
-  );
+  const section = findSection(reviewText, CRITERIA_CHECK_SECTION);
   const table = section === undefined ? undefined : readSectionTable(section);
   const criterionIndex = table?.headers.indexOf(CRITERION_COLUMN) ?? -1;
   const verdictIndex = table?.headers.indexOf(VERDICT_COLUMN) ?? -1;
   if (table === undefined || verdictIndex < 0 || table.rows.length === 0) {
-    return [`验收记录中没有 "${CRITERIA_CHECK_SECTION}" 表格.`];
+    return {
+      problem: `验收记录中没有 "${CRITERIA_CHECK_SECTION}" 表格.`,
+      failed: [],
+      unverified: [],
+    };
   }
-  return table.rows
-    .filter((row) => row[verdictIndex] !== VERDICTS.pass)
-    .map(
-      (row) =>
-        `判据 "${row[criterionIndex] ?? ""}" 的结论为 "${row[verdictIndex] ?? ""}".`,
-    );
+  const label = (row) => row[criterionIndex] ?? "";
+  return {
+    problem: undefined,
+    failed: table.rows
+      .filter((row) => row[verdictIndex] === VERDICTS.fail)
+      .map(label),
+    unverified: table.rows
+      .filter(
+        (row) =>
+          row[verdictIndex] !== VERDICTS.pass &&
+          row[verdictIndex] !== VERDICTS.fail,
+      )
+      .map(label),
+  };
 }
 
 /**
- * 验收记录中等用户选择后才写的键: 人工验收的用户结论, 提交方式的用户选择.
- * 骨架预填规格中的值, 用户选择之后改写.
- * @type {Readonly<{userVerdict: string, commitChoice: string}>}
+ * 读取当前工单的验收记录, 按结论给判据分类.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @param {{folder: string}} order 当前工单.
+ * @returns {ReviewVerdicts} 分类结果.
  */
-export const DEFERRED_REVIEW_KEYS = Object.freeze({
-  userVerdict: "用户结论",
-  commitChoice: "用户选择",
-});
+export function readOrderVerdicts(projectRoot, order) {
+  const file = path.join(projectRoot, orderFilePath(order.folder, "review"));
+  return classifyVerdicts(
+    existsSync(file) ? readFileSync(file, "utf8") : undefined,
+  );
+}
 
 /**
- * 检查验收记录中某个等用户选择后才写的键是否已写: 键不存在, 值为空, 或仍是
- * 骨架预填的值时视为未写.
+ * 检查验收记录中的用户结论是否已写: 键不存在, 值为空, 或仍是骨架预填的值时
+ * 视为未写.
  *
  * @param {object} options 参数.
  * @param {string} options.projectRoot 项目根目录.
  * @param {{folder: string}} options.order 当前工单.
  * @param {import("./spec.mjs").TemplateSpec} options.spec 模板规格.
- * @param {string} options.key 键名, 取值见 DEFERRED_REVIEW_KEYS.
  * @returns {string | undefined} 未写时的原因; 已写时为 undefined.
  */
-export function unfilledReviewKey({ projectRoot, order, spec, key }) {
+export function unfilledUserVerdict({ projectRoot, order, spec }) {
   const file = path.join(projectRoot, orderFilePath(order.folder, "review"));
   if (!existsSync(file)) {
     return "验收记录 review.md 还没有写入.";
   }
   const line = readFileSync(file, "utf8")
     .split(/\r?\n/u)
-    .find((entry) => entry.startsWith(`- ${key}:`));
-  const value = line?.slice(`- ${key}:`.length).trim() ?? "";
+    .find((entry) => entry.startsWith(`- ${USER_VERDICT_KEY}:`));
+  const value = line?.slice(`- ${USER_VERDICT_KEY}:`.length).trim() ?? "";
   const preset = spec.files.review.sections?.find(
-    (section) => section.presets?.[key] !== undefined,
-  )?.presets?.[key];
+    (section) => section.presets?.[USER_VERDICT_KEY] !== undefined,
+  )?.presets?.[USER_VERDICT_KEY];
   return value === "" || value === preset
-    ? `review.md 的 "${key}" 还是 "${value || "空"}", 先写下用户的选择.`
+    ? `review.md 的 "${USER_VERDICT_KEY}" 还是 "${value || "空"}", 先写下用户的选择.`
     : undefined;
-}
-
-/**
- * 读取当前工单的验收记录, 找出妨碍验收通过的原因.
- *
- * @param {string} projectRoot 项目根目录.
- * @param {{folder: string}} order 当前工单.
- * @returns {string[]} 原因列表; 为空表示全部判据通过.
- */
-export function orderAcceptanceBlockers(projectRoot, order) {
-  const file = path.join(projectRoot, orderFilePath(order.folder, "review"));
-  return acceptanceBlockers(
-    existsSync(file) ? readFileSync(file, "utf8") : undefined,
-  );
 }

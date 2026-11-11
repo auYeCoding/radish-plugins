@@ -1,52 +1,26 @@
 /**
- * @file 命令共用的步骤: 打开项目, 保存状态 (写入, 生成视图, 拍摄快照), 读取草稿.
+ * @file 命令共用的步骤: 打开项目, 保存状态 (写入并生成视图), 读取草稿, 写出提交步骤.
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { readSettledState } from "../lib/commit-settlement.mjs";
-import { isCommitInProgress } from "../lib/commit-step.mjs";
 import { COMMIT_SKILL } from "../lib/guard.mjs";
-import { ANOMALY_GUIDES, replyStep } from "../lib/guidance.mjs";
 import {
   DRAFTS_DIRECTORY,
-  STATE_FILE,
   isUnderDirectory,
   projectRelativePath,
 } from "../lib/paths.mjs";
-import {
-  clearPendingWrites,
-  flushPendingWrites,
-} from "../lib/pending-writes.mjs";
-import { RECONCILE_LABELS, compareHistory } from "../lib/reconcile.mjs";
-import { PLAN_VIEW_FILES, writePlanViews } from "../lib/render-plan.mjs";
-import {
-  findRepositoryRoot,
-  headCommit,
-  listUncommittedPaths,
-  shortHash,
-} from "../lib/repo.mjs";
-import {
-  changedSinceLatestSnapshot,
-  recordSnapshotChanges,
-  takeSnapshot,
-} from "../lib/snapshots.mjs";
+import { writePlanViews } from "../lib/render-plan.mjs";
+import { findRepositoryRoot, listUncommittedPaths } from "../lib/repo.mjs";
 import { loadSpec } from "../lib/spec.mjs";
-import { INIT_ACTIVE, writeState } from "../lib/state.mjs";
-import { COMMITTED_PATHSPECS } from "../lib/tracked-paths.mjs";
+import { INIT_ACTIVE, readState, writeState } from "../lib/state.mjs";
+import {
+  COMMITTED_PATHSPECS,
+  listUncommittedProducts,
+} from "../lib/tracked-paths.mjs";
+import { runtimeVersion } from "../lib/version.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
-
-/**
- * 快照方式: 增量快照只更新本次写入的文件; 完整快照按状态目录的当前内容整体拍摄,
- * 只用于用户已确认当前内容的时刻; 不拍快照用于对账异常尚未处理时.
- * @type {Readonly<{changes: string, full: string, none: string}>}
- */
-export const SNAPSHOT_MODES = Object.freeze({
-  changes: "changes",
-  full: "full",
-  none: "none",
-});
 
 /**
  * @typedef {object} ProjectContext 已初始化项目的上下文.
@@ -56,125 +30,65 @@ export const SNAPSHOT_MODES = Object.freeze({
  */
 
 /**
- * 打开已初始化且防护生效的项目, 状态按提交结算记录结算. 先把待并入快照的写入
- * 并入快照, 再核对记录: 对账异常尚未处理, 状态目录在最近的快照之后被其它程序
- * 改动过 (例如 `git reset` 回退了记录), 或提交历史出现了编排之外的变化 (例如
- * 用户手动提交) 时拒绝, 以免命令在被回退或被改动的记录上继续推进. 处理异常的
- * 命令允许在异常时打开.
+ * 打开已初始化的项目.
  *
  * @param {string} cwd 会话工作目录.
- * @param {{allowAnomaly?: boolean}} [options] 是否允许在对账异常时打开.
  * @returns {ProjectContext} 项目上下文.
- * @throws {WorkflowError} 不在 Git 仓库中, 项目尚未完成初始化, 或对账异常时.
+ * @throws {WorkflowError} 不在 Git 仓库中, 或项目尚未初始化时.
  */
-export function openProject(cwd, { allowAnomaly = false } = {}) {
+export function openProject(cwd) {
   const projectRoot = findRepositoryRoot(cwd);
   if (projectRoot === undefined) {
     throw new WorkflowError("当前目录不是 Git 仓库.");
   }
-  const state = readSettledState(projectRoot);
+  const state = readState(projectRoot);
   if (state === undefined || state.init.status !== INIT_ACTIVE) {
-    throw new WorkflowError("项目尚未完成初始化, 请先运行 init 并通过自检.");
+    throw new WorkflowError("项目尚未初始化, 请先运行 init.");
   }
-  const spec = loadSpec();
-  if (state.pendingAnomaly === undefined) {
-    flushPendingWrites(projectRoot, {
-      now: new Date().toISOString(),
-      head: headCommit(projectRoot),
-    });
-  }
-  if (!allowAnomaly) {
-    assertReconciled(projectRoot, state, spec);
-  }
-  return { projectRoot, state, spec };
+  return { projectRoot, state, spec: loadSpec() };
 }
 
 /**
- * 为恢复记录打开项目: 不要求初始化完成, 状态文件损坏时也能打开,
- * 避免坏状态让恢复命令本身无法运行.
- *
- * @param {string} cwd 会话工作目录.
- * @returns {{projectRoot: string, state: import("../lib/state.mjs").NavigatorState | undefined, spec: import("../lib/spec.mjs").TemplateSpec}} 项目根目录, 可读时的当前状态与模板规格.
- * @throws {WorkflowError} 不在 Git 仓库中时.
- */
-export function openProjectForRecovery(cwd) {
-  const projectRoot = findRepositoryRoot(cwd);
-  if (projectRoot === undefined) {
-    throw new WorkflowError("当前目录不是 Git 仓库.");
-  }
-  return {
-    projectRoot,
-    state: readStateIfValid(projectRoot),
-    spec: loadSpec(),
-  };
-}
-
-/**
- * 读取状态文件并按提交结算记录结算; 文件不存在或不是合法 JSON 时返回 undefined.
- *
- * @param {string} projectRoot 项目根目录.
- * @returns {import("../lib/state.mjs").NavigatorState | undefined} 状态.
- * @throws {Error} 读取文件本身失败时.
- */
-export function readStateIfValid(projectRoot) {
-  try {
-    return readSettledState(projectRoot);
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      return undefined;
-    }
-    throw error;
-  }
-}
-
-/**
- * 保存新状态: 原子写入, 重新生成视图文件, 拍摄快照. 默认拍增量快照,
- * 只更新状态文件, 视图文件与调用方另外写入的文件.
+ * 保存新状态: 原子写入, 记下写入时的技能版本, 重新生成视图文件.
  *
  * @param {ProjectContext} context 项目上下文, 其中的 state 为修改前的状态.
  * @param {import("../lib/state.mjs").NavigatorState} nextState 修改后的状态.
  * @param {string} now 当前时间, ISO 格式.
- * @param {{snapshot?: string, writtenPaths?: readonly string[]}} [options] 快照方式 (见 SNAPSHOT_MODES), 以及本命令另外写入或删除的状态目录文件.
  * @returns {import("../lib/state.mjs").NavigatorState} 实际写入的状态.
  */
-export function saveState(
-  context,
-  nextState,
-  now,
-  { snapshot = SNAPSHOT_MODES.changes, writtenPaths = [] } = {},
-) {
-  const written = writeState(context.projectRoot, nextState, now);
+export function saveState(context, nextState, now) {
+  const written = writeState(
+    context.projectRoot,
+    { ...nextState, skillVersion: runtimeVersion() },
+    now,
+  );
   writePlanViews(context.projectRoot, written, context.spec.format);
-  const head = headCommit(context.projectRoot);
-  if (snapshot === SNAPSHOT_MODES.full) {
-    takeSnapshot(context.projectRoot, { now, head });
-    clearPendingWrites(context.projectRoot);
-  } else if (snapshot === SNAPSHOT_MODES.changes) {
-    recordSnapshotChanges(context.projectRoot, {
-      paths: [STATE_FILE, ...PLAN_VIEW_FILES, ...writtenPaths],
-      now,
-      head,
-    });
-  }
   return written;
 }
 
 /**
- * 核对提交已经完整: 状态目录与插件管理的项目配置中没有未入库的文件. 被提交漏掉的
- * 记录要在提交步骤中补交, 不能等到以后. 工单提交与阶段提交共用.
+ * 写出把技能产物提交入库的一步: 状态目录与插件管理的项目配置有未入库的改动时,
+ * 请编排会话调用提交技能; 没有改动时不需要这一步.
+ *
+ * 状态文件每条命令都会改写, 默认不算改动; 写下的状态必须入库时 (例如确认收尾)
+ * 把它算进去.
  *
  * @param {string} projectRoot 项目根目录.
- * @param {string} retryCommand 补交之后要重新运行的插件命令.
- * @returns {void}
- * @throws {WorkflowError} 仍有未入库的文件时, 原因列出文件并写明补救办法.
+ * @param {string} label 这次提交的成果, 例如 "阶段 1 (立项) 完成".
+ * @param {{includeState?: boolean}} [options] 是否把状态文件的改动算进去.
+ * @returns {string | undefined} 下一动作中的提交步骤; 没有改动时为 undefined.
  */
-export function assertRecordsCommitted(projectRoot, retryCommand) {
-  const uncommitted = listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS);
-  if (uncommitted.length > 0) {
-    throw new WorkflowError(
-      `以下文件没有随提交入库: ${uncommitted.join(", ")}. 再次调用 ${COMMIT_SKILL}, 参数写 "提交, 纳入范围: ${uncommitted.join(", ")}; 纳入范围之外的改动用文字列出并询问", 提交之后重新运行 ${retryCommand}.`,
-    );
-  }
+export function recordCommitStep(
+  projectRoot,
+  label,
+  { includeState = false } = {},
+) {
+  const changed = includeState
+    ? listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS)
+    : listUncommittedProducts(projectRoot);
+  return changed.length === 0
+    ? undefined
+    : `调用 ${COMMIT_SKILL} 提交 "${label}" 的技能产物, 参数写 "提交, 纳入范围: .navigator/ 下的改动, .claude/settings.json 与 .claude/rules/engineering.md; 纳入范围之外的改动用文字列出并询问"`;
 }
 
 /**
@@ -216,43 +130,4 @@ export function readDraftJson(projectRoot, draftPath) {
  */
 export function resultLines(state) {
   return [`- 执行结果: ${state.lastAction}`];
-}
-
-/**
- * 确认记录可以继续推进: 没有尚未处理的对账异常, 状态目录与最近的快照一致,
- * 提交历史也与记录一致. 提交步骤中 HEAD 会先于记录前进, 这时不比较提交历史.
- * 自己的提交 (提交中入库的 lastCommit 等于父提交) 不算异常, 由 enter 自动纳入.
- *
- * @param {string} projectRoot 项目根目录.
- * @param {import("../lib/state.mjs").NavigatorState} state 当前状态.
- * @param {import("../lib/spec.mjs").TemplateSpec} spec 模板规格.
- * @returns {void}
- * @throws {WorkflowError} 有异常时, 原因写明下一步.
- */
-function assertReconciled(projectRoot, state, spec) {
-  if (state.pendingAnomaly !== undefined) {
-    throw new WorkflowError(
-      `对账异常 "${RECONCILE_LABELS[state.pendingAnomaly] ?? state.pendingAnomaly}" 尚未处理: 先${replyStep(spec, "验收异常", ANOMALY_GUIDES[state.pendingAnomaly]?.optionSet)}, 再按用户的选择运行 restore 或 adopt.`,
-    );
-  }
-  const changed = changedSinceLatestSnapshot(projectRoot) ?? [];
-  if (changed.length > 0) {
-    throw new WorkflowError(
-      `状态目录在最近的快照之后被改动过, 例如记录被 git 回退或被手工修改: ${changed.join(", ")}. 本命令没有执行; 先运行 status, 按其中的下一动作处理.`,
-    );
-  }
-  if (isCommitInProgress(state)) {
-    return;
-  }
-  const history = compareHistory(
-    projectRoot,
-    state.lastCommit,
-    headCommit(projectRoot),
-  );
-  if (Object.hasOwn(ANOMALY_GUIDES, history.kind)) {
-    const commits = history.commits.map(shortHash).join(", ");
-    throw new WorkflowError(
-      `提交历史与记录不一致 (${RECONCILE_LABELS[history.kind]}${commits === "" ? "" : `: ${commits}`}), 例如在编排之外手动提交或回退了提交. 本命令没有执行; 先运行 status, 按其中的下一动作处理.`,
-    );
-  }
 }

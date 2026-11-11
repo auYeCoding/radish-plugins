@@ -156,23 +156,16 @@ export function renderGlossarySeed(spec) {
 }
 
 /**
- * 在正文之后加上人类总结代码块, 拼成以换行结尾的全文.
+ * 在一级标题之后加上一行结论, 拼成以换行结尾的全文.
  *
- * @param {string[]} lines 正文各行.
- * @param {string} summary 总结正文.
+ * @param {string[]} lines 正文各行, 第一行是一级标题.
+ * @param {string} summary 结论正文.
  * @param {import("./spec.mjs").FormatSpec} format 全局版式规则.
  * @returns {string} 文件全文.
  */
 function joinDocument(lines, summary, format) {
-  const fence = "```";
-  return `${[
-    ...lines,
-    "",
-    `${fence}${format.summaryLanguage}`,
-    format.summarySeparator,
-    summary,
-    fence,
-  ].join("\n")}\n`;
+  const [title, ...rest] = lines;
+  return `${[title, "", `${format.conclusionLabel}: ${summary}`, ...rest].join("\n")}\n`;
 }
 
 /**

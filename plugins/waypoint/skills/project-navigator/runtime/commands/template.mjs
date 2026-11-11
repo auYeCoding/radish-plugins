@@ -1,5 +1,5 @@
 /**
- * @file template 命令: 输出某种记录文件的填写要求与骨架, "当前进展" 已按状态填好;
+ * @file template 命令: 输出某种记录文件的填写要求与骨架, "当前进展" 已按状态填好.
  * 会改动代码的工单, 验收判据第一条预填代码检查判据.
  *
  * 用法: template <文件种类> [--option <结构编号>], 文件种类为规格 files 中的键,
@@ -11,8 +11,8 @@ import { renderFileGuide } from "../lib/file-guide.mjs";
 import { fileSections, renderFileSkeleton } from "../lib/render.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import { loadSpec } from "../lib/spec.mjs";
+import { readStateIfValid } from "../lib/state.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
-import { readStateIfValid } from "./support.mjs";
 
 /**
  * 工单文件的种类名; 工单骨架按当前工单预填代码检查判据.
@@ -54,7 +54,6 @@ export function runTemplate({ positionals, values, cwd }) {
     ...renderFileGuide({
       fileSpec,
       sections: fileSections(fileSpec, variantIndex),
-      spec,
     }),
     ...skeleton.trimEnd().split("\n"),
   ];

@@ -1,10 +1,7 @@
 /**
- * @file 插件命令名到处理函数的映射. 命令名与 `lib/command-access.mjs` 中的
- * 访问级别表一一对应, 由测试核对两边一致.
+ * @file 插件命令名到处理函数的映射.
  */
 
-import { EVIDENCE_COMMAND_NAME } from "../lib/command-access.mjs";
-import { runAddress } from "./address.mjs";
 import { runBrief } from "./brief.mjs";
 import { runCheck } from "./check.mjs";
 import { runCodeCheck } from "./codecheck.mjs";
@@ -14,13 +11,11 @@ import { runInit } from "./init.mjs";
 import { runOrder } from "./order.mjs";
 import { runPlan } from "./plan.mjs";
 import { runRecords } from "./records.mjs";
+import { runRef } from "./ref.mjs";
 import { runReply } from "./reply.mjs";
-import { runSnapshot } from "./snapshot.mjs";
-import { runStageCommit } from "./stage-commit.mjs";
 import { runStage } from "./stage.mjs";
 import { runStandards } from "./standards.mjs";
 import { runTemplate } from "./template.mjs";
-import { runTools } from "./tools.mjs";
 import { runUninstall } from "./uninstall.mjs";
 
 /**
@@ -37,42 +32,18 @@ import { runUninstall } from "./uninstall.mjs";
  */
 
 /**
- * 取出 `--session` 选项的值; 未提供或为空时为 undefined.
- *
- * @param {Record<string, any>} values 选项值.
- * @returns {string | undefined} 会话编号.
- */
-function sessionOption(values) {
-  return typeof values.session === "string" && values.session !== ""
-    ? values.session
-    : undefined;
-}
-
-/**
  * 每条命令的处理函数, 键为命令名.
  * @type {Readonly<Record<string, CommandHandler>>}
  */
 export const COMMAND_HANDLERS = Object.freeze({
-  init: ({ values, cwd, now }) =>
-    runInit({
-      cwd,
-      now,
-      sessionId: sessionOption(values),
-      isVerify: values.verify === true,
-    }),
+  init: ({ cwd, now }) => runInit({ cwd, now }),
   uninstall: ({ cwd, now }) => runUninstall({ cwd, now }),
-  enter: ({ values, cwd, now }) =>
-    runEnter({ cwd, now, sessionId: sessionOption(values), shouldClaim: true }),
-  status: ({ values, cwd, now }) =>
-    runEnter({
-      cwd,
-      now,
-      sessionId: sessionOption(values),
-      shouldClaim: false,
-    }),
+  enter: ({ cwd }) => runEnter({ cwd, isEntry: true }),
+  status: ({ cwd }) => runEnter({ cwd, isEntry: false }),
   reply: ({ positionals, values, cwd }) =>
     runReply({ cwd, type: positionals[0], optionSet: Number(values.option) }),
   template: runTemplate,
+  ref: runRef,
   stage: runStage,
   step: runStage,
   skip: runStage,
@@ -84,16 +55,11 @@ export const COMMAND_HANDLERS = Object.freeze({
   risk: runRecords,
   decision: runRecords,
   change: runRecords,
+  "exec-brief": runBrief,
   "review-brief": runBrief,
   "research-brief": runBrief,
-  [EVIDENCE_COMMAND_NAME]: runEvidence,
-  snapshots: runSnapshot,
-  restore: runSnapshot,
-  adopt: runSnapshot,
+  evidence: runEvidence,
   check: runCheck,
   standards: runStandards,
   codecheck: runCodeCheck,
-  tools: runTools,
-  address: runAddress,
-  stagecommit: runStageCommit,
 });

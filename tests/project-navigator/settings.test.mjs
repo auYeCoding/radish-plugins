@@ -1,205 +1,117 @@
 /**
- * @file 配置合并与移除的测试: hook 条目与放行规则.
+ * @file 配置测试: 放行规则的合并与移除, 旧版本项目级 hook 的清理, 插件级 hook 与
+ * 命令入口的接线.
  */
 
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { test } from "node:test";
 
 import {
+  LEGACY_COMMAND_PATH,
+  LEGACY_HOOK_ENTRY_ARGUMENT,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/paths.mjs";
+import {
   NAVIGATOR_PERMISSION_RULES,
-  hasAllNavigatorHooks,
-  mergeNavigatorHooks,
+  hasLegacyHooks,
   mergeNavigatorPermissions,
-  removeNavigatorHooks,
+  removeLegacyHooks,
   removeNavigatorPermissions,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/settings.mjs";
-import { findSettingsEditProblem } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/settings-edits.mjs";
+import { SKILL_DIRECTORY } from "./helpers.mjs";
 
 /**
- * 用户已有的配置, 含一个自己的 hook, 一条放行规则与其它设置.
+ * 插件根目录.
+ * @type {string}
+ */
+const PLUGIN_ROOT = path.resolve(SKILL_DIRECTORY, "..", "..");
+
+/**
+ * 用户自己的放行规则, 合并与移除都要保留.
+ * @type {string}
+ */
+const USER_RULE = "Bash(npm test)";
+
+/**
+ * 1.0.0 之前写入的项目级 hook 分组.
  * @type {Record<string, any>}
  */
-const USER_SETTINGS = Object.freeze({
-  model: "opus",
-  permissions: { allow: ["Bash(npm test)"], deny: ["Bash(rm *)"] },
-  hooks: {
-    PostToolUse: [
-      {
-        matcher: "Write",
-        hooks: [{ type: "command", command: "prettier --write" }],
-      },
-    ],
-  },
+const LEGACY_GROUP = Object.freeze({
+  matcher: "*",
+  hooks: [
+    { type: "command", command: "node", args: [LEGACY_HOOK_ENTRY_ARGUMENT] },
+  ],
 });
 
 /**
- * 同时合并 hook 与放行规则.
- *
- * @param {Record<string, any>} settings 原配置.
- * @returns {Record<string, any>} 新配置.
+ * 用户自己的 hook 分组.
+ * @type {Record<string, any>}
  */
-function mergeAll(settings) {
-  return mergeNavigatorPermissions(mergeNavigatorHooks(settings));
-}
+const USER_GROUP = Object.freeze({
+  matcher: "Write",
+  hooks: [{ type: "command", command: "npx prettier --write" }],
+});
 
-/**
- * 同时移除 hook 与放行规则.
- *
- * @param {Record<string, any>} settings 原配置.
- * @returns {Record<string, any>} 新配置.
- */
-function removeAll(settings) {
-  return removeNavigatorPermissions(removeNavigatorHooks(settings));
-}
+test("配置: 合并放行规则保留用户规则, 去掉旧版本规则, 重复合并不重复", () => {
+  const legacy = `Bash(node ${LEGACY_COMMAND_PATH} *)`;
+  const merged = mergeNavigatorPermissions({
+    permissions: { allow: [USER_RULE, legacy] },
+  });
+  assert.deepEqual(merged.permissions.allow, [
+    USER_RULE,
+    ...NAVIGATOR_PERMISSION_RULES,
+  ]);
+  assert.deepEqual(mergeNavigatorPermissions(merged), merged);
+});
 
-/**
- * 把配置对象写成配置文件的全文.
- *
- * @param {Record<string, any>} settings 配置对象.
- * @returns {string} 文件全文.
- */
-function text(settings) {
-  return `${JSON.stringify(settings, null, 2)}\n`;
-}
-
-test("配置: 合并后安装全部事件与放行规则, 且保留用户已有配置", () => {
-  const merged = mergeAll(USER_SETTINGS);
-  assert.ok(hasAllNavigatorHooks(merged));
-  assert.equal(merged.model, "opus");
-  assert.deepEqual(merged.permissions.deny, USER_SETTINGS.permissions.deny);
-  assert.ok(merged.permissions.allow.includes("Bash(npm test)"));
-  for (const rule of NAVIGATOR_PERMISSION_RULES) {
-    assert.ok(merged.permissions.allow.includes(rule), `缺少放行规则 ${rule}`);
-  }
+test("配置: 移除放行规则只删本技能的规则, 空字段一并删除", () => {
+  const merged = mergeNavigatorPermissions({
+    permissions: { allow: [USER_RULE] },
+  });
+  assert.deepEqual(removeNavigatorPermissions(merged), {
+    permissions: { allow: [USER_RULE] },
+  });
   assert.deepEqual(
-    merged.hooks.PostToolUse[0],
-    USER_SETTINGS.hooks.PostToolUse[0],
+    removeNavigatorPermissions(mergeNavigatorPermissions({})),
+    {},
   );
 });
 
-test("配置: 重复合并不产生重复条目", () => {
-  const once = mergeAll(USER_SETTINGS);
-  assert.deepEqual(mergeAll(once), once);
-});
-
-test("配置: 移除只删除本技能的条目, 恢复用户原配置", () => {
-  assert.deepEqual(removeAll(mergeAll(USER_SETTINGS)), USER_SETTINGS);
-});
-
-test("配置: 空配置合并后再移除, 不留下空字段", () => {
-  assert.deepEqual(removeAll(mergeAll({})), {});
-  assert.ok(!hasAllNavigatorHooks({}));
-});
-
-test("配置: 只合并放行规则时不写入 hook", () => {
-  const local = mergeNavigatorPermissions({});
-  assert.equal(local.hooks, undefined);
-  assert.deepEqual(local.permissions.allow, [...NAVIGATOR_PERMISSION_RULES]);
-});
-
-test("配置: 合并不修改传入的对象", () => {
-  const input = structuredClone(USER_SETTINGS);
-  mergeAll(input);
-  assert.deepEqual(input, USER_SETTINGS);
-});
-
-test("配置改动: 只在 hooks 字段中增删项目的 hook 时没有问题", () => {
-  const installed = mergeAll(USER_SETTINGS);
-  const added = {
-    ...installed,
-    hooks: {
-      ...installed.hooks,
-      Notification: [{ hooks: [{ type: "command", command: "notify" }] }],
-    },
+test("配置: 识别并移除旧版本的项目级 hook, 用户的 hook 保留", () => {
+  const settings = {
+    hooks: { PreToolUse: [LEGACY_GROUP, USER_GROUP], Stop: [LEGACY_GROUP] },
   };
-  assert.equal(
-    findSettingsEditProblem(text(installed), text(added)),
-    undefined,
-  );
-  assert.equal(
-    findSettingsEditProblem(text(added), text(installed)),
-    undefined,
-  );
-  const removed = {
-    ...installed,
-    hooks: {
-      ...installed.hooks,
-      PostToolUse: installed.hooks.PostToolUse.slice(1),
-    },
-  };
-  assert.equal(
-    findSettingsEditProblem(text(installed), text(removed)),
-    undefined,
-    "可以调整项目自己的 hook",
-  );
+  assert.equal(hasLegacyHooks(settings), true);
+  const cleaned = removeLegacyHooks(settings);
+  assert.deepEqual(cleaned, { hooks: { PreToolUse: [USER_GROUP] } });
+  assert.equal(hasLegacyHooks(cleaned), false);
+  assert.deepEqual(removeLegacyHooks({ hooks: { Stop: [LEGACY_GROUP] } }), {});
 });
 
-test("配置改动: 字段顺序与排版变化不算改动", () => {
-  const installed = mergeAll(USER_SETTINGS);
-  const reordered = Object.fromEntries(Object.entries(installed).reverse());
-  assert.equal(
-    findSettingsEditProblem(text(installed), JSON.stringify(reordered)),
-    undefined,
+test("配置: 插件级 hook 接线四个事件, 都用不经过 shell 的写法指向 hook 入口", () => {
+  const config = JSON.parse(
+    readFileSync(path.join(PLUGIN_ROOT, "hooks", "hooks.json"), "utf8"),
   );
+  const events = ["PreToolUse", "UserPromptSubmit", "SessionStart", "Stop"];
+  assert.deepEqual(Object.keys(config.hooks).sort(), [...events].sort());
+  for (const event of events) {
+    const hook = config.hooks[event][0].hooks[0];
+    assert.equal(hook.command, "node");
+    assert.deepEqual(hook.args, [
+      "${CLAUDE_PLUGIN_ROOT}/skills/project-navigator/runtime/hook.mjs",
+    ]);
+  }
+  assert.match(config.hooks.PreToolUse[0].matcher, /Write/u);
 });
 
-test("配置改动: 动了本技能的分组或 hooks 之外的字段时指出问题", () => {
-  const installed = mergeAll(USER_SETTINGS);
-  const before = text(installed);
-  const problemOf = (next) => findSettingsEditProblem(before, text(next));
-  assert.match(
-    problemOf(removeNavigatorHooks(installed)) ?? "",
-    /本技能的 hook 分组/u,
-  );
-  assert.match(
-    problemOf({
-      ...installed,
-      hooks: {
-        ...installed.hooks,
-        Stop: installed.hooks.Stop.map((group) => ({ ...group, matcher: "x" })),
-      },
-    }) ?? "",
-    /本技能的 hook 分组/u,
-    "给本技能的分组加匹配器也算改动",
-  );
-  assert.match(
-    problemOf({ ...installed, model: "haiku", env: { A: "1" } }) ?? "",
-    /hooks 之外的字段: env, model/u,
-  );
-  assert.match(
-    problemOf(removeNavigatorPermissions(installed)) ?? "",
-    /hooks 之外的字段: permissions/u,
-  );
-});
-
-test("配置改动: 内容缺失, 无法重建或结构不对时指出问题", () => {
-  const before = text(mergeAll({}));
-  assert.match(
-    findSettingsEditProblem(undefined, before) ?? "",
-    /运行 init 修复/u,
-  );
-  assert.match(findSettingsEditProblem("{", before) ?? "", /运行 init 修复/u);
-  assert.match(
-    findSettingsEditProblem(before, undefined) ?? "",
-    /无法确定写入后的内容/u,
-  );
-  for (const broken of [
-    "{",
-    "[]",
-    '{"hooks": []}',
-    '{"hooks": {"Stop": {}}}',
-  ]) {
+test("配置: 插件 bin/ 中的两个命令入口都指向命令行脚本", () => {
+  for (const name of ["project-navigator", "project-navigator.cmd"]) {
+    const file = path.join(PLUGIN_ROOT, "bin", name);
+    assert.ok(existsSync(file), name);
     assert.match(
-      findSettingsEditProblem(before, broken) ?? "",
-      /不是合法的 JSON 配置/u,
-      broken,
+      readFileSync(file, "utf8"),
+      /skills.project-navigator.runtime.navigator\.mjs/u,
     );
   }
-  assert.match(
-    findSettingsEditProblem(
-      before,
-      '{"hooks": {"Stop": [{"hooks": "node"}, null]}}',
-    ) ?? "",
-    /不是合法的 JSON 配置/u,
-  );
 });
