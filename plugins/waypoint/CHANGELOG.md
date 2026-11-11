@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: in the Claude desktop app, a reply whose option group has exactly two choices also shows them as two buttons in the app's next-step box, so the user can answer with one click. The button text is the first clause of each choice, for example "发布工单" (issue the order). The option block stays in every reply, and other environments behave as before. Groups where the user must type more after choosing, or where the choice leads to a commit, get no buttons.
+
+### Changed
+
+- `project-navigator`: the reply "工单执行" (order running) no longer ends with an option block. Its options ("wait" and "stop") made users think they had to choose A before the wait started. The reply now has a "中途停止" (stop midway) line instead: reply "停止执行" to stop the executor and change the order. A reply type with no option groups in the spec is checked to have no option block.
+
 ## [1.1.0] - 2026-11-10
 
 ### Added

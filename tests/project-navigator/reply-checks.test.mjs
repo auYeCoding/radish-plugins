@@ -60,6 +60,14 @@ for (const [type, reply] of Object.entries(SPEC.replies)) {
   });
 }
 
+test("校验: 不需要用户选择的回复不带选项块, 带了会被指出", () => {
+  const reply = filledReply("工单执行");
+  assert.doesNotMatch(reply, /```/u);
+  assert.deepEqual(check(reply), []);
+  const withOptions = `${reply}\n\`\`\`\n[如何继续]\n\nA. 等待完成, 自动汇报.\n\`\`\`\n`;
+  assert.ok(check(withOptions).some((problem) => problem.includes("选项块")));
+});
+
 test("校验: 缺少一级标题", () => {
   const text = filledReply("首次接入").replace("# 首次接入\n", "");
   assert.equal(check(text).length, 1);

@@ -5,6 +5,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { choiceLead } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/option-answer.mjs";
+import {
+  BUTTON_LABEL_MAX_LENGTH,
+  hasButtons,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/reply-guide.mjs";
 import {
   CRITERIA_CHECK_SECTION,
   CRITERION_COLUMN,
@@ -49,6 +54,20 @@ function assertFourHan(text, label) {
     `${label} "${text}" 必须是 ${SPEC.format.titleLength} 个汉字`,
   );
 }
+
+test("规格: 做成按钮的选项组, 各项的第一个分句互不相同且不超过按钮长度上限", () => {
+  const sets = Object.values(SPEC.replies)
+    .flatMap((reply) => reply.optionSets)
+    .filter(hasButtons);
+  assert.ok(sets.length > 0);
+  for (const set of sets) {
+    const leads = set.choices.map(choiceLead);
+    assert.equal(new Set(leads).size, leads.length, `"${set.title}" 的按钮`);
+    for (const lead of leads) {
+      assert.ok(lead !== "" && lead.length <= BUTTON_LABEL_MAX_LENGTH, lead);
+    }
+  }
+});
 
 test("规格: 进展标题与键名都是 4 个汉字, 进展行的名称与键名一一对应", () => {
   assertFourHan(SPEC.format.progressTitle, "进展标题");
@@ -152,7 +171,6 @@ for (const [type, reply] of Object.entries(SPEC.replies)) {
         assertFourHan(key, `${type} 的键名`);
       }
     }
-    assert.ok(reply.optionSets.length > 0, `${type} 至少要有一组选项`);
     for (const set of reply.optionSets) {
       assertFourHan(set.title, `${type} 的选项标题`);
       const widths = set.choices.map((choice) => displayWidth(choice));
