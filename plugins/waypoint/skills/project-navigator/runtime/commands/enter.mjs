@@ -3,14 +3,24 @@
  *
  * enter 由技能加载时的 `!` 命令调用, 输出会原样注入技能内容, 因此必须始终以
  * 退出码 0 结束. enter 的输出带本项目的编排标记: 技能内容记在会话转录中, hook
- * 据此认出编排会话, 不需要登记. status 只查询, 不输出标记, 不写任何文件.
+ * 据此认出编排会话, 不需要登记. status 只查询, 不输出标记, 不写项目文件;
+ * 两者都做状态自检, status 另外记下给出的下一动作, 用来发现技能自身的问题
+ * (见 lib/diagnostics.mjs), 这些记录在本机的运行期登记目录中.
  */
 
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 
+import {
+  EVENT_KINDS,
+  EVENT_LABELS,
+  REPORT_STEP,
+  recordEvent,
+  trackGuidance,
+  unreportedEvents,
+} from "../lib/diagnostics.mjs";
 import { checkEnvironment } from "../lib/environment.mjs";
-import { nextAction, replyStep } from "../lib/guidance.mjs";
+import { REPORT_OPTIONS, nextAction, replyStep } from "../lib/guidance.mjs";
 import { digestOrderFile, readApprovalStatus } from "../lib/order-approval.mjs";
 import { orchestratorMarker } from "../lib/orchestrator-marker.mjs";
 import {
@@ -44,6 +54,8 @@ import {
   requiredTrackedPaths,
   summarizeIgnoredPaths,
 } from "../lib/tracked-paths.mjs";
+import { checkStateConsistency } from "../lib/state-checks.mjs";
+import { ISSUED_ORDER_STATUS } from "../lib/workflow-orders.mjs";
 import { isProjectFinished } from "../lib/workflow-plan.mjs";
 
 /**
@@ -71,9 +83,10 @@ const LEGACY_ORCHESTRATOR_FILE = "orchestrator.json";
  * @param {object} options 命令参数.
  * @param {string} options.cwd 会话工作目录.
  * @param {boolean} options.isEntry 是否为调用技能时的进入.
+ * @param {string} options.now 当前时间, ISO 格式.
  * @returns {string[]} 输出各行.
  */
-export function runEnter({ cwd, isEntry }) {
+export function runEnter({ cwd, isEntry, now }) {
   const spec = loadSpec();
   const environment = checkEnvironment(cwd);
   const nodeLine = `- 运行环境: Node.js ${environment.nodeVersion}${environment.isNodeSupported ? "" : ", 版本过低, 需要 22 或更高版本"}`;
@@ -123,7 +136,10 @@ export function runEnter({ cwd, isEntry }) {
   if (blocker !== undefined || state === undefined) {
     return [...lines, `- 下一动作: ${blocker ?? ""}`];
   }
-  return [...lines, ...describeProgress({ projectRoot, state, isEntry, spec })];
+  return [
+    ...lines,
+    ...describeProgress({ projectRoot, state, isEntry, spec, now }),
+  ];
 }
 
 /**
@@ -134,13 +150,52 @@ export function runEnter({ cwd, isEntry }) {
  * @param {import("../lib/state.mjs").NavigatorState} options.state 当前状态.
  * @param {boolean} options.isEntry 是否为调用技能时的进入.
  * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
+ * @param {string} options.now 当前时间, ISO 格式.
  * @returns {string[]} 输出各行.
  */
-function describeProgress({ projectRoot, state, isEntry, spec }) {
+function describeProgress({ projectRoot, state, isEntry, spec, now }) {
   const order = state.order;
   const receiptStatus =
     order === null ? undefined : readReceiptStatus(projectRoot, order);
   const uncommitted = listUncommittedPaths(projectRoot, COMMITTED_PATHSPECS);
+  const inconsistencies = checkStateConsistency({ state, projectRoot, spec });
+  for (const message of inconsistencies) {
+    recordEvent(projectRoot, {
+      kind: EVENT_KINDS.invalidState,
+      source: "status",
+      message,
+      stack: [],
+      at: now,
+    });
+  }
+  const action =
+    inconsistencies.length > 0
+      ? `状态不自洽, 不能照常继续: ${inconsistencies.join(" ")} ${REPORT_STEP}, 使用第 ${REPORT_OPTIONS.blocking} 组选项`
+      : nextAction({
+          state,
+          receiptStatus,
+          orderApproval:
+            order === null ? undefined : readApprovalStatus(projectRoot, order),
+          isOrderUnchanged:
+            order === null
+              ? undefined
+              : order.issuedDigest === digestOrderFile(projectRoot, order),
+          hasUncommittedRecords:
+            isProjectFinished(state, lastStageNumber(spec)) &&
+            uncommitted.length > 0,
+          isEntry,
+          spec,
+        });
+  if (!isEntry) {
+    trackGuidance(projectRoot, {
+      action,
+      revision: state.revision,
+      isWaiting:
+        order?.status === ISSUED_ORDER_STATUS && receiptStatus === undefined,
+      now,
+    });
+  }
+  const pending = unreportedEvents(projectRoot);
   return [
     "",
     `- 当前进展: ${progressLine(state, spec)}`,
@@ -152,21 +207,12 @@ function describeProgress({ projectRoot, state, isEntry, spec }) {
           `- 工单状态: ${order.id} ${order.status}, 回执${describeReceipt(receiptStatus)}`,
         ]),
     `- 工作区域: ${uncommitted.length === 0 ? "技能产物都已入库" : `${uncommitted.length} 个技能产物未入库`}`,
-    `- 下一动作: ${nextAction({
-      state,
-      receiptStatus,
-      orderApproval:
-        order === null ? undefined : readApprovalStatus(projectRoot, order),
-      isOrderUnchanged:
-        order === null
-          ? undefined
-          : order.issuedDigest === digestOrderFile(projectRoot, order),
-      hasUncommittedRecords:
-        isProjectFinished(state, lastStageNumber(spec)) &&
-        uncommitted.length > 0,
-      isEntry,
-      spec,
-    })}`,
+    ...(pending.length === 0
+      ? []
+      : [
+          `- 技能异常: 脚本记录到 ${pending.length} 条还没有上报的异常 (${[...new Set(pending.map((event) => EVENT_LABELS[event.kind] ?? event.kind))].join(", ")}). ${REPORT_STEP}`,
+        ]),
+    `- 下一动作: ${action}`,
   ];
 }
 

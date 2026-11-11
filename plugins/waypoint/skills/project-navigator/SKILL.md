@@ -31,6 +31,7 @@ allowed-tools: Bash(node *) PowerShell(node *) Bash(project-navigator *) PowerSh
 4. 每条回复之前, 运行 `reply <编号> --option <组号>` 取得填写要求与骨架, 按要求在骨架上填写. 回复从一级标题写起, 前面不加引导语. 标题下方第一行 "结论:" 写给人看: 先说结果, 再说要用户做的选择, 尽量短; 进展行与选项块原样保留. 回复结束时 hook 只校验标题, 结论行与选项块, 不合格会被打回一次.
 5. 用简体中文与英文 (ASCII) 标点, 每个标点后加一个空格. 写朴素的话: 结论先行, 不铺垫, 不自造简称, 不打比方. 细则见 `ref writing`.
 6. 工具调用之间的过程说明每次最多一句中文, 只说正在做什么. 结论与需要用户决定的事只放在最终回复里.
+7. 发现技能自身的问题时上报, 不绕开, 不自行修改技能文件: 命令输出或 `status` 中出现 "技能异常" 一行; 或你自己发现规则互相矛盾, 骨架与校验对不上, 照 "下一动作" 做却走不通. 做法见 `ref recovery` 的 "问题报告".
 
 ## 路由表
 
@@ -41,7 +42,7 @@ allowed-tools: Bash(node *) PowerShell(node *) Bash(project-navigator *) PowerSh
 | 阶段 3 选型与规范对照                          | `selection`        |
 | 阶段 4 骨架, 阶段 5 切片, 工单往返             | `order-loop`       |
 | 需求变更, 里程复查, 阶段 6 收尾, 项目完成      | `change-milestone` |
-| 恢复进度, 运行受阻, 升级                       | `recovery`         |
+| 恢复进度, 运行受阻, 问题报告, 升级             | `recovery`         |
 | 体检                                           | `checkup`          |
 | 回复类型的节与选项组                           | `replies`          |
 | 记录文件的结构                                 | `files`            |
@@ -74,6 +75,7 @@ allowed-tools: Bash(node *) PowerShell(node *) Bash(project-navigator *) PowerSh
 | `check [文件...]`                                        | 体检; 带文件时只自查这些文件                                                                               |
 | `standards --from <草稿>`                                | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                     |
 | `codecheck set --from <草稿>`                            | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                       |
+| `report [--from <草稿>]`                                 | 生成技能问题报告: `{"doing", "expected", "actual", "reproduce", "blocked": false}`, 只写事实               |
 
 ## 子代理
 

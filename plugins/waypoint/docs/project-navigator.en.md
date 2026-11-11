@@ -224,7 +224,11 @@ Yes. The executor runs in the background, so you can ask questions or do other t
 
 The executor belongs to the session that started it. When a new session invokes the skill, a written receipt is reviewed as usual; without one, the orchestrator dispatches a new executor.
 
-**Can the orchestrator write something outside the workflow, such as a problem report for the plugin's maintainers?**
+**What if the skill itself misbehaves?**
+
+The scripts notice some problems on their own: internal errors in a command or hook, an inconsistent state, a command that the "下一动作" (next action) asked for but that was refused, and the same next action given repeatedly while the state does not change. The orchestrator also reports when it finds rules that contradict each other. It then replies with "问题报告" (problem report): the report is written to `.navigator/drafts/reports/` (not committed) and shown in full in one code block, ready to copy to the plugin's maintainers. The report states only what happened: environment, a state summary, the recorded anomalies, and the course of events. It contains no guesses about causes, no advice, no work order text or business code, and local paths are masked. If the workflow can continue, choose `A`; if it cannot (an internal command error or an inconsistent state), orchestration pauses until the problem is fixed.
+
+**Can the orchestrator write something outside the workflow?**
 
 Yes. Just ask. The orchestrator replies with "自由答复" (free answer) and writes it in "答复内容" (answer) in the format you ask for, code blocks included. Choose `A` afterwards to return to the workflow.
 

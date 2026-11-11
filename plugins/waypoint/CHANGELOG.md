@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: the skill notices its own problems and reports them. The scripts record internal errors in commands and hooks, an inconsistent state, a command that the next action asked for but that was refused, and the same next action given 4 times while the state does not change. `status` and the reminder on each user message then show a "技能异常" (skill anomaly) line.
+- `project-navigator`: a new `report [--from <draft>]` command and a new reply "问题报告" (problem report). The command writes `.navigator/drafts/reports/report-NNNN.md` (not committed) from the recorded anomalies, the environment, a state summary, and the course of events in the draft, and the reply shows the full text in one code block for the user to pass to the maintainers. A report states only what happened: no guesses about causes, no advice, no work order text or business code, and local paths are masked. Orchestration pauses only when it cannot continue, that is, after an internal command error or with an inconsistent state.
+
 ## [1.0.0] - 2026-11-11
 
 This release reworks `project-navigator` and is not compatible with projects initialized by 0.x: invoke the skill in such a project and run `init` when asked. The upgrade removes the old project-level hooks, permission rules and script copies; all records are kept.

@@ -13,14 +13,26 @@
  * - 源码证据: evidence, evidence check <仓库> <版本> <路径> <行号>
  * - 记录: risk, decision, change
  * - 体检与规范: check [文件...], standards --from <草稿>, codecheck set --from <草稿>
+ * - 问题报告: report [--from <草稿>]
  *
  * enter 由技能加载时的 `!` 命令调用, 任何情况下都以退出码 0 结束, 错误写进输出,
  * 否则 Claude Code 会中止整个技能调用. 其余命令出错时以退出码 1 结束.
  */
 
+import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 
 import { COMMAND_HANDLERS } from "./commands/handlers.mjs";
+import {
+  EVENT_KINDS,
+  REPORT_STEP,
+  isInternalError,
+  isRecommendedCommand,
+  readGuidance,
+  recordEvent,
+  stackLines,
+} from "./lib/diagnostics.mjs";
+import { findWorktreeRoot, navigatorPath } from "./lib/paths.mjs";
 
 /**
  * 命令出错时的退出码.
@@ -73,10 +85,56 @@ function main() {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    printLines([`- 脚本错误: ${message}`]);
+    printLines([
+      `- 脚本错误: ${message}`,
+      ...diagnoseFailure(error, process.argv.slice(2)),
+    ]);
     if (!isEnter) {
       process.exitCode = EXIT_FAILURE;
     }
+  }
+}
+
+/**
+ * 判断一次命令失败是不是技能本身的问题, 是的话记下异常并给出上报的做法.
+ * 两种情况算技能问题: 脚本内部错误; 上一次 "下一动作" 要求运行的命令被拒绝.
+ * 记录本身出错时不影响命令的输出.
+ *
+ * @param {unknown} error 捕获到的错误.
+ * @param {readonly string[]} args 命令行参数.
+ * @returns {string[]} 追加在错误之后的输出行; 不是技能问题时为空.
+ */
+function diagnoseFailure(error, args) {
+  try {
+    const projectRoot = findWorktreeRoot(process.cwd());
+    if (
+      projectRoot === undefined ||
+      !existsSync(navigatorPath(projectRoot, "state"))
+    ) {
+      return [];
+    }
+    const commandLine = args.filter((arg) => !arg.startsWith("-")).join(" ");
+    const isInternal = isInternalError(error);
+    if (
+      !isInternal &&
+      !isRecommendedCommand(readGuidance(projectRoot), commandLine)
+    ) {
+      return [];
+    }
+    recordEvent(projectRoot, {
+      kind: isInternal ? EVENT_KINDS.internalError : EVENT_KINDS.refused,
+      source: commandLine,
+      message: error instanceof Error ? error.message : String(error),
+      stack: isInternal ? stackLines(error) : [],
+      at: new Date().toISOString(),
+    });
+    return [
+      isInternal
+        ? `- 技能异常: 这是技能脚本的内部错误, 不是操作问题. ${REPORT_STEP}`
+        : `- 技能异常: 这条命令是上一次 "下一动作" 要求运行的, 却被拒绝. 按拒绝理由能继续时照做; ${REPORT_STEP}`,
+    ];
+  } catch {
+    return [];
   }
 }
 

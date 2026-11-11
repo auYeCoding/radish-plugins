@@ -129,6 +129,26 @@ export const GENERATED_FILES = Object.freeze([
 export const ORDER_APPROVAL_FILE = "order-approval.json";
 
 /**
+ * 技能异常记录在运行期登记目录中的文件名: 脚本自己发现的内部错误, hook 错误,
+ * 状态不自洽等, 供生成问题报告.
+ * @type {string}
+ */
+export const DIAGNOSTICS_FILE = "diagnostics.json";
+
+/**
+ * 最近一次给出的下一动作在运行期登记目录中的文件名, 用来发现 "照着做却被拒"
+ * 与原地打转.
+ * @type {string}
+ */
+export const GUIDANCE_FILE = "guidance.json";
+
+/**
+ * 问题报告所在目录, 相对于项目根目录. 在草稿目录之下, 不入库.
+ * @type {string}
+ */
+export const REPORTS_DIRECTORY = `${DRAFTS_DIRECTORY}/reports`;
+
+/**
  * 运行期登记信息在 Git 目录中的子目录名. 不入库, 也不受回退影响.
  * @type {string}
  */
