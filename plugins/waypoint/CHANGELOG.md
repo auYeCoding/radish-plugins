@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-11
+
 ### Added
 
 - `project-navigator`: a new reply "工单验收" (order under review, no option block), used when the reviewer subagent works in the background. Before, the orchestrator wrote an untitled note at that point.
@@ -272,7 +274,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.2.1...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.3.0...HEAD
+[1.3.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.0
 [1.2.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.1
 [1.2.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.0
 [1.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.1.0
