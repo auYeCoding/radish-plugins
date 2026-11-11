@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-11
+
+### Fixed
+
+- `project-navigator`: since 1.3.0 the reply structure is checked while background tasks run, but there was no reply type for waiting on a researcher or reader subagent, so the waiting note was sent back. A new reply "等待结果" (waiting for the result, no option block) covers the survey, problem-domain research, standards comparison, and semantic checkup steps.
+- `project-navigator`: Claude Code can refuse a subagent's write of a report-like document, which left an analysis order's executor unable to write its document under `artifacts/`. The executor now returns the path and full text in its final reply, and the orchestrator writes the file unchanged; this no longer counts as blocked.
+
 ## [1.3.0] - 2026-11-11
 
 ### Added
@@ -274,7 +281,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.3.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.3.1...HEAD
+[1.3.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.1
 [1.3.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.0
 [1.2.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.1
 [1.2.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.0
