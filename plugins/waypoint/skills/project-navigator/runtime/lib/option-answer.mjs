@@ -39,13 +39,30 @@ export function isChoiceSelected(prompt, optionSet, index) {
   if (letter === undefined || choice === undefined) {
     return false;
   }
-  const trimmed = prompt.trim();
   const letterPattern = new RegExp(
     `^[${letter}${letter.toLowerCase()}](?:[\\s.,:;)]|$)`,
     "u",
   );
-  const lead = choiceLead(choice);
   return (
-    letterPattern.test(trimmed) || (lead !== "" && trimmed.startsWith(lead))
+    letterPattern.test(prompt.trim()) || isChoiceNamed(prompt, optionSet, index)
   );
+}
+
+/**
+ * 判断用户消息是否以某一项选项文字的第一个分句开头. 选项字母在每条回复中都有,
+ * 只有紧跟着那条回复时才指向这一项; 选项文字本身说明了用户要做什么, 隔了几条
+ * 消息之后仍然有效.
+ *
+ * @param {string} prompt 用户消息.
+ * @param {import("./spec.mjs").OptionSetSpec} optionSet 选项组.
+ * @param {number} index 选项下标, 从 0 开始.
+ * @returns {boolean} 以该项的第一个分句开头时返回 true.
+ */
+export function isChoiceNamed(prompt, optionSet, index) {
+  const choice = optionSet.choices[index];
+  if (choice === undefined) {
+    return false;
+  }
+  const lead = choiceLead(choice);
+  return lead !== "" && prompt.trim().startsWith(lead);
 }

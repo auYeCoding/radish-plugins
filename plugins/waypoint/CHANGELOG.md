@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: answering "工单审阅" (order review) with anything other than A discarded the review, so withdrawing that message and answering "发布工单" (issue the order) left the order unissuable until it was reviewed again. The review is now kept: a later message that starts with "发布工单" approves the reviewed content as long as the order file is unchanged; a bare letter counts only right after the review. The refusal message also says that running the `reply` command alone is not a review.
+
 ## [1.3.1] - 2026-11-11
 
 ### Fixed

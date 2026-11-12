@@ -15,7 +15,7 @@ import { ORDER_APPROVAL_FILE, registryDirectory } from "./paths.mjs";
  * @typedef {object} OrderApprovalRecord 用户对一张工单的审阅.
  * @property {string} order 工单编号.
  * @property {string} digest 审阅时工单文件内容的摘要.
- * @property {"awaiting" | "approved"} status 等待用户选择, 或用户已选发布.
+ * @property {"awaiting" | "approved" | "declined"} status 等待用户选择, 用户已选发布, 或用户没有选发布.
  * @property {string} updatedAt 最后更新时间.
  */
 
@@ -42,7 +42,7 @@ export function writeOrderApproval(worktreeRoot, record) {
 }
 
 /**
- * 删除工单审阅记录: 审阅被用户否决, 或已用于发布工单.
+ * 删除工单审阅记录: 已用于发布工单, 或工单文件不存在.
  *
  * @param {string} worktreeRoot 工作区根目录.
  * @returns {void}
