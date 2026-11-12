@@ -39,6 +39,3 @@ jobs:
 
       - name: Run tests
         run: npm test
-
-      - name: Check generated documents
-        run: npm run gen:docs -- --check

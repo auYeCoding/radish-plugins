@@ -1,290 +1,241 @@
 /**
- * @file 根据状态给出编排会话的下一动作. 纯函数, 由 enter 与 status 使用.
+ * @file 下一动作与进展: "接下来做什么" 的唯一来源.
  *
- * 下一动作写成编排会话可以照做的一句话: 回复哪种类型, 使用第几组选项,
- * 运行哪条命令. "运行 X" 指运行插件命令 `project-navigator X`.
+ * 按状态与切片文件中的事实计算, status 命令与 hook 的位置提醒共用. 这里只给出
+ * 动作与要运行的命令, 做法的细节在参考文件中.
  */
 
-import { PAUSED_HANDBACK, PRECHECK_VERDICTS } from "./briefs.mjs";
-import { COMMIT_SKILL, SUBAGENT_TYPES } from "./guard.mjs";
-import { APPROVAL_REPLY_TYPE, APPROVAL_STATUSES } from "./order-approval.mjs";
-import { lastStageNumber } from "./spec.mjs";
-import { MODEL_ROLES, modelArgument } from "./subagent-models.mjs";
-import { SELECTION_ORDER_KIND } from "./workflow-orders.mjs";
-import { isProjectFinished } from "./workflow-plan.mjs";
+import { existsSync } from "node:fs";
+import path from "node:path";
+
+import {
+  BACKLOG_FILE,
+  COMMAND_NAME,
+  FINDINGS_DIRECTORY,
+  REQUIREMENTS_FILE,
+} from "./paths.mjs";
+import {
+  activeSlice,
+  currentMilestone,
+  isMilestoneSettled,
+  isSliceSettled,
+  nextPendingSlice,
+} from "./roadmap.mjs";
+import {
+  PARTS,
+  SECTIONS,
+  VERDICT_CLASSES,
+  classifyVerdicts,
+  loadSliceSpec,
+  partSpec,
+  readResultStatus,
+  readSliceFile,
+  readVerdicts,
+  sectionTitle,
+} from "./slice-file.mjs";
+import {
+  SLICE_STATUSES,
+  SLICE_STATUS_LABELS,
+  STAGES,
+  STAGE_LABELS,
+} from "./state.mjs";
 
 /**
- * "验收报告" 的选项组: 判据全部通过, 有判据不通过, 只有未验证的判据, 选型工单.
- * @type {Readonly<{passed: number, fix: number, unverified: number, selection: number}>}
+ * @typedef {import("./state.mjs").NavigatorState} NavigatorState
+ * @typedef {import("./state.mjs").SliceState} SliceState
+ * @typedef {import("./slice-file.mjs").SliceSpec} SliceSpec
  */
-export const REVIEW_OPTIONS = Object.freeze({
-  passed: 1,
-  fix: 2,
-  unverified: 3,
-  selection: 4,
-});
 
 /**
- * 上报技能自身问题的回复类型.
- * @type {string}
+ * @typedef {object} ProgressFacts 计算下一动作需要的, 不在状态文件中的事实.
+ * @property {boolean} hasRequirements 需求文件是否已经写入.
+ * @property {string} resultStatus 进行中切片的执行状态; 没有时为空字符串.
+ * @property {number} verdictCount 标准核对表的行数; 还没有填写时为 0.
+ * @property {string[]} verdictProblems 标准核对表中的问题.
+ * @property {string} verdictClass 标准核对结果的归类, 见 VERDICT_CLASSES.
  */
-export const REPORT_REPLY_TYPE = "问题报告";
 
 /**
- * "问题报告" 的选项组: 还能继续推进, 无法继续.
- * @type {Readonly<{continuable: number, blocking: number}>}
- */
-export const REPORT_OPTIONS = Object.freeze({ continuable: 1, blocking: 2 });
-
-/**
- * 请用户决定验收结果的回复类型.
- * @type {string}
- */
-export const REVIEW_REPLY_TYPE = "验收报告";
-
-/**
- * 执行子代理工作期间的回复类型.
- * @type {string}
- */
-export const RUNNING_REPLY_TYPE = "工单执行";
-
-/**
- * 验收子代理工作期间的回复类型.
- * @type {string}
- */
-export const REVIEWING_REPLY_TYPE = "工单验收";
-
-/**
- * 处理受阻工单的回复类型.
- * @type {string}
- */
-const BLOCKED_REPLY_TYPE = "受阻处理";
-
-/**
- * 项目已确认收尾, 记录都已入库之后的回复类型.
- * @type {string}
- */
-export const COMPLETE_REPLY_TYPE = "项目完成";
-
-/**
- * 回执中表示执行受阻的执行状态关键字.
- * @type {string}
- */
-export const BLOCKED_RECEIPT_KEYWORD = "受阻";
-
-/**
- * 等待调研, 阅读与核对子代理期间的回复类型.
- * @type {string}
- */
-const WAITING_REPLY_TYPE = "等待结果";
-
-/**
- * 执行子代理中途交回, 等用户完成操作期间的回复类型.
- * @type {string}
- */
-const PAUSED_REPLY_TYPE = "等待操作";
-
-/**
- * 派出执行子代理的动作, 写明这种工单使用的模型.
+ * 读取计算下一动作需要的事实.
  *
- * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
- * @param {{kind: string}} order 当前工单.
- * @returns {string} 动作.
+ * @param {string} projectRoot 项目根目录.
+ * @param {NavigatorState} state 状态.
+ * @param {SliceSpec} [spec] 切片文件规格.
+ * @returns {ProgressFacts} 事实.
  */
-export function executorDispatchAction(models, order) {
-  return `运行 exec-brief, 把输出原样作为提示词, 用 Agent 工具在后台 (run_in_background) 派 ${SUBAGENT_TYPES.executor} (${modelArgument(models, MODEL_ROLES.executor, order.kind)})`;
+export function readFacts(projectRoot, state, spec = loadSliceSpec()) {
+  const slice = activeSlice(state)?.slice;
+  const parsed =
+    slice === undefined
+      ? undefined
+      : readSliceFile(projectRoot, slice.file, spec);
+  const verdicts = readVerdicts(parsed, spec);
+  return {
+    hasRequirements: existsSync(path.join(projectRoot, REQUIREMENTS_FILE)),
+    resultStatus: readResultStatus(parsed, spec),
+    verdictCount: verdicts.rows.length,
+    verdictProblems: verdicts.problems,
+    verdictClass: classifyVerdicts(verdicts.rows, spec),
+  };
 }
 
 /**
- * 发布并派出执行子代理的一串动作.
+ * 描述当前位置: 阶段, 里程, 切片与环节.
  *
- * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
- * @param {{kind: string}} order 当前工单.
- * @returns {string} 动作.
+ * @param {NavigatorState} state 状态.
+ * @returns {string} 一行进展.
  */
-function dispatchStep(models, order) {
-  return `运行 order set issued, 再${executorDispatchAction(models, order)}, 然后`;
+export function progressLine(state) {
+  const milestone = currentMilestone(state);
+  if (state.stage !== STAGES.slicing || milestone === undefined) {
+    return `阶段 ${STAGE_LABELS[state.stage]}`;
+  }
+  const settled = milestone.slices.filter(isSliceSettled).length;
+  const head = `里程 ${milestone.id} ${milestone.name} (${settled}/${milestone.slices.length})`;
+  const slice = activeSlice(state)?.slice;
+  if (slice === undefined || state.current === null) {
+    return head;
+  }
+  return `${head} > 切片 ${slice.id} ${slice.name} [${SLICE_STATUS_LABELS[slice.status]}, 第 ${state.current.round} 轮]`;
 }
 
 /**
- * 派出核对子代理并按结果改好工单的一串动作; 子代理在后台运行, 本轮要先结束时
- * 回复 "等待结果".
+ * 计算下一动作.
  *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
- * @returns {string} 动作.
- */
-export function precheckStep(spec, models) {
-  return `运行 precheck-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.checker} (${modelArgument(models, MODEL_ROLES.checker)}); 子代理在后台运行, 本轮要先结束时${replyStep(spec, WAITING_REPLY_TYPE)}; 结果回来后改正 "${PRECHECK_VERDICTS.fails}" 的事实, "${PRECHECK_VERDICTS.unknown}" 的条目自己查证或改写成能核对的说法, 遗漏的决定写进 "需要决定", 然后运行 order precheck`;
-}
-
-/**
- * 派出验收子代理的一串动作; 子代理在后台运行, 本轮要先结束时回复 "工单验收".
- *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
- * @returns {string} 动作.
- */
-function reviewDispatchStep(spec, models) {
-  return `运行 review-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.reviewer} (${modelArgument(models, MODEL_ROLES.reviewer)}); 子代理在后台运行, 本轮要先结束时${replyStep(spec, REVIEWING_REPLY_TYPE)}, 不写其它说明`;
-}
-
-/**
- * @typedef {object} GuidanceInput 判断下一动作需要的信息.
- * @property {import("./state.mjs").NavigatorState} state 当前状态.
- * @property {string | undefined} receiptStatus 当前工单回执中的执行状态; 回执不存在时为 undefined.
- * @property {string} [orderApproval] 当前工单的审阅状态, 取值见 order-approval.mjs 的 APPROVAL_STATUSES; 没有工单时省略.
- * @property {boolean} [isOrderUnchanged] 受阻工单的内容与最近一次发布时是否相同.
- * @property {boolean} [hasUncommittedRecords] 技能产物 (含状态文件) 是否有未入库的改动; 只在项目已确认收尾时需要.
- * @property {boolean} isEntry 是否是调用技能时的进入 (不是会话中途的查询).
- * @property {import("./spec.mjs").TemplateSpec} spec 模板规格, 用于写出回复类型的编号.
- */
-
-/**
- * 写出 "回复某种类型" 这一步, 附上取骨架的命令, 编排会话不用再查编号.
- *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {string} type 回复类型.
- * @param {number} [optionSet] 使用第几组选项; 省略时不写.
- * @returns {string} 例如 `回复 "验收报告", 使用第 2 组选项 (reply review --option 2)`.
- */
-export function replyStep(spec, type, optionSet) {
-  const id = spec.replies[type].id;
-  return optionSet === undefined
-    ? `回复 "${type}" (reply ${id})`
-    : `回复 "${type}", 使用第 ${optionSet} 组选项 (reply ${id} --option ${optionSet})`;
-}
-
-/**
- * 给出下一动作.
- *
- * @param {GuidanceInput} input 判断信息.
+ * @param {NavigatorState} state 状态.
+ * @param {ProgressFacts} facts 不在状态文件中的事实.
+ * @param {SliceSpec} [spec] 切片文件规格.
  * @returns {string} 下一动作.
  */
-export function nextAction(input) {
-  const { state, spec } = input;
-  if (state.stage === null) {
-    return replyStep(spec, "首次接入");
+export function nextAction(state, facts, spec = loadSliceSpec()) {
+  if (state.stage === STAGES.finished) {
+    return `项目已确认收尾. 用户提出新的工作时按 ${command("ref change")} 处理: 更新需求, 用 roadmap 追加里程.`;
   }
-  if (isProjectFinished(state, lastStageNumber(spec))) {
-    return finishedAction(spec, input.hasUncommittedRecords === true);
+  if (state.stage === STAGES.intake) {
+    return intakeAction(state, facts);
   }
-  if (input.isEntry) {
-    return `${replyStep(spec, "恢复进度")}; 用户选 A 后运行 status, 按其中的下一动作继续`;
-  }
-  return state.order === null
-    ? `继续阶段 ${state.stage} 的步骤 ${state.step}`
-    : orderAction(spec, state.order, input);
+  const active = activeSlice(state)?.slice;
+  return active === undefined
+    ? betweenSlicesAction(state)
+    : sliceAction(active, facts, spec);
 }
 
 /**
- * 项目已确认收尾之后的下一动作: 记录有未入库的改动时先提交, 否则回复项目完成.
+ * 把命令写成可以直接运行的形式.
  *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {boolean} hasUncommittedRecords 技能产物是否有未入库的改动.
- * @returns {string} 下一动作.
+ * @param {string} args 命令名与参数.
+ * @returns {string} 带反引号的完整命令.
  */
-function finishedAction(spec, hasUncommittedRecords) {
-  return hasUncommittedRecords
-    ? `项目已确认收尾, 但记录还有未入库的改动: 调用 ${COMMIT_SKILL}, 参数写 "提交, 纳入范围: .navigator/ 下的改动; 纳入范围之外的改动用文字列出并询问", 再${replyStep(spec, COMPLETE_REPLY_TYPE)}`
-    : `项目已完成, 没有待办: ${replyStep(spec, COMPLETE_REPLY_TYPE)}; 用户选 A 或提出新需求时, 按需求变更流程新开里程, 更新推进路线后运行 stage 5; 选 B 时运行 git push (不带强制参数), 再回复 "${COMPLETE_REPLY_TYPE}"; 选 C 时不做任何操作`;
+export function command(args) {
+  return `\`${COMMAND_NAME} ${args}\``;
 }
 
 /**
- * 当前有工单时, 按工单状态给出下一动作.
+ * 立项阶段的下一动作.
  *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {import("./state.mjs").OrderState} order 当前工单.
- * @param {GuidanceInput} input 判断信息.
+ * @param {NavigatorState} state 状态.
+ * @param {ProgressFacts} facts 事实.
  * @returns {string} 下一动作.
  */
-function orderAction(spec, order, input) {
-  const models = input.state.models;
-  switch (order.status) {
-    case "drafting":
-      return draftingAction(spec, order, input);
-    case "issued":
-      return issuedAction(spec, order, input);
-    case "blocked":
-      return blockedAction(spec, order, input);
-    case "reviewing":
-      return reviewingAction(spec, order, models);
-    default:
-      return `工单 ${order.id} 处于未知状态 ${order.status}`;
+function intakeAction(state, facts) {
+  if (!facts.hasRequirements) {
+    return `立项: 先运行 ${command("ref intake")} 读立项步骤; 与用户逐个确认需求后写入 ${REQUIREMENTS_FILE}.`;
   }
+  if (
+    state.project.organization === null ||
+    state.project.verification === null
+  ) {
+    return `登记项目设置: 运行 ${command("setup")} 查看建议, 与用户确认模块组织方式与验证方式后, 用 ${command("setup --from <草稿>")} 登记.`;
+  }
+  return `写路线: 按 ${command("ref intake")} 的 "路线" 一节写草稿, 运行 ${command("roadmap --from <草稿>")}.`;
 }
 
 /**
- * 起草中的工单的下一动作: 先做发布前核对, 再请用户审阅, 用户认可当前内容后
- * 发布并派出执行子代理.
+ * 没有进行中的切片时的下一动作.
  *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {import("./state.mjs").OrderState} order 当前工单.
- * @param {GuidanceInput} input 判断信息.
+ * @param {NavigatorState} state 状态.
  * @returns {string} 下一动作.
  */
-function draftingAction(spec, order, input) {
-  const models = input.state.models;
-  const dispatch = `${dispatchStep(models, order)}${replyStep(spec, RUNNING_REPLY_TYPE)}`;
-  const approve = `${replyStep(spec, APPROVAL_REPLY_TYPE)}; 用户选 A 后${dispatch}`;
-  if (order.prechecked !== true) {
-    return `写完工单 ${order.id} 的 order.md, ${precheckStep(spec, models)}, 再${approve}`;
+function betweenSlicesAction(state) {
+  const milestone = currentMilestone(state);
+  if (milestone === undefined) {
+    return `全部里程已完成: 向用户说明成果, 用户确认后运行 ${command("finish")}; 还有新的工作时用 roadmap 追加里程.`;
   }
-  switch (input.orderApproval) {
-    case APPROVAL_STATUSES.approved:
-      return `工单 ${order.id} 已经用户审阅: ${dispatch}`;
-    case APPROVAL_STATUSES.awaiting:
-      return `等用户在 "${APPROVAL_REPLY_TYPE}" 中选择: 选 A 后${dispatch}; 用户要修改时, 改好工单文件后再${replyStep(spec, APPROVAL_REPLY_TYPE)}`;
-    default:
-      return `工单 ${order.id} 已做发布前核对: ${approve}`;
+  const pending = nextPendingSlice(state);
+  if (pending !== undefined) {
+    return `为切片 ${pending.id} "${pending.name}" 写计划: 先读相关代码, 再运行 ${command(`slice plan ${pending.id} --slug <短名>`)}, 做法见 ${command("ref slice-loop")}.`;
   }
+  if (isMilestoneSettled(milestone)) {
+    return `里程复查 (${command("ref slice-loop")} 的 "里程复查"): 对照里程目标向用户说明达成情况, 整理 ${BACKLOG_FILE}, 用 roadmap 排出下一个里程的切片; 用户确认后运行 ${command(`milestone done ${milestone.id}`)}.`;
+  }
+  return `为里程 ${milestone.id} "${milestone.name}" 排出切片: 写路线草稿, 运行 ${command("roadmap --from <草稿>")}.`;
 }
 
 /**
- * 已发布工单的下一动作: 回执写入前等执行子代理, 写入后按执行状态处理.
- * 执行子代理也可能不写回执, 中途交回等用户操作.
+ * 有进行中的切片时的下一动作.
  *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {{id: string}} order 当前工单.
- * @param {GuidanceInput} input 判断信息.
+ * @param {SliceState} slice 进行中的切片.
+ * @param {ProgressFacts} facts 事实.
+ * @param {SliceSpec} spec 切片文件规格.
  * @returns {string} 下一动作.
  */
-function issuedAction(spec, order, input) {
-  const { receiptStatus } = input;
-  if (receiptStatus === undefined) {
-    return `工单 ${order.id} 由执行子代理处理中: ${replyStep(spec, RUNNING_REPLY_TYPE)}; 子代理结束后会自动通知, 届时运行 status. 子代理交回的第一行是 "${PAUSED_HANDBACK}" 时, ${replyStep(spec, PAUSED_REPLY_TYPE)}, 用户做完后用 SendMessage 把用户的话转给它继续, 再${replyStep(spec, RUNNING_REPLY_TYPE)}. 子代理已结束, 既没有等待操作也没有写回执时, 用 SendMessage 请它按回执骨架补写`;
+function sliceAction(slice, facts, spec) {
+  if (slice.status === SLICE_STATUSES.planned) {
+    return `填写切片文件 ${slice.file} 的 "${partSpec(spec, PARTS.plan).heading}" 段, 然后运行 ${command("slice start")}${slice.interactive ? "; 这是交互式切片, 开工后在本会话执行" : ", 按输出在后台派实现子代理"}.`;
   }
-  return receiptStatus.includes(BLOCKED_RECEIPT_KEYWORD)
-    ? `工单 ${order.id} 执行受阻: 读回执, 运行 order set blocked, 再${replyStep(spec, BLOCKED_REPLY_TYPE)}, 按受阻类型选择选项组`
-    : `工单 ${order.id} 执行完成: 运行 order set reviewing, 再${reviewDispatchStep(spec, input.state.models)}`;
+  if (slice.status === SLICE_STATUSES.running) {
+    return runningAction(slice, facts, spec);
+  }
+  return reviewingAction(slice, facts, spec);
 }
 
 /**
- * 受阻工单的下一动作: 内容没有改动时直接继续, 改动后要重新审阅.
+ * 切片在实现中时的下一动作.
  *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {{id: string, kind: string}} order 当前工单.
- * @param {GuidanceInput} input 判断信息.
+ * @param {SliceState} slice 进行中的切片.
+ * @param {ProgressFacts} facts 事实.
+ * @param {SliceSpec} spec 切片文件规格.
  * @returns {string} 下一动作.
  */
-function blockedAction(spec, order, input) {
-  if (input.orderApproval === APPROVAL_STATUSES.approved) {
-    return `工单 ${order.id} 的修改已经用户审阅: ${dispatchStep(input.state.models, order)}${replyStep(spec, RUNNING_REPLY_TYPE)}`;
+function runningAction(slice, facts, spec) {
+  const resultHeading = partSpec(spec, PARTS.result).heading;
+  const statusTitle = sectionTitle(spec, SECTIONS.status);
+  if (facts.resultStatus === spec.doneStatus) {
+    return `运行 ${command("slice review")}, 按输出派验收子代理.`;
   }
-  return `工单 ${order.id} 受阻: ${replyStep(spec, BLOCKED_REPLY_TYPE)}; 用户完成所需操作而工单没有改动时, 运行 order set issued, 用 SendMessage 让原执行子代理继续 (找不到它时运行 exec-brief 重新派出), 再${replyStep(spec, RUNNING_REPLY_TYPE)}; 要修改工单时, 改好后${replyStep(spec, APPROVAL_REPLY_TYPE)}${input.isOrderUnchanged === false ? ". 工单文件已在发布后改动, 必须重新审阅" : ""}`;
+  if (slice.interactive) {
+    return `继续交互式切片 ${slice.id}: 在本会话按计划逐步做, 需要用户操作时直接说, 每确认一条结论立即写入 ${FINDINGS_DIRECTORY}/; 做完后填写 "${resultHeading}" 段, 把 "${statusTitle}" 改成 "${spec.doneStatus}", 再运行 ${command("slice review")}.`;
+  }
+  return `等待实现子代理. 它以 "交回: ..." 开头交回时, 把内容原样转告用户, 用户回复后用 SendMessage 让它继续 (找不到它时运行 ${command("brief exec")} 重新派出); 它已结束而 "${statusTitle}" 还不是 "${spec.doneStatus}" 时, 请它补写 "${resultHeading}" 段.`;
 }
 
 /**
- * 验收中的工单的下一动作: 派验收子代理, 写验收记录, 按判据结论选择选项组.
+ * 切片在验收中时的下一动作.
  *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {{id: string, kind: string}} order 当前工单.
- * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
+ * @param {SliceState} slice 进行中的切片.
+ * @param {ProgressFacts} facts 事实.
+ * @param {SliceSpec} spec 切片文件规格.
  * @returns {string} 下一动作.
  */
-function reviewingAction(spec, order, models) {
-  const brief = `${reviewDispatchStep(spec, models)}; 结果回来后把结论写入 review.md, 再`;
-  return order.kind === SELECTION_ORDER_KIND
-    ? `选型工单 ${order.id} 验收中: ${brief}${replyStep(spec, REVIEW_REPLY_TYPE, REVIEW_OPTIONS.selection)}, 由用户决定是否采用`
-    : `工单 ${order.id} 验收中: ${brief}${replyStep(spec, REVIEW_REPLY_TYPE)}: 判据全部通过用第 ${REVIEW_OPTIONS.passed} 组, 有不通过用第 ${REVIEW_OPTIONS.fix} 组, 只有未验证用第 ${REVIEW_OPTIONS.unverified} 组`;
+function reviewingAction(slice, facts, spec) {
+  const reviewHeading = partSpec(spec, PARTS.review).heading;
+  const conclusion = sectionTitle(spec, SECTIONS.conclusion);
+  const rework = sectionTitle(spec, SECTIONS.rework);
+  if (facts.verdictCount === 0) {
+    return `等待验收子代理; 它交回后把内容原样写入切片文件 ${slice.file} 的 "${reviewHeading}" 段 (找不到它时运行 ${command("brief review")} 重新派出).`;
+  }
+  if (facts.verdictProblems.length > 0) {
+    return `修正切片文件的 "${reviewHeading}" 段: ${facts.verdictProblems.join(" ")}`;
+  }
+  const record = `把用户的原话写入 "${conclusion}"`;
+  const redo = `把要补的内容写入计划的 "${rework}" 后运行 ${command("slice redo")}`;
+  if (facts.verdictClass === VERDICT_CLASSES.pass) {
+    return `验收全部通过, 请用户决定: A 通过并提交; B 通过, 提交并推送. 用户选择后${record}, 运行 ${command("slice accept")}.`;
+  }
+  if (facts.verdictClass === VERDICT_CLASSES.unverified) {
+    return `有标准未验证, 请用户决定: A 接受现状并提交 (${record}, 运行 ${command("slice accept --accept-unverified")}); B 补做 (${redo}).`;
+  }
+  return slice.skeleton
+    ? `有标准不通过, 这是最小骨架, 只能补做: 向用户说明后${redo}.`
+    : `有标准不通过, 请用户决定: A 补做 (${redo}); B 放弃这个切片 (运行 ${command("slice drop")}).`;
 }

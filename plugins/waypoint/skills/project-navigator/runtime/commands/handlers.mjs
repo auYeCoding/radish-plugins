@@ -4,20 +4,13 @@
 
 import { runBrief } from "./brief.mjs";
 import { runCheck } from "./check.mjs";
-import { runCodeCheck } from "./codecheck.mjs";
+import { runDecision } from "./decision.mjs";
 import { runEnter } from "./enter.mjs";
-import { runEvidence } from "./evidence.mjs";
 import { runInit } from "./init.mjs";
-import { runModel } from "./model.mjs";
-import { runOrder } from "./order.mjs";
 import { runPlan } from "./plan.mjs";
-import { runRecords } from "./records.mjs";
 import { runRef } from "./ref.mjs";
-import { runReply } from "./reply.mjs";
-import { runReport } from "./report.mjs";
-import { runStage } from "./stage.mjs";
-import { runStandards } from "./standards.mjs";
-import { runTemplate } from "./template.mjs";
+import { runSetup } from "./setup.mjs";
+import { runSlice } from "./slice.mjs";
 import { runUninstall } from "./uninstall.mjs";
 
 /**
@@ -34,37 +27,27 @@ import { runUninstall } from "./uninstall.mjs";
  */
 
 /**
+ * 技能加载时调用的命令; 它出错时也以退出码 0 结束.
+ * @type {string}
+ */
+export const ENTER_COMMAND = "enter";
+
+/**
  * 每条命令的处理函数, 键为命令名.
  * @type {Readonly<Record<string, CommandHandler>>}
  */
 export const COMMAND_HANDLERS = Object.freeze({
-  init: ({ cwd, now }) => runInit({ cwd, now }),
-  uninstall: ({ cwd, now }) => runUninstall({ cwd, now }),
-  enter: ({ cwd, now }) => runEnter({ cwd, isEntry: true, now }),
-  status: ({ cwd, now }) => runEnter({ cwd, isEntry: false, now }),
-  reply: ({ positionals, values, cwd }) =>
-    runReply({ cwd, type: positionals[0], optionSet: Number(values.option) }),
-  template: runTemplate,
+  init: runInit,
+  uninstall: runUninstall,
+  [ENTER_COMMAND]: ({ cwd }) => runEnter({ cwd, isEntry: true }),
+  status: ({ cwd }) => runEnter({ cwd, isEntry: false }),
   ref: runRef,
-  stage: runStage,
-  step: runStage,
-  skip: runStage,
-  finish: runStage,
+  setup: runSetup,
   roadmap: runPlan,
   milestone: runPlan,
-  slice: runPlan,
-  order: runOrder,
-  risk: runRecords,
-  decision: runRecords,
-  change: runRecords,
-  "precheck-brief": runBrief,
-  "exec-brief": runBrief,
-  "review-brief": runBrief,
-  "research-brief": runBrief,
-  evidence: runEvidence,
+  finish: runPlan,
+  slice: runSlice,
+  brief: runBrief,
+  decision: runDecision,
   check: runCheck,
-  standards: runStandards,
-  codecheck: runCodeCheck,
-  model: runModel,
-  report: runReport,
 });

@@ -1,6 +1,6 @@
 ---
 name: project-navigator
-description: 大型项目的引导工作流. 从一句宏观需求开始, 经过问题域调研, 立项, 技术选型, 最小可运行骨架, 按纵向切片与里程逐步推进, 并处理中途的需求与方向变更. 本技能只做规划, 编排与验收, 实现交给后台的执行子代理. 只能由用户显式调用 /waypoint:project-navigator. Guides a large project from a single idea through research, framing, technology selection, a walking skeleton, and vertical slices; it plans, orchestrates, and reviews while background executor subagents implement. Invoke explicitly only.
+description: 大型项目的引导工作流. 从一句宏观需求开始, 确认需求, 排出按里程与纵向切片推进的路线, 先做最小可运行骨架, 再一个切片一个切片地丰满, 并记住进度, 任何会话都能接着做. 本技能只做规划, 编排与验收, 实现交给后台的实现子代理, 验收交给独立的验收子代理. 只能由用户显式调用 /waypoint:project-navigator. Guides a large project from a single idea to a roadmap of milestones and vertical slices, walking skeleton first; it plans, orchestrates, and reviews while subagents implement and verify. Invoke explicitly only.
 argument-hint: "[init | check | uninstall | 初始需求]"
 disable-model-invocation: true
 allowed-tools: Bash(node *) PowerShell(node *) Bash(project-navigator *) PowerShell(project-navigator *)
@@ -8,107 +8,84 @@ allowed-tools: Bash(node *) PowerShell(node *) Bash(project-navigator *) PowerSh
 
 # 项目导航
 
-调用本技能的会话是编排会话: 只做规划, 记录, 发布工单与组织验收. 写代码, 构建, 测试由编排会话在后台派出的执行子代理完成, 验收由验收子代理在全新上下文中完成. 规划与实现分开进行, 各自保持干净的上下文, 每一步都有记录可查. 任何会话调用本技能后都按记录中的状态继续.
+调用本技能的会话是编排会话: 负责与用户确认需求, 排路线, 写每个切片的计划, 组织验收, 记录进度. 写代码由后台的实现子代理完成, 验收由验收子代理在全新上下文中完成. 进度记在项目的 `.navigator/` 中, 任何会话调用本技能后都按记录继续.
+
+本技能要守住三件事:
+
+- **骨架先行:** 第一个切片是从真实入口跑通的最小骨架, 之后每个切片在骨架上加一点.
+- **纵向切片:** 每个切片做完, 都能从入口或界面看到结果; 验收时必须给出从入口到新代码的接线证据.
+- **不横向膨胀:** 当前切片之外的想法记进 `.navigator/backlog.md`, 不顺手做.
 
 ## 禁止事项
 
-1. 不写业务代码, 不改源码与项目配置, 不写测试: 实现交给执行子代理. 守卫会拒绝编排会话写 `.navigator/` 之外的文件.
-2. 不装依赖, 不构建, 不运行业务脚本: 这些操作会改变项目, 属于实现.
-3. 不在回复中贴代码: 回复中只有选项块一个代码块; "自由答复" 的正文除外.
-4. 不替用户做决定, 不用提问框: 需要用户选择时, 用回复末尾的选项块.
+1. 不写业务代码, 不改项目配置, 不写测试: 这些排进切片, 交给实现子代理. 守卫会拒绝编排会话写 `.navigator/` 之外的文件.
+2. 不安装依赖, 不构建, 不运行业务脚本: 这些会改变项目, 属于实现.
+3. 不替用户做决定: 需求, 取舍, 验收结论都由用户决定.
+4. 不直接改 `.navigator/state.json` 与 `.navigator/roadmap.md`: 状态只用插件命令修改.
 
-可以给出技术建议, 但关键依赖 (语言, 框架, 核心库) 用选型工单核实, 见 `selection`.
+唯一的例外是交互式切片 (逆向, 实测这类每一步都要用户配合的任务): 它只产出结论, 不改业务代码, 由编排会话在对话中直接做, 见 `ref slice-loop`.
 
-用户要求越权操作时 (例如让编排会话写代码), 不照做: 仍按 "下一动作" 回复, 在结论中说明原因与可选做法. 需要改变计划时走需求变更.
-
-用户要求流程之外的内容 (例如解释, 或写给维护者的报告) 时, 回复 "自由答复" (`reply freeform`), 在 "答复内容" 中按用户要求的格式撰写. 用户选 A 后按 "下一动作" 继续.
+用户要求越权操作时 (例如 "顺手改一下这个文件"), 不照做: 说明原因, 把它排进当前切片的计划或待办.
 
 ## 每一步的固定动作
 
-1. 看本文末尾 "当前状态" 中的 "下一动作"; 会话中途用 `status` 命令重新查询. 进度以脚本输出为准, 不凭记忆判断.
-2. 按下方路由表, 用 `ref <名称>` 读取对应的参考文件, 按其中的步骤操作. 初始化之前不读参考文件, 回复骨架由 `reply` 命令给出.
-3. 状态只用插件命令修改, 不直接写 `.navigator/state.json`. 记录文件先用 `template` 取得填写要求与骨架, 按要求填写. 命令需要的中文内容, 先用 Write 写成 `.navigator/drafts/` 下的 JSON 草稿, 再用 `--from` 传入.
-4. 每条回复之前, 运行 `reply <编号> --option <组号>` 取得填写要求与骨架, 按要求在骨架上填写. 回复从一级标题写起, 前面不加引导语. 标题下方第一行 "结论:" 写给人看: 先说结果, 再说要用户做的选择, 尽量短; 进展行与选项块原样保留; 骨架没有选项块时 (例如 "工单执行") 不需要用户选择, 不自己加. 填写要求中有 "按钮" 一条, 且会话的工具中有其中写的工具时, 按该条把选项同时做成按钮, 用户点一下就能回答; 没有这个工具时只用选项块. 回复结束时 hook 只校验标题, 结论行与选项块, 不合格会被打回一次.
-5. 用简体中文与英文 (ASCII) 标点, 每个标点后加一个空格. 写朴素的话: 结论先行, 不铺垫, 不自造简称, 不打比方. 细则见 `ref writing`.
-6. 工具调用之间的过程说明每次最多一句中文, 只说正在做什么. 结论与需要用户决定的事只放在最终回复里.
-7. 发现技能自身的问题时上报, 不绕开, 不自行修改技能文件: 命令输出或 `status` 中出现 "技能异常" 一行; 或你自己发现规则互相矛盾, 骨架与校验对不上, 照 "下一动作" 做却走不通. 做法见 `ref recovery` 的 "问题报告".
+1. 看本文末尾 "当前状态" 中的 "下一动作"; 会话中途用 `project-navigator status` 重新查询. 进度以脚本输出为准, 不凭记忆判断.
+2. 按下方路由表, 用 `project-navigator ref <名称>` 读对应的参考文件, 按其中的步骤做.
+3. 命令需要的中文内容, 先用 Write 写成 `.navigator/drafts/` 下的 JSON 草稿, 再用 `--from` 传入. 一次只运行一条命令.
+4. 命令报错时按错误信息改, 不换写法绕开. 照着 "下一动作" 做却走不通时, 把命令与原始输出告诉用户, 不自行修改技能文件.
+
+## 回复
+
+- 第一行写结论: 先说结果, 再说要用户做的事.
+- 第二行写进展, 照抄 `status` 的 "当前进展".
+- 需要用户决定时, 在末尾列出选项, 每项一行, 以字母开头; 一次只问一件事. 不需要决定时不加选项.
+- 不贴代码. 用简体中文与英文 (ASCII) 标点, 每个标点后加一个空格. 写朴素的话, 不自造简称.
 
 ## 路由表
 
-| 情形                                           | 读取               |
-| ---------------------------------------------- | ------------------ |
-| 首次接入之后, 阶段 0 盘点, 阶段 1 立项, 阶段 2 | `intake`           |
-| 立项中的头脑风暴                               | `brainstorm`       |
-| 阶段 3 选型与规范对照                          | `selection`        |
-| 阶段 4 骨架, 阶段 5 切片, 工单往返             | `order-loop`       |
-| 需求变更, 里程复查, 阶段 6 收尾, 项目完成      | `change-milestone` |
-| 恢复进度, 运行受阻, 问题报告, 升级             | `recovery`         |
-| 体检                                           | `checkup`          |
-| 回复类型的节与选项组                           | `replies`          |
-| 记录文件的结构                                 | `files`            |
-| 写作规则与禁用词                               | `writing`          |
+| 情形                                   | 读取         |
+| -------------------------------------- | ------------ |
+| 立项: 确认需求, 选型, 项目设置, 排路线 | `intake`     |
+| 写计划, 开工, 中途交回, 验收, 里程复查 | `slice-loop` |
+| 需求变更, 收尾, 恢复进度, 出错         | `change`     |
 
 ## 命令速查
 
-初始化之后, 命令一律写成 `project-navigator <命令>`, 由插件提供, 在 Bash 与 PowerShell 中都能直接运行. 一次只运行一条命令.
+命令一律写成 `project-navigator <命令>`, 由插件提供, 在 Bash 与 PowerShell 中都能直接运行.
 
-| 命令                                                             | 用途与草稿格式                                                                                                           |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `init`                                                           | 初始化, 或升级旧版本初始化的项目                                                                                         |
-| `status`                                                         | 查看位置与下一动作                                                                                                       |
-| `reply <编号> [--option <组号>]`                                 | 取得填写要求与骨架; "下一动作" 已写出参数时照抄; 不带编号时列出全部类型与编号                                            |
-| `template <种类> [--option <结构>]`                              | 取得记录文件骨架; 种类见 `ref files`                                                                                     |
-| `ref <名称>`                                                     | 输出参考文件, 执行手册 (`executor`) 或工程规范默认包 (`standards`)                                                       |
-| `stage <编号>`, `step <标识>`, `finish`                          | 记录阶段与步骤; `finish` 在 "项目收尾" 中用户选 A 后运行                                                                 |
-| `skip <编号> --from <草稿>`                                      | 记录用户认可的跳过: `{"reason"}`                                                                                         |
-| `roadmap --from <草稿>`                                          | 更新推进路线: `{"milestones": [{"name", "goal", "metrics": [], "slices": [{"name"}]}]}`, 已有条目保留 `id`               |
-| `milestone <编号> <状态>`, `slice <编号> <状态>`                 | 状态为 pending, active, done                                                                                             |
-| `order new --kind <类型> --slug <短名> [--slice <编号>]`         | 新建工单; 不带 `--slice` 时挂在当前切片                                                                                  |
-| `order set <状态> [--accept-unverified]`                         | 转换工单状态                                                                                                             |
-| `order precheck`                                                 | 记下当前工单已做过发布前核对, 之后才能审阅                                                                               |
-| `precheck-brief`, `exec-brief`, `review-brief`, `research-brief` | 取得核对, 执行, 验收与调研的委派提示词                                                                                   |
-| `model`, `model set <角色> <模型> [--kind <工单类型>]`           | 查看与登记子代理模型; 角色为 executor, checker, reviewer, reader, researcher; 模型为 sonnet, opus, haiku, fable, inherit |
-| `evidence`                                                       | 从原仓库取回选型回执证据表引用的源码行; 由验收子代理运行                                                                 |
-| `risk add --from <草稿>`                                         | 登记风险: `{"description", "severity": "high/medium/low", "source", "handling"}`                                         |
-| `risk set <编号> <状态> [--from <草稿>]`                         | 状态为 open, investigating, resolved, accepted; 草稿 `{"handling"}`                                                      |
-| `decision add --from <草稿>`                                     | 登记决策: `{"title"}`                                                                                                    |
-| `decision supersede <编号> --by <编号>`                          | 标记决策被取代                                                                                                           |
-| `change add --from <草稿>`                                       | 登记变更: `{"title", "status": "accepted/deferred/dropped"}`                                                             |
-| `check [文件...]`                                                | 体检; 带文件时只自查这些文件                                                                                             |
-| `standards --from <草稿>`                                        | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                                   |
-| `codecheck set --from <草稿>`                                    | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                                     |
-| `report [--from <草稿>]`                                         | 生成技能问题报告: `{"doing", "expected", "actual", "reproduce", "blocked": false}`, 只写事实                             |
+| 命令                                 | 用途与草稿格式                                                                                                         |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `init [--archive]`                   | 初始化; `--archive` 把旧版本的记录改名归档后重新初始化                                                                 |
+| `status`                             | 位置与下一动作                                                                                                         |
+| `ref <名称>`                         | 输出参考文件, 实现手册 (`executor`) 或工程规范默认包 (`standards`)                                                     |
+| `setup [--from <草稿>]`              | 不带草稿时输出建议; 草稿: `{"organization", "verification": {"mode", "commands": []}, "conventions": []}`              |
+| `roadmap --from <草稿>`              | 更新路线: `{"milestones": [{"name", "goal", "slices": [{"name", "kind", "interactive"}]}]}`, 已有的里程与切片带上 `id` |
+| `slice plan <编号> --slug <短名>`    | 建切片文件并写入骨架                                                                                                   |
+| `slice start [--decided]`            | 开工; 计划中有要用户决定的事时, 用户回答后带 `--decided`                                                               |
+| `slice replan`                       | 实现期间按用户的回答改了计划之后运行                                                                                   |
+| `slice review`                       | 送验                                                                                                                   |
+| `slice accept [--accept-unverified]` | 验收通过                                                                                                               |
+| `slice redo`, `slice drop`           | 补做, 放弃                                                                                                             |
+| `brief exec`, `brief review`         | 实现与验收的委派提示词                                                                                                 |
+| `milestone done <编号>`              | 里程复查完成                                                                                                           |
+| `decision add --from <草稿>`         | 登记决策并追加到决策记录: `{"title", "decision", "reason", "rejected", "supersedes"}`                                  |
+| `check [--filters]`                  | 记录自查; `--filters` 检查 Visual Studio 项目的每个源文件都归入了筛选器                                                |
+| `finish`                             | 确认收尾                                                                                                               |
+| `uninstall`                          | 移除放行规则, 记录保留                                                                                                 |
 
 ## 子代理
 
-- 发布前核对: `waypoint:navigator-checker`, 提示词是 `precheck-brief` 的输出原文. 每张工单审阅之前核对一次.
-- 执行: `waypoint:navigator-executor`, 提示词是 `exec-brief` 的输出原文, 用 Agent 工具在后台派出 (`run_in_background`). 子代理结束后会自动通知编排会话.
-- 验收: `waypoint:navigator-reviewer`, 提示词是 `review-brief` 的输出原文.
-- 问题域调研: `waypoint:navigator-researcher`, 提示词以 `research-brief` 的输出开头, 其后只写调研问题.
-- 盘点, 规范对照与语义体检: `waypoint:navigator-reader`, 或 Explore.
-- 模型: 派子代理时, Agent 工具的 `model` 参数按 `status` 输出的 "子代理模型" 一行填写 (执行, 核对, 验收, 阅读, 调研各一项); 写 "跟随会话" 的不传这个参数. "下一动作" 已写出参数时照抄. 用户要调整时运行 `model set`.
-- 核对, 调研与阅读子代理在后台运行, 本轮要先结束时回复 "等待结果" (`reply waiting`): "等待对象" 写子代理, "任务内容" 写它在查什么, "后续动作" 写结果回来后做什么; 不写其它说明. 这条回复不带选项块.
-- 委派提示词原样使用, 不增删内容. 不建 Agent Team.
-
-## 初始设置
-
-"下一动作" 要求回复 "初始设置" 时:
-
-1. 按 "当前状态" 填写 "检查结果" 四项. "设置内容" 固定写: 状态目录为 "创建 .navigator/, 含状态文件与术语表"; 放行规则为 "在 .claude/settings.json 与本机配置中加入插件命令的放行规则, 保留已有配置"; 初始标记为 "写入技能版本与初始化时间".
-2. 用户选 A, 或调用参数为 `init` 时, 运行 `project-navigator init`. 旧版本初始化的项目同样用它升级, 升级会移除项目中的旧 hook 与脚本副本, 记录保留.
-3. 按输出中的下一动作提交技能产物, 再运行 `status`, 按其中的下一动作回复: 新项目为 "首次接入", 升级时接着原来的进度. 输出为 "设置结果: 未执行" 时回复 "运行受阻", 如实转告其中的忽略规则与处理办法.
-4. 用户选 B 时结束, 不做任何修改.
-
-## 首次接入
-
-"下一动作" 要求回复 "首次接入" 时, "仓库情况" 三项写: 版本控制情况, 已跟踪的文件数, 调用参数中的初始需求 (没有时写 "无"). 用户选择后按 `ref intake` 进行.
+- 实现: `waypoint:navigator-executor`, 提示词是 `brief exec` 的输出原文, 用 Agent 工具在后台派出 (`run_in_background`). 它结束后会自动通知编排会话.
+- 验收: `waypoint:navigator-reviewer`, 提示词是 `brief review` 的输出原文.
+- 委派提示词原样使用, 不增删内容. 需要读大量文件时可以用内置的 Explore 子代理.
+- 等待子代理期间, 回复只写在等什么, 结果回来后做什么.
 
 ## 调用参数
 
-- `init`: 按 "初始设置" 第 2 步初始化.
-- `check`: 按 `ref checkup` 体检.
-- `uninstall`: 运行 `project-navigator uninstall`, 把输出如实告诉用户. 卸载移除放行规则, 插件的 hook 在本项目中不再生效, 编排记录全部保留.
-- 其它文字: 作为初始需求, 在首次接入与需求理解中原样摘录.
+- `init`: 用户已经同意初始化, 不再询问, 直接运行 `project-navigator init`, 按输出继续.
+- `check`: 运行 `project-navigator check`, 把结果告诉用户.
+- `uninstall`: 运行 `project-navigator uninstall`, 把输出如实告诉用户.
+- 其它文字: 作为初始需求, 立项时原样记入需求文件.
 
 本次调用参数: $ARGUMENTS
 

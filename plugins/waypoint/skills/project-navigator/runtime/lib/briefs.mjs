@@ -1,8 +1,8 @@
 /**
- * @file 由脚本生成的委派提示词: 核对子代理, 执行子代理, 验收子代理与调研子代理.
+ * @file 由脚本生成的委派提示词: 实现子代理与验收子代理.
  *
  * 提示词由脚本生成, 编排会话原样使用, 不在其中加入倾向性说明或删掉检查项.
- * 这里是这些提示词的唯一来源.
+ * 这里是这些提示词的唯一来源; 小节名取自切片文件规格.
  */
 
 import path from "node:path";
@@ -10,227 +10,214 @@ import path from "node:path";
 import {
   COMMAND_NAME,
   ENGINEERING_RULES_FILE,
-  orderArtifactsPath,
-  orderFilePath,
+  FINDINGS_DIRECTORY,
+  NAVIGATOR_DIRECTORY,
 } from "./paths.mjs";
-import { VERDICTS } from "./review-record.mjs";
+import { PARTS, SECTIONS, partSpec, sectionsFor } from "./slice-file.mjs";
 import {
-  EVIDENCE_COMMAND,
-  EVIDENCE_SECTION,
-  REQUIREMENT_SECTION,
-} from "./source-evidence.mjs";
-import {
-  SELECTION_ORDER_KIND,
-  isRecordOnlyOrderKind,
-} from "./workflow-orders.mjs";
+  AUTO_VERIFICATION,
+  ORGANIZATIONS,
+  ORGANIZATION_LABELS,
+  SLICE_KINDS,
+  SLICE_KIND_LABELS,
+  VERIFICATION_LABELS,
+} from "./state.mjs";
 
 /**
- * 一次问题域调研中网络搜索与网页抓取的总次数上限. 立项调研只需形成基本认知,
- * 实测不设上限时一次调研超过 80 次调用, 耗时十几分钟.
+ * 实现子代理交回给编排会话的要点最多行数.
  * @type {number}
  */
-const RESEARCH_CALL_LIMIT = 20;
+const SUMMARY_LINES = 3;
 
 /**
- * 执行子代理交回给编排会话的要点最多行数.
- * @type {number}
+ * 实现子代理交回内容第一行的写法.
+ * @type {Readonly<{done: string, question: string, action: string}>}
  */
-const EXECUTOR_SUMMARY_LINES = 3;
-
-/**
- * 执行子代理中途交回, 等用户完成操作时, 交回内容第一行的写法.
- * @type {string}
- */
-export const PAUSED_HANDBACK = "执行状态: 等待操作";
-
-/**
- * 回执 "偏差记录" 中列出待定判据的键, 与规格 files.receipt 一致.
- * @type {string}
- */
-export const PENDING_CRITERIA_KEY = "待定判据";
-
-/**
- * 工单中写编排会话对细节的判断的节, 与规格 files.order 一致. 这一节与实际不符时,
- * 执行子代理以实际为准, 不算受阻.
- * @type {string}
- */
-export const ASSUMPTIONS_SECTION = "工作假设";
-
-/**
- * 回执中逐条记录事实修正的节, 与规格 files.receipt 一致.
- * @type {string}
- */
-export const CORRECTIONS_SECTION = "事实修正";
-
-/**
- * 问题域调研提示词的固定框架; 编排会话只在其后填写调研问题.
- * @type {string}
- */
-export const RESEARCH_FRAME = [
-  "# 问题域调研",
-  "",
-  "你是调研子代理, 只读, 不写任何文件.",
-  "",
-  "## 调研规则",
-  "",
-  "1. 只查问题域: 同类产品与替代方案, 目标使用者与典型场景, 行业做法与标准, 法规与合规约束, 常见失败原因, 关键术语.",
-  '2. 不做技术选型, 不比较库或框架; 查到的技术话题只记为 "选型问题".',
-  '3. 每条发现附来源地址, 并标明 "事实" 或 "推断"; 推断写明依据哪条来源. 不凭记忆下结论.',
-  `4. 控制范围: 目标是形成基本认知, 不求穷尽. 每个调研问题找 2 至 4 个可靠来源, 能回答就停; 网络搜索与网页抓取合计不超过 ${RESEARCH_CALL_LIMIT} 次; 同一网页不重复抓取; 摘录只取支持结论的一两句.`,
-  "5. 用简体中文与英文 (ASCII) 标点交回, 每个标点后加一个空格.",
-  "",
-  "## 交回格式",
-  "",
-  "依次交回以下各节: 同类方案 (表格: 名称, 做法, 可借鉴之处, 来源), 使用人群, 行业做法, 约束风险, 关键术语 (表格: 术语, 定义, 来源), 选型问题, 结论汇总 (表格: 类别, 内容, 依据, 类别为已知, 假设, 未知), 来源列表.",
-  "",
-  "## 调研问题",
-  "",
-].join("\n");
-
-/**
- * 发布前核对的三种结论.
- * @type {Readonly<{holds: string, fails: string, unknown: string}>}
- */
-export const PRECHECK_VERDICTS = Object.freeze({
-  holds: "成立",
-  fails: "不成立",
-  unknown: "无法核对",
+export const HANDBACKS = Object.freeze({
+  done: "交回: 完成",
+  question: "交回: 需要回答",
+  action: "交回: 需要操作",
 });
 
 /**
- * 生成发布前核对的委派提示词: 工单发布之前, 由核对子代理逐条核对工单中写下的
- * 事实. 工单由编排会话凭已有记录写成, 其中的具体事实不成立时, 执行子代理要做到
- * 一半才发现, 整张工单往返一轮.
- *
- * @param {object} options 生成参数.
- * @param {string} options.projectRoot 项目根目录.
- * @param {{id: string, folder: string}} options.order 当前工单.
- * @returns {string} 提示词全文.
+ * 结构核对逐项要回答的问题.
+ * @type {readonly string[]}
  */
-export function buildPrecheckBrief({ projectRoot, order }) {
-  const { holds, fails, unknown } = PRECHECK_VERDICTS;
-  return [
-    `# 发布前核对 ${order.id}`,
-    "",
-    "你是核对子代理: 只读, 不写任何文件, 不改写工单, 只报告事实与证据.",
-    "",
-    "## 核对对象",
-    "",
-    `- 工单文件: ${path.join(projectRoot, orderFilePath(order.folder, "order"))}`,
-    "",
-    "## 核对要求",
-    "",
-    `1. 工作假设: 逐条核对工单 "${ASSUMPTIONS_SECTION}", 读代码, 配置与数据核实.`,
-    '2. 具体事实: 找出 "执行守则", "工作范围" 与 "验收判据" 中的每个具体事实, 逐个核对: 文件与目录路径, 函数与接口名, 命令, 数据中的编号或实例, 引用的记录中的结论, 外部资源的地址, 发布形式与许可. 判据点名某个实例时, 核对这个实例存在, 并且带有判据要求的特征.',
-    '3. 判据可验证: 逐条看 "验证方式" 能否照做: 命令是否存在, 需要的数据, 工具与环境是否具备.',
-    '4. 遗漏的决定: 列出执行中必须由用户决定, 而工单 "需要决定" 没有写的事, 例如许可条款的解释, 要改动仓库之外的文件, 几种做法的取舍.',
-    `5. 每条给出结论与证据 (文件路径与行号, 命令输出, 或网页地址与摘录). 结论只能是 ${holds}, ${fails}, ${unknown} 之一; ${unknown} 时写明缺少什么. ${holds} 的条目可以合并成一行, 只写条数.`,
-    "",
-    "## 交回格式",
-    "",
-    `1. 核对结果: 表格, 列为 位置, 内容, 结论, 证据; 只列 ${fails} 与 ${unknown} 的条目, 最后一行写 ${holds} 的条数.`,
-    '2. 遗漏的决定: 逐条列出, 没有时写 "无".',
-  ].join("\n");
-}
+const STRUCTURE_CHECKS = Object.freeze([
+  "每个新文件是否在计划写明的模块中",
+  "新增的常量, 类型, 配置, 规则是否只有一处定义",
+  "跨层调用是否只通过接口, 依赖方向是否与项目规范一致",
+  "是否有可以复用却重写的实现",
+  "是否新建了只有一处使用的通用模块或公共层",
+  "新功能是否迫使多个已有模块改动内部实现",
+]);
 
 /**
- * 生成执行子代理的委派提示词: 手册与工单的位置, 改动范围, 交回格式.
- * 细节都在执行手册与工单中. 只产出记录的工单 (运行检查与分析) 只写回执与证据文件.
+ * @typedef {object} BriefContext 生成提示词需要的信息.
+ * @property {string} projectRoot 项目根目录.
+ * @property {import("./state.mjs").SliceState} slice 切片.
+ * @property {import("./state.mjs").CurrentSlice} current 切片的运行信息.
+ * @property {import("./state.mjs").ProjectSettings} project 项目设置.
+ * @property {import("./slice-file.mjs").SliceSpec} spec 切片文件规格.
+ */
+
+/**
+ * 生成实现子代理的委派提示词.
  *
- * @param {object} options 生成参数.
- * @param {string} options.projectRoot 项目根目录.
- * @param {{id: string, folder: string, kind: string}} options.order 当前工单.
+ * @param {BriefContext} context 生成提示词需要的信息.
  * @returns {string} 提示词全文.
  */
-export function buildExecutorBrief({ projectRoot, order }) {
-  const scopeRule = isRecordOnlyOrderKind(order.kind)
-    ? "1. 本工单只产出记录: 只写本工单的回执与工单文件夹 artifacts/ 下的证据文件 (文档, 脚本等), 不改业务文件与 .navigator/ 下的其它文件."
-    : "1. 只改业务文件, 本工单的回执与工单文件夹 artifacts/ 下的证据文件, 不改 .navigator/ 下的其它文件.";
+export function buildExecutorBrief(context) {
+  const { slice, current, spec } = context;
+  const titles = sectionTitles(spec);
+  const plan = partSpec(spec, PARTS.plan).heading;
+  const result = partSpec(spec, PARTS.result).heading;
+  const isBuild = slice.kind === SLICE_KINDS.build;
   return [
-    `# 执行工单 ${order.id}`,
+    `# 实现切片 ${slice.id}: ${slice.name}`,
     "",
-    `你是执行子代理. 先运行 \`${COMMAND_NAME} ref executor\` 读完执行手册, 再读工单 ${path.join(projectRoot, orderFilePath(order.folder, "order"))}, 然后按手册中的执行流程工作.`,
+    `你是实现子代理. 先运行 \`${COMMAND_NAME} ref executor\` 读完实现手册, 再读切片文件的 "${plan}" 段, 然后按手册工作.`,
+    "",
+    "## 本切片",
+    "",
+    ...subjectLines(context),
+    ...(slice.skeleton
+      ? [
+          "- 最小骨架: 是. 从真实入口进入, 经过计划中的每一层, 每层只做最少的事; 要能按验证方式确认它跑通了.",
+        ]
+      : []),
+    ...(current.round > 1
+      ? [
+          `- 补做: 这是第 ${current.round} 轮, 只做 "${plan}" 段 "${titles[SECTIONS.rework]}" 一节写的内容, 并更新 "${result}" 段.`,
+        ]
+      : []),
     "",
     "## 规则",
     "",
-    scopeRule,
-    `2. 不提交, 不推送, 不运行改变编排状态的插件命令 (例如 \`${COMMAND_NAME} order\`).`,
-    `3. 做完或受阻时, 用 \`${COMMAND_NAME} template receipt\` 取骨架 (选型工单加 \`--option 2\`), 写回执 ${path.join(projectRoot, orderFilePath(order.folder, "receipt"))}, 然后结束.`,
+    isBuild
+      ? `1. 可以写业务文件, 切片文件的 "${result}" 段, 以及 ${FINDINGS_DIRECTORY}/ 下的文件. 不改切片文件的其它段与 ${NAVIGATOR_DIRECTORY}/ 下的其它文件.`
+      : `1. 本切片只产出结论: 只写 ${FINDINGS_DIRECTORY}/ 下的文件与切片文件的 "${result}" 段, 不改业务代码与项目配置.`,
+    `2. 不提交, 不推送, 不运行改变状态的插件命令 (\`${COMMAND_NAME}\` 只用 ref, status 与 check).`,
+    `3. 做完后填写 "${result}" 段的每个小节, 把 "${titles[SECTIONS.status]}" 改成 "${spec.doneStatus}", 然后结束.`,
     "",
     "## 交回格式",
     "",
-    `- 第一行: 执行状态 (完成或受阻) 与回执路径.`,
-    `- 其后不超过 ${EXECUTOR_SUMMARY_LINES} 行要点: 受阻时写受阻类型与需要的决定或操作; 完成时写最重要的实现决定与风险, 有待定判据时写明是哪几条.`,
-    `- 例外: 按手册 "等待操作" 一节中途交回时不写回执, 第一行写 "${PAUSED_HANDBACK}", 其后逐条写要用户做的操作.`,
+    `- 做完时: 第一行写 "${HANDBACKS.done}", 其后不超过 ${SUMMARY_LINES} 行要点: 最重要的实现决定, 修正与待定标准.`,
+    `- 需要用户回答或亲手操作才能继续时: 先把已经查清的内容写进 "${result}" 段的 "${titles[SECTIONS.notes]}", 第一行写 "${HANDBACKS.question}" 或 "${HANDBACKS.action}", 其后逐条写问题或操作步骤, 写到用户不用追问就能照做. "${titles[SECTIONS.status]}" 保持不变.`,
   ].join("\n");
 }
 
 /**
- * 生成验收提示词中的接线核查项: 选型工单与只产出记录的工单不改动程序代码, 不做本项.
+ * 生成验收子代理的委派提示词.
  *
- * @param {string} kind 工单类型.
- * @returns {string} 核查项全文.
- */
-function wiringCheckItem(kind) {
-  if (kind === SELECTION_ORDER_KIND) {
-    return '3. 接线核查: 选型工单不改动程序代码, 不做本项, 交回时写 "不适用".';
-  }
-  return isRecordOnlyOrderKind(kind)
-    ? '3. 接线核查: 运行检查与分析工单只产出记录, 不改动程序代码, 不做本项, 交回时写 "不适用". 改为在 "范围核查" 中列出本工单文件夹之外被改动的已入库文件.'
-    : "3. 接线核查: 从程序入口追到本工单的新代码, 写出调用链经过的文件路径; 追不到即为未接线.";
-}
-
-/**
- * 生成验收委派提示词. 交回表格的列取自验收记录的规格, 结论只用三种固定取值.
- *
- * @param {object} options 生成参数.
- * @param {string} options.projectRoot 项目根目录.
- * @param {{id: string, folder: string, baseCommit: string, kind: string}} options.order 当前工单.
- * @param {readonly string[]} options.checkCommands 本工单要运行的代码检查命令.
- * @param {import("./spec.mjs").TableSpec} options.criteriaTable 验收记录中判据核对表的规格.
+ * @param {BriefContext & {filterLines: readonly string[]}} context 生成提示词需要的信息; filterLines 是筛选器检查的输出, 没有做时为空.
  * @returns {string} 提示词全文.
  */
-export function buildReviewBrief({
-  projectRoot,
-  order,
-  checkCommands,
-  criteriaTable,
-}) {
-  const checks = checkCommands.length === 0 ? "无" : checkCommands.join("; ");
-  const { pass, fail, unverified } = VERDICTS;
-  const verdicts = Object.values(VERDICTS).join(", ");
+export function buildReviewBrief(context) {
+  const { slice, current, project, spec, filterLines } = context;
+  const titles = sectionTitles(spec);
+  const { pass, fail, unverified } = spec.verdicts;
+  const plan = partSpec(spec, PARTS.plan).heading;
+  const result = partSpec(spec, PARTS.result).heading;
+  const review = partSpec(spec, PARTS.review);
+  const isBuild = slice.kind === SLICE_KINDS.build;
+  const verdictColumns = /** @type {string[]} */ (
+    review.sections.find((section) => section.id === SECTIONS.verdicts)?.table
+  );
+  const requirements = [
+    `${titles[SECTIONS.verdicts]}: 逐条对照 "${plan}" 段的 "${titles[SECTIONS.criteria]}"${current.round > 1 ? ` 与 "${titles[SECTIONS.rework]}"` : ""}, 每条给出结论与证据 (文件路径与行号, 或命令的原样输出). 结论只能是 ${pass}, ${fail}, ${unverified} 之一; 无法确认的写 ${unverified}, 并写明缺少什么. "${result}" 段 "${titles[SECTIONS.pending]}" 列出的标准, 核对原因是否属实: 属实时结论写 ${unverified}, 证据以 "待定: " 开头; 不属实时按实际情况下结论.`,
+    ...(isBuild
+      ? [
+          `${titles[SECTIONS.wiringCheck]}: 从程序入口追到本切片的新代码, 写出调用路径经过的 文件:行号, 并与 "${result}" 段的 "${titles[SECTIONS.wiring]}" 比对; 追不到即为没有接线, 相关标准为 ${fail}.${slice.skeleton ? " 本切片是最小骨架: 另外确认入口是真实入口, 并且经过了计划中的每一层." : ""}`,
+          `${titles[SECTIONS.structure]}: 对照 "${plan}" 段的 "${titles[SECTIONS.modules]}" 与 ${ENGINEERING_RULES_FILE}, 逐项回答并附证据: ${STRUCTURE_CHECKS.map((check, index) => `(${index + 1}) ${check}`).join("; ")}. 任一项有问题时, 相关标准为 ${fail}.${project.organization === ORGANIZATIONS.filters ? ' 模块以筛选器为准, 按下方 "筛选器检查" 的结果判断第 (1) 项.' : ""}`,
+        ]
+      : []),
+    `${titles[SECTIONS.scope]}: 用 git diff ${current.baseCommit} --stat 与 git status 列出实际改动, 与 "${result}" 段的 "${titles[SECTIONS.changes]}" 比对; 列出做了 "${titles[SECTIONS.excluded]}" 的改动.${isBuild ? "" : " 本切片只产出结论, 业务代码与项目配置不应有改动."}`,
+    `${titles[SECTIONS.correctionCheck]}: "${result}" 段 "${titles[SECTIONS.corrections]}" 表的每一行, 核对 "实际情况" 有没有证据支持, "处理办法" 有没有改变目标, 完成标准或做了明确不做的事. 两项都没有问题的修正成立, 相关标准按修正后的事实判断; 否则相关标准为 ${fail}. 没有修正时写 "${spec.none}".`,
+    verificationRequirement(context, titles),
+    ...(isBuild
+      ? []
+      : [
+          `结论核对: ${FINDINGS_DIRECTORY}/ 下本切片写的每条结论, 是否写明宿主或依赖的版本, 位置, 验证方法与验证时间; 能重新读取或重新运行的, 读一遍或运行一遍, 与结论不符的, 相关标准为 ${fail}. 结果写进 "${titles[SECTIONS.verdicts]}" 的证据.`,
+        ]),
+  ];
+  const handback = sectionsFor(review, slice.kind)
+    .filter((section) => section.id !== SECTIONS.conclusion)
+    .map((section) =>
+      section.id === SECTIONS.verdicts
+        ? `${section.title} (表格, 列为 ${verdictColumns.join(", ")})`
+        : section.title,
+    );
   return [
-    `# 验收委派 ${order.id}`,
+    `# 验收切片 ${slice.id}: ${slice.name}`,
     "",
     "你是验收子代理: 只读, 不写任何文件, 不给修改建议, 只报告事实与证据.",
     "",
     "## 验收对象",
     "",
-    `- 工单文件: ${path.join(projectRoot, orderFilePath(order.folder, "order"))}`,
-    `- 回执文件: ${path.join(projectRoot, orderFilePath(order.folder, "receipt"))}`,
-    `- 证据文件目录: ${path.join(projectRoot, orderArtifactsPath(order.folder))}`,
-    `- 基准提交: ${order.baseCommit}`,
-    `- 工单类型: ${order.kind}`,
-    `- 代码检查: ${checks}`,
+    ...subjectLines(context),
+    `- 项目规范: ${ENGINEERING_RULES_FILE}`,
+    ...(filterLines.length === 0
+      ? []
+      : ["", "## 筛选器检查", "", ...filterLines]),
     "",
     "## 核对要求",
     "",
-    `1. 逐条对照工单的 "验收判据", 每条给出结论与证据 (文件路径与行号, 或命令输出). 结论只能是 ${verdicts} 之一, 不用其它说法; 无法确认的写 ${unverified}, 并写明缺少什么. 回执 "偏差记录" 的 "${PENDING_CRITERIA_KEY}" 列出的判据, 核对回执给出的原因是否属实: 属实时结论写 ${unverified}, 证据写 "待定: " 加上原因与你核对到的事实; 不属实时按实际情况下结论.`,
-    `2. 回执一致: 用 git diff ${order.baseCommit} --stat 与回执的 "改动清单" 比对, 列出不一致之处.`,
-    wiringCheckItem(order.kind),
-    '4. 范围核查: 列出工单 "工作范围" 之外的改动.',
-    "5. 测试改动: 检查是否删除, 放宽或跳过了已有测试, 是否放宽了代码检查的规则或加了忽略标记.",
-    '6. 测试运行: 运行 "代码检查" 中的命令, 以及回执 "测试记录" 中 "测试命令" 列出的命令, 原样记录结果; "外部影响" 中列出的命令 (需要真实账号, 会产生费用或外部副作用) 不运行, 按回执中的输出判断, 证据写明 "依据回执输出".',
-    `7. 取证核对: 判据要用 MCP 工具核对时, 按回执 "取证记录" 给出的工具与位置查看, 只做查询类的只读调用, 不发请求, 不清空或修改记录. 证据写工具名, 参数与返回内容摘录; 工具不可用或按位置找不到记录时, 该判据为 ${unverified}.`,
-    '8. 证据文件: "证据文件目录" 存在时, 其中是执行子代理留下的产物, 例如抓包原文与复现脚本. 回执或判据引用这些文件时, 按路径读取核对, 证据写文件路径与行号. 目录不存在时跳过本项.',
-    `9. 修正核对: 回执 "${CORRECTIONS_SECTION}" 表中的每一行, 是执行子代理发现工单写的细节与实际不符, 按实际做了. 逐行核对: "实际情况" 有没有证据支持; "处理办法" 有没有改变工单的任务目标, 超出 "工作范围", 做了 "明确不做" 的事, 或替用户做了 "需要决定" 的事. 两项都没有问题的修正成立: 判据引用了被修正的细节时, 按修正后的事实判断. 证据不支持或越界的修正不成立: 相关判据为 ${fail}. 表为空时写 "无修正".`,
-    `10. 规范核查: 对照 ${ENGINEERING_RULES_FILE} 检查文档注释, 函数体内注释, 模块边界 (回执 "模块划分" 是否与实际改动一致, 新功能是否迫使多个已有模块改动内部实现), 单一数据源, 魔法值.`,
-    `11. 选型工单另查: 核对范围只是工单列出的每条需求, 判据核对表中每条需求单独一行. 对照回执 "${REQUIREMENT_SECTION}" 表: 依据是源码的, 运行\`${EVIDENCE_COMMAND}\` 从原仓库按版本取回 "${EVIDENCE_SECTION}" 表引用的源码行, 判断是否支持该需求的结论; 依据是测试的, 运行回执写明的测试命令, 按输出判断. 依据支持结论的为 ${pass}, 不支持的为 ${fail}, 取不到源码或测试无法运行的为 ${unverified}; 需求在表中没有对应行的也为 ${unverified}. 回执其它内容不核对, 不用其它方式获取源码.`,
+    ...requirements.map((requirement, index) => `${index + 1}. ${requirement}`),
     "",
     "## 交回格式",
     "",
-    `1. 判据核对: 表格, 列为 ${criteriaTable.columns.join(", ")}.`,
-    "2. 专项检查: 依次写 回执一致, 接线核查, 范围核查, 测试改动, 测试运行, 修正核对, 规范核查, 每项一行结论加证据; 修正核对逐条写每项修正是否成立.",
-    '3. 人工验收: 需要用户亲手运行才能确认的判据, 写成逐步操作, 命令原样取自回执; 回执中没有这样的命令时写 "无".',
+    `按以下小节依次交回, 每节以小节名作标题, 内容会被原样写入切片文件: ${handback.join("; ")}.`,
   ].join("\n");
+}
+
+/**
+ * 生成两种提示词共用的切片信息.
+ *
+ * @param {BriefContext} context 生成提示词需要的信息.
+ * @returns {string[]} 各行.
+ */
+function subjectLines({ projectRoot, slice, current, project }) {
+  const verification = /** @type {{mode: string, commands: string[]}} */ (
+    project.verification
+  );
+  return [
+    `- 切片文件: ${path.join(projectRoot, /** @type {string} */ (slice.file))}`,
+    `- 种类: ${SLICE_KIND_LABELS[slice.kind]}`,
+    `- 轮次: ${current.round}`,
+    `- 基准提交: ${current.baseCommit}`,
+    `- 模块组织方式: ${ORGANIZATION_LABELS[/** @type {string} */ (project.organization)]}`,
+    `- 验证方式: ${VERIFICATION_LABELS[verification.mode]}${verification.commands.length === 0 ? "" : `, 命令: ${verification.commands.join("; ")}`}`,
+  ];
+}
+
+/**
+ * 生成验收提示词中关于验证运行的一条要求.
+ *
+ * @param {BriefContext} context 生成提示词需要的信息.
+ * @param {Record<string, string>} titles 小节编号到标题的映射.
+ * @returns {string} 要求全文.
+ */
+function verificationRequirement({ project, spec }, titles) {
+  const verification = /** @type {{mode: string, commands: string[]}} */ (
+    project.verification
+  );
+  const manual = `需要用户亲手运行或操作才能确认的标准, 结论写 ${spec.verdicts.unverified}, 并在 "${titles[SECTIONS.manual]}" 中写成逐步操作, 命令原样取自 "${titles[SECTIONS.tests]}"; 没有时写 "${spec.none}"`;
+  return verification.mode === AUTO_VERIFICATION
+    ? `验证运行: 运行 "验证方式" 中的命令与 "${titles[SECTIONS.tests]}" 中的命令, 原样记录结果; 检查是否删除, 放宽或跳过了已有测试. 需要真实账号, 会产生费用或外部副作用的命令不运行. ${manual}.`
+    : `${titles[SECTIONS.manual]}: 本项目不靠自动测试验证, 不构建, 不运行程序. ${manual}.`;
+}
+
+/**
+ * 取全部小节的标题.
+ *
+ * @param {import("./slice-file.mjs").SliceSpec} spec 切片文件规格.
+ * @returns {Record<string, string>} 小节编号到标题的映射.
+ */
+function sectionTitles(spec) {
+  return Object.fromEntries(
+    spec.parts
+      .flatMap((part) => part.sections)
+      .map((section) => [section.id, section.title]),
+  );
 }

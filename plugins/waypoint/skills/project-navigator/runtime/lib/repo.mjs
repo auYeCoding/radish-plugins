@@ -1,6 +1,5 @@
 /**
- * @file 调用 git: 查询本仓库信息, 以及为源码证据访问第三方公开仓库.
- * 只在命令行脚本中使用, hook 不启动 git.
+ * @file 调用 git 查询本仓库的信息. 只在命令行脚本中使用, hook 不启动 git.
  */
 
 import { spawnSync } from "node:child_process";
@@ -16,99 +15,28 @@ import { gitCommonDirectory } from "./paths.mjs";
 const GIT_EXECUTABLE = "git";
 
 /**
- * 访问第三方仓库时附加的环境变量: 不在终端询问账号, 不弹出凭据管理器的窗口.
- * 需要账号的仓库直接失败, 避免命令卡住.
- * @type {Readonly<Record<string, string>>}
- */
-const NON_INTERACTIVE_ENVIRONMENT = Object.freeze({
-  GIT_TERMINAL_PROMPT: "0",
-  GCM_INTERACTIVE: "never",
-});
-
-/**
- * 访问第三方仓库时放在最前面的 git 参数: 清空凭据助手, 不读取本机保存的账号.
+ * 让 git 原样输出非 ASCII 路径的参数.
  * @type {readonly string[]}
  */
-const NO_CREDENTIAL_ARGUMENTS = Object.freeze(["-c", "credential.helper="]);
-
-/**
- * @typedef {object} GitOutcome 一次 git 运行的结果.
- * @property {boolean} isSuccess 退出码为 0 时为 true.
- * @property {Buffer} stdout 标准输出的原始字节.
- * @property {string} message 失败原因: git 的错误输出, 或无法启动, 超时的说明; 成功时为空字符串.
- */
+const PLAIN_PATH_ARGUMENTS = Object.freeze(["-c", "core.quotePath=false"]);
 
 /**
  * 在指定目录运行 git 并返回标准输出.
  *
  * @param {string} directory 运行目录.
  * @param {readonly string[]} args git 参数.
- * @param {{env?: Record<string, string>, input?: string}} [options] 附加的环境变量与标准输入.
  * @returns {string | undefined} 去掉首尾空白的输出; git 无法启动或退出码非 0 时为 undefined.
  */
-export function runGit(directory, args, options = {}) {
+export function runGit(directory, args) {
   const result = spawnSync(GIT_EXECUTABLE, args, {
     cwd: directory,
     encoding: "utf8",
     windowsHide: true,
-    input: options.input,
-    env:
-      options.env === undefined
-        ? process.env
-        : { ...process.env, ...options.env },
   });
   if (result.error !== undefined || result.status !== 0) {
     return undefined;
   }
   return result.stdout.trim();
-}
-
-/**
- * 以不读凭据, 不弹提示的方式运行 git, 保留原始输出与失败原因.
- * 用于访问第三方公开仓库; 调用方用 `--git-dir` 指明仓库, 不依赖工作目录.
- *
- * @param {readonly string[]} args git 参数.
- * @param {number} timeout 超时毫秒数.
- * @returns {GitOutcome} 运行结果.
- */
-export function runIsolatedGit(args, timeout) {
-  const result = spawnSync(
-    GIT_EXECUTABLE,
-    [...NO_CREDENTIAL_ARGUMENTS, ...args],
-    {
-      windowsHide: true,
-      timeout,
-      env: { ...process.env, ...NON_INTERACTIVE_ENVIRONMENT },
-    },
-  );
-  if (result.error !== undefined) {
-    return {
-      isSuccess: false,
-      stdout: Buffer.alloc(0),
-      message: `git 无法完成: ${result.error.message}`,
-    };
-  }
-  return {
-    isSuccess: result.status === 0,
-    stdout: result.stdout,
-    message: result.status === 0 ? "" : result.stderr.toString("utf8").trim(),
-  };
-}
-
-/**
- * 删除一个引用; 引用不存在时不做任何事.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @param {string} ref 完整引用名, 例如 "refs/navigator/snapshots".
- * @returns {boolean} 引用存在并已删除时返回 true.
- */
-export function deleteRef(worktreeRoot, ref) {
-  if (
-    runGit(worktreeRoot, ["rev-parse", "-q", "--verify", ref]) === undefined
-  ) {
-    return false;
-  }
-  return runGit(worktreeRoot, ["update-ref", "-d", ref]) !== undefined;
 }
 
 /**
@@ -122,17 +50,55 @@ export function findRepositoryRoot(directory) {
 }
 
 /**
- * 统计仓库中已跟踪的文件数.
+ * 列出仓库中已跟踪的文件.
  *
  * @param {string} worktreeRoot 工作区根目录.
- * @returns {number} 文件数; 查询失败时为 0.
+ * @returns {string[]} 以正斜杠分隔的项目相对路径; 查询失败时为空.
  */
-export function countTrackedFiles(worktreeRoot) {
-  const output = runGit(worktreeRoot, ["ls-files", "-z"]);
-  if (output === undefined || output === "") {
-    return 0;
-  }
-  return output.split("\0").filter((entry) => entry !== "").length;
+export function listTrackedFiles(worktreeRoot) {
+  return splitLines(
+    runGit(worktreeRoot, [...PLAIN_PATH_ARGUMENTS, "ls-files"]),
+  );
+}
+
+/**
+ * 列出相对某个提交新增的文件: 已提交或已暂存的新文件, 以及未跟踪但没有被忽略
+ * 的文件.
+ *
+ * @param {string} worktreeRoot 工作区根目录.
+ * @param {string} baseCommit 作为基准的提交.
+ * @returns {string[]} 以正斜杠分隔的项目相对路径.
+ */
+export function listAddedFiles(worktreeRoot, baseCommit) {
+  return [
+    ...splitLines(
+      runGit(worktreeRoot, [
+        ...PLAIN_PATH_ARGUMENTS,
+        "diff",
+        "--name-only",
+        "--diff-filter=A",
+        baseCommit,
+      ]),
+    ),
+    ...splitLines(
+      runGit(worktreeRoot, [
+        ...PLAIN_PATH_ARGUMENTS,
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+      ]),
+    ),
+  ];
+}
+
+/**
+ * 把 git 的多行输出拆成非空行.
+ *
+ * @param {string | undefined} output git 的输出; 命令失败时为 undefined.
+ * @returns {string[]} 各行.
+ */
+function splitLines(output) {
+  return (output ?? "").split("\n").filter((line) => line !== "");
 }
 
 /**
@@ -170,8 +136,7 @@ export function findIgnoredPaths(worktreeRoot, relativePaths) {
   const result = spawnSync(
     GIT_EXECUTABLE,
     [
-      "-c",
-      "core.quotePath=false",
+      ...PLAIN_PATH_ARGUMENTS,
       "check-ignore",
       "--no-index",
       "--verbose",
@@ -200,6 +165,19 @@ export function findIgnoredPaths(worktreeRoot, relativePaths) {
       path: match[4],
       rule: `${match[1]}:${match[2]}: ${match[3]}`,
     }));
+}
+
+/**
+ * 按忽略规则分组描述被忽略的路径: 每条规则写明影响的路径数与一个例子.
+ *
+ * @param {readonly IgnoredPath[]} ignored 被忽略的路径.
+ * @returns {string[]} 每条规则一句描述.
+ */
+export function summarizeIgnoredPaths(ignored) {
+  return [...Map.groupBy(ignored, (entry) => entry.rule)].map(
+    ([rule, entries]) =>
+      `${rule}, 影响 ${entries.length} 个路径, 例如 ${entries[0].path}`,
+  );
 }
 
 /**

@@ -6,21 +6,18 @@
  */
 
 import {
+  COMMAND_NAME,
   PROJECT_LOCAL_SETTINGS_FILE,
   PROJECT_SETTINGS_FILE,
 } from "../lib/paths.mjs";
 import { findRepositoryRoot } from "../lib/repo.mjs";
 import {
   readSettingsFile,
-  removeLegacyHooks,
   removeNavigatorPermissions,
   writeSettingsFile,
 } from "../lib/settings.mjs";
-import {
-  INIT_UNINSTALLED,
-  readStateIfValid,
-  writeState,
-} from "../lib/state.mjs";
+import { INIT_UNINSTALLED, readState } from "../lib/state.mjs";
+import { saveState } from "./support.mjs";
 
 /**
  * 执行 uninstall 命令.
@@ -35,33 +32,27 @@ export function runUninstall({ cwd, now }) {
   if (projectRoot === undefined) {
     return ["- 卸载结果: 未执行, 当前目录不是 Git 仓库"];
   }
-  writeSettingsFile(
-    projectRoot,
-    PROJECT_SETTINGS_FILE,
-    removeNavigatorPermissions(
-      removeLegacyHooks(readSettingsFile(projectRoot, PROJECT_SETTINGS_FILE)),
-    ),
-  );
-  writeSettingsFile(
-    projectRoot,
-    PROJECT_LOCAL_SETTINGS_FILE,
-    removeNavigatorPermissions(
-      readSettingsFile(projectRoot, PROJECT_LOCAL_SETTINGS_FILE),
-    ),
-  );
-  const state = readStateIfValid(projectRoot);
+  for (const file of [PROJECT_SETTINGS_FILE, PROJECT_LOCAL_SETTINGS_FILE]) {
+    writeSettingsFile(
+      projectRoot,
+      file,
+      removeNavigatorPermissions(readSettingsFile(projectRoot, file)),
+    );
+  }
+  const state = readState(projectRoot);
   if (state !== undefined) {
-    writeState(
+    saveState(
       projectRoot,
       {
         ...state,
         init: { ...state.init, status: INIT_UNINSTALLED, uninstalledAt: now },
+        lastAction: "卸载",
       },
       now,
     );
   }
   return [
     "- 卸载结果: 已移除放行规则, 插件的 hook 在本项目中不再生效",
-    "- 编排记录: 已保留, 重新运行 init 可恢复",
+    `- 编排记录: 已保留, 重新运行 ${COMMAND_NAME} init 可恢复`,
   ];
 }

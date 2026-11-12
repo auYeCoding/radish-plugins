@@ -1,222 +1,120 @@
 /**
- * @file check 命令: 体检的脚本层. 检查编排文档的结构与写作规则, 分配体检编号.
+ * @file check 命令: 记录自查与筛选器检查. 只读, 不改任何文件.
  *
- * 用法:
- * - check: 体检, 检查计划目录中编排会话写的文档, 全部工单与验收记录, 以及最近一份
- *   回执, 并分配体检编号
- * - check <文件...>: 只检查指定文件, 用于写完记录后自查, 不分配编号, 不写状态
- *
- * 语义层 (自造简称, 未定义术语, 比喻等) 由编排会话派只读子代理完成, 不在脚本中.
+ * 用法: check [--filters].
+ * - 不带参数: 核对状态与记录文件是否对得上, 进行中的切片文件是否读得出来.
+ * - --filters: 模块用筛选器表达的项目, 核对每个源文件都归入了筛选器.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { checkFile, findFileSpec } from "../lib/file-checks.mjs";
-import { formatNumber } from "../lib/numbering.mjs";
+import { REQUIREMENTS_FILE } from "../lib/paths.mjs";
+import { activeSlice } from "../lib/roadmap.mjs";
 import {
-  GENERATED_FILES,
-  navigatorPath,
-  orderFilePath,
-  projectRelativePath,
-  relativePathsEqual,
-} from "../lib/paths.mjs";
-import { renderTable } from "../lib/table.mjs";
+  PARTS,
+  findUnfilledSections,
+  loadSliceSpec,
+  partSpec,
+  readSliceFile,
+  readVerdicts,
+} from "../lib/slice-file.mjs";
+import { ORGANIZATIONS, SLICE_STATUSES, STAGES } from "../lib/state.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
-import { addCheckup } from "../lib/workflow-records.mjs";
-import { checkWriting } from "../lib/writing-checks.mjs";
-import { openProject, saveState } from "./support.mjs";
+import { runFilterCheck } from "../lib/filters.mjs";
+import { openProject } from "./support.mjs";
 
 /**
- * 工单文件夹中由编排会话编写, 需要检查的文件种类.
- * @type {readonly ("order" | "review")[]}
+ * 切片处于各状态时, 应该已经填好的段.
+ * @type {Readonly<Record<string, readonly string[]>>}
  */
-const ORCHESTRATOR_ORDER_FILES = Object.freeze(["order", "review"]);
-
-/**
- * @typedef {import("../lib/writing-checks.mjs").WritingFinding & {file: string}} FileFinding 带文件路径的问题.
- */
+const FILLED_PARTS = Object.freeze({
+  [SLICE_STATUSES.running]: [PARTS.plan],
+  [SLICE_STATUSES.reviewing]: [PARTS.plan, PARTS.result],
+});
 
 /**
  * 执行 check 命令.
  *
- * @param {object} options 命令参数.
- * @param {string[]} options.positionals 要检查的文件; 为空时检查默认范围.
- * @param {string} options.cwd 会话工作目录.
- * @param {string} options.now 当前时间, ISO 格式.
+ * @param {import("./handlers.mjs").CommandInvocation} invocation 命令调用.
  * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 指定的文件不存在时.
+ * @throws {WorkflowError} 带 --filters 而项目不用筛选器表达模块时.
  */
-export function runCheck({ positionals, cwd, now }) {
-  const context = openProject(cwd);
-  const isSelfCheck = positionals.length > 0;
-  const files = isSelfCheck
-    ? resolveTargets(context.projectRoot, positionals)
-    : defaultTargets(context.projectRoot);
-  const findings = files.flatMap((file) =>
-    checkOneFile(context.projectRoot, file, context.spec),
-  );
-  if (isSelfCheck) {
-    return reportLines({ id: undefined, files, findings, spec: context.spec });
-  }
-  const { id, state } = addCheckup(context.state);
-  saveState(context, state, now);
-  return reportLines({ id, files, findings, spec: context.spec });
-}
-
-/**
- * 解析命令行指定的文件, 转换为项目相对路径.
- *
- * @param {string} projectRoot 项目根目录.
- * @param {string[]} targets 命令行给出的路径.
- * @returns {string[]} 项目相对路径.
- * @throws {WorkflowError} 文件在项目之外或不存在时.
- */
-function resolveTargets(projectRoot, targets) {
-  return targets.map((target) => {
-    const relative = projectRelativePath(projectRoot, target);
-    if (
-      relative === undefined ||
-      !existsSync(path.join(projectRoot, relative))
-    ) {
-      throw new WorkflowError(`文件 ${target} 不在项目中或不存在.`);
+export function runCheck({ values, cwd }) {
+  const { projectRoot, state } = openProject(cwd);
+  if (values.filters === true) {
+    if (state.project.organization !== ORGANIZATIONS.filters) {
+      throw new WorkflowError(
+        `筛选器检查只用于模块组织方式为 ${ORGANIZATIONS.filters} 的项目.`,
+      );
     }
-    return relative;
-  });
+    return runFilterCheck(projectRoot, state);
+  }
+  const problems = [
+    ...recordProblems(projectRoot, state),
+    ...sliceProblems(projectRoot, state),
+  ];
+  return problems.length === 0
+    ? ["- 自查结果: 没有问题"]
+    : [
+        `- 自查结果: ${problems.length} 个问题`,
+        ...problems.map((problem) => `  - ${problem}`),
+      ];
 }
 
 /**
- * 列出默认检查范围: 计划目录中除生成文件外的文档, 各工单的工单与验收记录,
- * 以及编号最大的一份回执.
+ * 核对状态与记录文件是否对得上.
  *
  * @param {string} projectRoot 项目根目录.
- * @returns {string[]} 项目相对路径.
+ * @param {import("../lib/state.mjs").NavigatorState} state 当前状态.
+ * @returns {string[]} 问题列表.
  */
-function defaultTargets(projectRoot) {
-  const planFiles = listFiles(navigatorPath(projectRoot, "plan"))
-    .filter((name) => name.endsWith(".md"))
-    .map((name) =>
-      projectRelativePath(
-        projectRoot,
-        path.join(navigatorPath(projectRoot, "plan"), name),
-      ),
-    )
+function recordProblems(projectRoot, state) {
+  const missingSliceFiles = state.milestones
+    .flatMap((milestone) => milestone.slices)
     .filter(
-      (relative) =>
-        relative !== undefined &&
-        !GENERATED_FILES.some((generated) =>
-          relativePathsEqual(generated, relative),
-        ),
-    );
-  const isPresent = (relative) => existsSync(path.join(projectRoot, relative));
-  const folders = listFiles(navigatorPath(projectRoot, "orders")).sort();
-  const orderFiles = folders.flatMap((folder) =>
-    ORCHESTRATOR_ORDER_FILES.map((kind) => orderFilePath(folder, kind)).filter(
-      isPresent,
-    ),
-  );
-  const latestReceipt = [...folders]
-    .reverse()
-    .map((folder) => orderFilePath(folder, "receipt"))
-    .find(isPresent);
+      (slice) =>
+        slice.file !== null && !existsSync(path.join(projectRoot, slice.file)),
+    )
+    .map((slice) => `切片 ${slice.id} 的文件 ${slice.file} 不存在.`);
   return [
-    ...planFiles,
-    ...orderFiles,
-    ...(latestReceipt === undefined ? [] : [latestReceipt]),
+    ...(state.stage !== STAGES.intake &&
+    !existsSync(path.join(projectRoot, REQUIREMENTS_FILE))
+      ? [`需求文件 ${REQUIREMENTS_FILE} 不存在.`]
+      : []),
+    ...missingSliceFiles,
+    ...(state.current !== null && activeSlice(state) === undefined
+      ? [`状态中进行中的切片 ${state.current.sliceId} 不在路线里.`]
+      : []),
   ];
 }
 
 /**
- * 列出目录中的条目名; 目录不存在时返回空列表.
- *
- * @param {string} directory 目录.
- * @returns {string[]} 条目名.
- */
-function listFiles(directory) {
-  return existsSync(directory) ? readdirSync(directory) : [];
-}
-
-/**
- * 检查一个文件的结构与写作规则.
+ * 核对进行中的切片文件: 按切片状态应该填好的段是否填好, 标准核对表是否合格.
  *
  * @param {string} projectRoot 项目根目录.
- * @param {string} relative 项目相对路径.
- * @param {import("../lib/spec.mjs").TemplateSpec} spec 模板规格.
- * @returns {FileFinding[]} 问题.
+ * @param {import("../lib/state.mjs").NavigatorState} state 当前状态.
+ * @returns {string[]} 问题列表.
  */
-function checkOneFile(projectRoot, relative, spec) {
-  const text = readFileSync(path.join(projectRoot, relative), "utf8");
-  const fileSpec = findFileSpec(spec, relative);
-  const structure =
-    fileSpec === undefined
-      ? []
-      : checkFile({ text, fileSpec, spec }).map((message) => ({
-          label: spec.writing.structure.label,
-          severity: spec.writing.structure.severity,
-          line: 1,
-          message,
-        }));
-  const writing = checkWriting({
-    text,
-    spec,
-    maxLines:
-      fileSpec?.entryPattern === undefined
-        ? spec.writing.length.maxFileLines
-        : undefined,
-  });
-  return [...structure, ...writing].map((finding) => ({
-    ...finding,
-    file: relative,
-  }));
-}
-
-/**
- * 生成体检结果: 概况, 问题清单 (只列问题级别) 与分类统计.
- *
- * @param {object} options 结果参数.
- * @param {string | undefined} options.id 体检编号; 只检查指定文件时为 undefined.
- * @param {string[]} options.files 检查的文件.
- * @param {FileFinding[]} options.findings 全部问题.
- * @param {import("../lib/spec.mjs").TemplateSpec} options.spec 模板规格.
- * @returns {string[]} 输出各行.
- */
-function reportLines({ id, files, findings, spec }) {
-  const problems = findings.filter((finding) => finding.severity === "problem");
-  const hints = findings.filter((finding) => finding.severity === "hint");
-  const labels = Object.values(spec.writing).map((rule) => rule.label);
-  const statistics = labels
-    .map((label) => [
-      label,
-      formatNumber(problems.filter((item) => item.label === label).length),
-      formatNumber(hints.filter((item) => item.label === label).length),
-    ])
-    .filter(([, problemCount, hintCount]) =>
-      [problemCount, hintCount].some((count) => Number(count) > 0),
-    );
+function sliceProblems(projectRoot, state) {
+  const slice = activeSlice(state)?.slice;
+  const spec = loadSliceSpec();
+  const parsed =
+    slice === undefined
+      ? undefined
+      : readSliceFile(projectRoot, slice.file, spec);
+  if (slice === undefined || parsed === undefined) {
+    return [];
+  }
   return [
-    ...(id === undefined ? [] : [`- 体检编号: ${id}`]),
-    `- 文件数量: ${formatNumber(files.length)}`,
-    `- 问题数量: ${formatNumber(problems.length)}`,
-    `- 提示数量: ${formatNumber(hints.length)}`,
-    "",
-    "问题清单:",
-    "",
-    ...(problems.length === 0
-      ? ["无"]
-      : renderTable(
-          ["文件", "位置", "类别", "说明"],
-          problems.map((item) => [
-            item.file,
-            `第 ${item.line} 行`,
-            item.label,
-            item.message,
-          ]),
-        )),
-    "",
-    "分类统计:",
-    "",
-    ...(statistics.length === 0
-      ? ["无"]
-      : renderTable(["类别", "问题", "提示"], statistics)),
+    ...(FILLED_PARTS[slice.status] ?? []).flatMap((partId) =>
+      findUnfilledSections({ parsed, spec, partId, kind: slice.kind }).map(
+        (title) =>
+          `${slice.file}: "${partSpec(spec, partId).heading}" 段的 "${title}" 没有填好.`,
+      ),
+    ),
+    ...readVerdicts(parsed, spec).problems.map(
+      (problem) => `${slice.file}: ${problem}`,
+    ),
   ];
 }

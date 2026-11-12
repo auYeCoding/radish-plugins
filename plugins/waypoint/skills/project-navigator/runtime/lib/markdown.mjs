@@ -1,8 +1,8 @@
 /**
  * @file 把 Markdown 文本切分成标题, 围栏代码块与普通文本行的有序序列.
  *
- * 只实现版式校验需要的 CommonMark 子集: ATX 标题与围栏代码块 (反引号或波浪号,
- * 关闭围栏须使用同一字符且长度不短于开启围栏). 回复校验与文件校验共用这一个解析器.
+ * 只实现读取切片文件需要的 CommonMark 子集: ATX 标题与围栏代码块 (反引号或
+ * 波浪号, 关闭围栏须使用同一字符且长度不短于开启围栏). 围栏中的井号行不算标题.
  */
 
 /**
@@ -69,22 +69,6 @@ export function parseMarkdown(source) {
     index += 1;
   }
   return items;
-}
-
-/**
- * 把指定行替换为空行, 行号保持不变; 换行符统一为 `\n`, 与 parseMarkdown 的行号一致.
- * 用于把不参加写作规则检查的内容从全文中去掉.
- *
- * @param {string} source Markdown 文本.
- * @param {ReadonlySet<number>} lines 要替换的行号, 从 1 开始.
- * @returns {string} 替换后的文本.
- */
-export function blankLines(source, lines) {
-  return source
-    .replace(/\r\n?/gu, "\n")
-    .split("\n")
-    .map((line, index) => (lines.has(index + 1) ? "" : line))
-    .join("\n");
 }
 
 /**

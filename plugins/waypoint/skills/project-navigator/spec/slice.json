@@ -1,0 +1,151 @@
+{
+  "titlePrefix": "切片",
+  "placeholder": "(待填写",
+  "none": "无",
+  "doneStatus": "完成",
+  "reworkStatus": "补做中",
+  "verdicts": {
+    "pass": "通过",
+    "fail": "不通过",
+    "unverified": "未验证"
+  },
+  "parts": [
+    {
+      "id": "plan",
+      "heading": "计划",
+      "owner": "编排会话",
+      "sections": [
+        {
+          "id": "goal",
+          "title": "目标",
+          "hint": "一两句话: 做完后使用者能做到什么, 或查清什么"
+        },
+        {
+          "id": "criteria",
+          "title": "完成标准",
+          "hint": "编号列表, 每条写成从入口或界面能看到的结果, 并写明怎么验证"
+        },
+        {
+          "id": "excluded",
+          "title": "明确不做",
+          "hint": "本切片不碰的事; 没有时写 无"
+        },
+        {
+          "id": "decisions",
+          "title": "需要决定",
+          "hint": "必须由用户决定的事, 用户回答后把答案写在这里; 没有时写 无"
+        },
+        {
+          "id": "modules",
+          "title": "模块安排",
+          "kinds": ["build"],
+          "table": ["文件", "模块", "层", "说明"],
+          "keys": ["唯一定义", "复用"]
+        },
+        {
+          "id": "location",
+          "title": "结论位置",
+          "kinds": ["findings"],
+          "hint": "结论写进 .navigator/findings/ 下的哪些文件"
+        },
+        {
+          "id": "assumptions",
+          "title": "工作假设",
+          "hint": "写计划时对路径, 接口, 数据格式等细节的判断; 与实际不符时以实际为准"
+        },
+        {
+          "id": "rework",
+          "title": "补做",
+          "initial": "无"
+        }
+      ]
+    },
+    {
+      "id": "result",
+      "heading": "执行结果",
+      "owner": "实现方",
+      "sections": [
+        {
+          "id": "status",
+          "title": "执行状态",
+          "hint": "全部做完后改成 完成; 没做完时保留本行"
+        },
+        {
+          "id": "changes",
+          "title": "改动清单",
+          "hint": "逐个列出新增, 改动, 删除的文件"
+        },
+        {
+          "id": "wiring",
+          "title": "接线证据",
+          "kinds": ["build"],
+          "hint": "从程序入口到本切片新代码的调用路径, 每一步写 文件:行号"
+        },
+        {
+          "id": "corrections",
+          "title": "修正",
+          "table": ["计划原文", "实际情况", "证据位置", "处理办法"]
+        },
+        {
+          "id": "pending",
+          "title": "待定标准",
+          "hint": "按事实做不到的完成标准: 编号, 原因, 证据位置; 没有时写 无"
+        },
+        {
+          "id": "tests",
+          "title": "自测记录",
+          "hint": "运行过的命令与结果; 需要用户亲手验证的步骤"
+        },
+        {
+          "id": "notes",
+          "title": "中途记录",
+          "hint": "交回之前已经查清的内容; 没有时写 无"
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "heading": "验收",
+      "owner": "编排会话",
+      "sections": [
+        {
+          "id": "verdicts",
+          "title": "标准核对",
+          "table": ["标准", "结论", "证据"]
+        },
+        {
+          "id": "wiringCheck",
+          "title": "接线核对",
+          "kinds": ["build"],
+          "hint": "按验收子代理交回的内容原样写入"
+        },
+        {
+          "id": "structure",
+          "title": "结构核对",
+          "kinds": ["build"],
+          "hint": "按验收子代理交回的内容原样写入"
+        },
+        {
+          "id": "scope",
+          "title": "范围核对",
+          "hint": "按验收子代理交回的内容原样写入"
+        },
+        {
+          "id": "correctionCheck",
+          "title": "修正核对",
+          "hint": "按验收子代理交回的内容原样写入"
+        },
+        {
+          "id": "manual",
+          "title": "人工验收",
+          "hint": "需要用户亲手确认的步骤; 没有时写 无"
+        },
+        {
+          "id": "conclusion",
+          "title": "用户结论",
+          "hint": "用户作出决定后写下原话与日期"
+        }
+      ]
+    }
+  ]
+}

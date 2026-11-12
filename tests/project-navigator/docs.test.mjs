@@ -1,84 +1,111 @@
 /**
- * @file 文档检查: 生成文档与规格同步, SKILL.md 与规格一致且不超过篇幅上限.
+ * @file 规则文件测试: SKILL.md 的路由表与命令速查对得上实际的文件与命令, 工程规范
+ * 的两种写法都能生成, 子代理定义与守卫中的名称一致.
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 
-import { loadSpec } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/spec.mjs";
+import {
+  COMMAND_HANDLERS,
+  ENTER_COMMAND,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/commands/handlers.mjs";
+import { SUBAGENT_TYPES } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/guard.mjs";
+import { renderEngineeringRules } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/project-settings.mjs";
+import { ORGANIZATIONS } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs";
 import { SKILL_DIRECTORY } from "./helpers.mjs";
 
 /**
- * 仓库根目录.
+ * SKILL.md 的篇幅上限 (行).
+ * @type {number}
+ */
+const SKILL_LINE_LIMIT = 150;
+
+/**
+ * 插件名与子代理名之间的分隔符.
  * @type {string}
  */
-const REPO_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-  "..",
-);
+const PLUGIN_SEPARATOR = ":";
 
 /**
- * SKILL.md 的 token 上限 (官方建议技能主文件保持在 5000 token 以内).
- * @type {number}
- */
-const SKILL_TOKEN_LIMIT = 5000;
-
-/**
- * 估算 token 时, 非汉字字符每多少个约合一个 token.
- * @type {number}
- */
-const CHARACTERS_PER_TOKEN = 4;
-
-/**
- * 粗略估算文本的 token 数: 每个汉字按 1 个计算, 其余字符每 4 个按 1 个计算.
- * 这是偏保守的近似, 只用于防止 SKILL.md 失控增长.
+ * 读取技能目录中的文件.
  *
- * @param {string} text 文本.
- * @returns {number} 估算的 token 数.
+ * @param {...string} segments 相对于技能目录的路径段.
+ * @returns {string} 文件全文.
  */
-function estimateTokens(text) {
-  const han = text.match(/\p{Script=Han}/gu)?.length ?? 0;
-  return han + Math.ceil(([...text].length - han) / CHARACTERS_PER_TOKEN);
+function readSkillFile(...segments) {
+  return readFileSync(path.join(SKILL_DIRECTORY, ...segments), "utf8");
 }
 
-test("文档: 生成的参考文档与执行手册和规格同步", () => {
-  const result = spawnSync(
-    process.execPath,
-    [path.join(REPO_ROOT, "scripts", "gen-navigator-docs.mjs"), "--check"],
-    { cwd: REPO_ROOT, encoding: "utf8" },
-  );
-  assert.equal(result.status, 0, result.stderr);
-});
-
-test("文档: SKILL.md 写明的结论行前缀与规格一致", () => {
-  const text = readFileSync(path.join(SKILL_DIRECTORY, "SKILL.md"), "utf8");
-  assert.ok(text.includes(`"${loadSpec().format.conclusionLabel}:"`));
-});
-
-test("文档: 路由表与命令速查引用的参考文件都存在", () => {
-  const text = readFileSync(path.join(SKILL_DIRECTORY, "SKILL.md"), "utf8");
-  const names = [...text.matchAll(/\| `([a-z-]+)` +\|$/gmu)].map(
+test("规则: SKILL.md 篇幅受控, 路由表引用的参考文件都存在", () => {
+  const skill = readSkillFile("SKILL.md");
+  assert.ok(skill.split("\n").length <= SKILL_LINE_LIMIT);
+  const routed = [...skill.matchAll(/\| `([a-z-]+)`\s+\|$/gmu)].map(
     (match) => match[1],
   );
-  assert.ok(names.length > 0);
-  for (const name of names) {
+  assert.deepEqual(routed, ["intake", "slice-loop", "change"]);
+  for (const name of routed) {
     assert.ok(
       existsSync(path.join(SKILL_DIRECTORY, "references", `${name}.md`)),
-      `路由表中的 ${name} 没有对应的参考文件`,
+      name,
     );
   }
 });
 
-test("文档: SKILL.md 不超过篇幅上限", () => {
-  const text = readFileSync(path.join(SKILL_DIRECTORY, "SKILL.md"), "utf8");
-  const tokens = estimateTokens(text);
-  assert.ok(
-    tokens <= SKILL_TOKEN_LIMIT,
-    `SKILL.md 约 ${tokens} token, 超过 ${SKILL_TOKEN_LIMIT}`,
+test("规则: 命令速查覆盖每条命令, 没有写不存在的命令", () => {
+  const skill = readSkillFile("SKILL.md");
+  const documented = new Set(
+    [...skill.matchAll(/^\| `([^`]+)`(?:, `([^`]+)`)?/gmu)].flatMap((match) =>
+      [match[1], match[2]]
+        .filter((entry) => entry !== undefined)
+        .map((entry) => entry.split(" ")[0]),
+    ),
+  );
+  for (const name of ["intake", "slice-loop", "change"]) {
+    documented.delete(name);
+  }
+  assert.deepEqual(
+    [...documented].sort(),
+    Object.keys(COMMAND_HANDLERS)
+      .filter((command) => command !== ENTER_COMMAND)
+      .sort(),
+  );
+});
+
+test("规则: 工程规范的两种模块组织写法都能生成, 不留标记", () => {
+  const standards = readSkillFile("standards", "engineering.md");
+  const rendered = Object.values(ORGANIZATIONS).map((organization) =>
+    renderEngineeringRules({ standards, organization, conventions: [] }),
+  );
+  for (const text of rendered) {
+    assert.match(text, /^# 工程规范\n\n本文件由 project-navigator/u);
+    assert.match(text, /## 模块组织\n\n- /u);
+    assert.match(text, /单一数据源/u);
+    assert.match(text, /不建通用模块/u);
+    assert.doesNotMatch(text, /<!--|\n{3,}|## 项目约定/u);
+  }
+  assert.match(rendered[0], /物理目录/u);
+  assert.doesNotMatch(rendered[0], /筛选器/u);
+  assert.match(rendered[1], /\.vcxproj\.filters/u);
+  assert.doesNotMatch(rendered[1], /一个模块一个目录/u);
+});
+
+test("规则: 子代理定义的名称与守卫中的一致, 验收子代理禁用写入工具", () => {
+  for (const type of Object.values(SUBAGENT_TYPES)) {
+    const name = type.split(PLUGIN_SEPARATOR)[1];
+    const text = readFileSync(
+      path.join(SKILL_DIRECTORY, "..", "..", "agents", `${name}.md`),
+      "utf8",
+    );
+    assert.match(text, new RegExp(`^name: ${name}$`, "mu"));
+  }
+  assert.match(
+    readFileSync(
+      path.join(SKILL_DIRECTORY, "..", "..", "agents", "navigator-reviewer.md"),
+      "utf8",
+    ),
+    /^disallowedTools: Write, Edit, MultiEdit, NotebookEdit$/mu,
   );
 });

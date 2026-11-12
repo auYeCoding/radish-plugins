@@ -1,15 +1,25 @@
 /**
  * @file project-navigator 测试共用的辅助函数: 临时仓库, 调用命令行与 hook,
- * 模拟编排会话的转录.
+ * 模拟编排会话的转录, 写草稿, 填写切片文件.
  */
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { orchestratorMarker } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/orchestrator-marker.mjs";
+import {
+  DRAFTS_DIRECTORY,
+  REQUIREMENTS_FILE,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/paths.mjs";
 
 /**
  * 插件中技能目录的绝对路径.
@@ -46,6 +56,41 @@ export const PLUGIN_HOOK = path.join(SKILL_DIRECTORY, "runtime", "hook.mjs");
  * @type {string}
  */
 const TEMPORARY_PREFIX = "导航 测试-";
+
+/**
+ * 测试中登记的验证命令.
+ * @type {string}
+ */
+export const VERIFY_COMMAND = "npm test";
+
+/**
+ * 测试中默认的项目设置: 物理目录, 自动测试.
+ * @type {Readonly<Record<string, unknown>>}
+ */
+export const DEFAULT_SETTINGS = Object.freeze({
+  organization: "directories",
+  verification: { mode: "auto", commands: [VERIFY_COMMAND] },
+});
+
+/**
+ * 测试中默认的路线: 一个里程, 骨架加一个改代码的切片与一个只产出结论的切片;
+ * 之后还有一个没有排切片的里程.
+ * @type {Readonly<Record<string, unknown>>}
+ */
+export const DEFAULT_ROADMAP = Object.freeze({
+  milestones: [
+    {
+      name: "能导出",
+      goal: "从命令行导出一份报表",
+      slices: [
+        { name: "最小骨架" },
+        { name: "导出 CSV" },
+        { name: "查清格式", kind: "findings" },
+      ],
+    },
+    { name: "能筛选", goal: "按条件筛选导出内容" },
+  ],
+});
 
 /**
  * 创建一个带一次提交的临时 Git 仓库.
@@ -106,16 +151,6 @@ export function runCommand(args, cwd) {
 }
 
 /**
- * 从 reply 或 template 命令的输出中取出骨架: 跳过前面的填写要求, 从一级标题开始.
- *
- * @param {string} output reply 或 template 命令的标准输出.
- * @returns {string} 骨架.
- */
-export function commandSkeleton(output) {
-  return output.slice(output.search(/^# /mu));
-}
-
-/**
  * 在临时目录中写一份会话转录; 编排会话的转录带本项目的编排标记.
  *
  * @param {string} root 项目根目录, 用于计算标记.
@@ -156,6 +191,82 @@ export function initializeProject(root) {
     project: (args) => runCommand(args, root),
     hook: (input) => runHook(input, root),
   };
+}
+
+/**
+ * 写一份 JSON 草稿.
+ *
+ * @param {string} root 仓库根目录.
+ * @param {string} name 草稿文件名.
+ * @param {unknown} value 草稿内容.
+ * @returns {string} 草稿的项目相对路径.
+ */
+export function writeDraft(root, name, value) {
+  const relative = `${DRAFTS_DIRECTORY}/${name}`;
+  mkdirSync(path.join(root, DRAFTS_DIRECTORY), { recursive: true });
+  writeFileSync(path.join(root, relative), JSON.stringify(value), "utf8");
+  return relative;
+}
+
+/**
+ * 初始化项目并走完立项: 写需求文件, 登记项目设置, 写入路线.
+ *
+ * @param {string} root 仓库根目录.
+ * @param {{settings?: unknown, roadmap?: unknown}} [options] 项目设置与路线, 省略时用默认值.
+ * @returns {ReturnType<typeof initializeProject>} 调用命令行与 hook 的函数.
+ * @throws {Error} 任何一步失败时.
+ */
+export function startProject(
+  root,
+  { settings = DEFAULT_SETTINGS, roadmap = DEFAULT_ROADMAP } = {},
+) {
+  const runner = initializeProject(root);
+  writeFileSync(path.join(root, REQUIREMENTS_FILE), "# 需求\n", "utf8");
+  for (const [command, draft] of [
+    ["setup", settings],
+    ["roadmap", roadmap],
+  ]) {
+    const result = runner.project([
+      command,
+      "--from",
+      writeDraft(root, `${command}.json`, draft),
+    ]);
+    if (result.status !== 0) {
+      throw new Error(`${command} 失败: ${result.stdout}`);
+    }
+  }
+  return runner;
+}
+
+/**
+ * 替换切片文件中某个小节的内容; 同名小节有多个时替换最后一个.
+ *
+ * @param {string} root 仓库根目录.
+ * @param {string} file 切片文件的项目相对路径.
+ * @param {Readonly<Record<string, string>>} sections 小节标题到新内容的映射.
+ * @returns {void}
+ * @throws {Error} 小节不存在时.
+ */
+export function fillSections(root, file, sections) {
+  const absolute = path.join(root, file);
+  const lines = readFileSync(absolute, "utf8").split("\n");
+  for (const [title, body] of Object.entries(sections)) {
+    const start = lines.lastIndexOf(`### ${title}`);
+    if (start < 0) {
+      throw new Error(`切片文件中没有小节 ${title}`);
+    }
+    const next = lines.findIndex(
+      (line, index) => index > start && /^#{1,3} /u.test(line),
+    );
+    lines.splice(
+      start + 1,
+      (next < 0 ? lines.length : next) - start - 1,
+      "",
+      ...body.split("\n"),
+      "",
+    );
+  }
+  writeFileSync(absolute, lines.join("\n"), "utf8");
 }
 
 /**
