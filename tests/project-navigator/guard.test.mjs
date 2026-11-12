@@ -84,10 +84,15 @@ test("守卫: 状态文件与生成的视图文件谁都不能直接写", () => 
   }
 });
 
-test("守卫: 验收子代理不能写任何项目文件", () => {
+test("守卫: 核对与验收子代理不能写任何项目文件", () => {
+  for (const agentType of [SUBAGENT_TYPES.reviewer, SUBAGENT_TYPES.checker]) {
+    assert.equal(decide({ target: "src/app.js", agentType }).decision, "deny");
+  }
   assert.equal(
-    decide({ target: "src/app.js", agentType: SUBAGENT_TYPES.reviewer })
-      .decision,
+    decide({
+      target: `.navigator/orders/${FOLDER}/order.md`,
+      agentType: SUBAGENT_TYPES.checker,
+    }).decision,
     "deny",
   );
   assert.equal(

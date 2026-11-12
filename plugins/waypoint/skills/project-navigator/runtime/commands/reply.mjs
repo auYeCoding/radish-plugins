@@ -20,7 +20,11 @@ import { readOrderVerdicts } from "../lib/review-record.mjs";
 import { loadSpec, resolveReplyType } from "../lib/spec.mjs";
 import { readStateIfValid } from "../lib/state.mjs";
 import { renderTable } from "../lib/table.mjs";
-import { SELECTION_ORDER_KIND } from "../lib/workflow-orders.mjs";
+import {
+  REVIEWABLE_ORDER_STATUSES,
+  SELECTION_ORDER_KIND,
+  precheckBlocker,
+} from "../lib/workflow-orders.mjs";
 
 /**
  * 工单文件中写给人看的节, 与规格 files.order 中的节标题一致.
@@ -39,12 +43,6 @@ const ORDER_PATH_KEY = "工单文件";
  * @type {string}
  */
 const REVIEWING_STATUS = "reviewing";
-
-/**
- * 可以请用户审阅的工单状态: 起草中, 以及受阻后修改待重新发布.
- * @type {readonly string[]}
- */
-const REVIEWABLE_STATUSES = Object.freeze(["drafting", "blocked"]);
 
 /**
  * 执行 reply 命令.
@@ -100,7 +98,8 @@ export function runReply({ cwd, type, optionSet }) {
 
 /**
  * 为 "工单审阅" 取出预填的值: 工单文件 "审阅要点" 中的各键, 以及工单文件路径.
- * 工单要处于可审阅的状态, 工单文件已写好, 且内容已满足发布条件 (含基准提交是当前提交).
+ * 工单要处于可审阅的状态, 起草中的工单已做过发布前核对, 工单文件已写好, 且内容
+ * 已满足发布条件 (含基准提交是当前提交).
  *
  * @param {string | undefined} projectRoot 项目根目录.
  * @param {import("../lib/state.mjs").NavigatorState | undefined} state 当前状态.
@@ -113,11 +112,15 @@ function approvalValues(projectRoot, state) {
     projectRoot === undefined ||
     state === undefined ||
     order === null ||
-    !REVIEWABLE_STATUSES.includes(order.status)
+    !REVIEWABLE_ORDER_STATUSES.includes(order.status)
   ) {
     throw new Error(
-      `reply: 当前没有待审阅的工单; 只有 ${REVIEWABLE_STATUSES.join(", ")} 状态的工单需要审阅.`,
+      `reply: 当前没有待审阅的工单; 只有 ${REVIEWABLE_ORDER_STATUSES.join(", ")} 状态的工单需要审阅.`,
     );
+  }
+  const unchecked = precheckBlocker(order);
+  if (unchecked !== undefined) {
+    throw new Error(`reply: ${unchecked}`);
   }
   const orderText = readOrderText(projectRoot, order);
   const orderPath = orderFilePath(order.folder, "order");

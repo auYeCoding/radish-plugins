@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: a precheck before the order review. A new read-only subagent `waypoint:navigator-checker`, dispatched with the output of the new `precheck-brief` command, checks each fact written in the work order (file paths, ids in the data, the release form and license of external resources) and whether each criterion can be verified. The orchestrator fixes the order and runs the new `order precheck`; until then `reply approve` and `order set issued` refuse a drafting order. In a real project every blocked round of the implementation orders came from an unchecked fact in the order.
+- `project-navigator`: pending criteria. When only a few criteria cannot be met as written, the executor finishes the rest and lists them under the new "待定判据" (pending criteria) item of the receipt instead of ending as blocked; the reviewer marks them unverified, and the user decides in the review report.
+- `project-navigator`: a new reply "等待操作" (waiting for your action, no option block). When the executor only needs the user to do something by hand, it hands back midway without writing a receipt, and continues after the user replies; the order status does not change. Before, each such step was a full blocked round trip.
+- `project-navigator`: subagent models. The new `model` command shows the assignment and `model set <role> <model> [--kind <order kind>]` changes it; the "next action" and a new "子代理模型" (subagent models) line of `status` spell out the `model` parameter to pass when dispatching.
+
+### Changed
+
+- `project-navigator`: the checker, reviewer, reader, and researcher subagents now run on Sonnet by default; the executor still follows the orchestrator's model. Run `project-navigator model set <role> inherit` to restore the earlier behavior for a role.
+- `project-navigator`: a drafting order written before this version needs `order precheck` once before it can be reviewed.
+
 ## [1.3.2] - 2026-11-12
 
 ### Fixed

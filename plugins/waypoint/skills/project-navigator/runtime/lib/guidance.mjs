@@ -5,9 +5,11 @@
  * 运行哪条命令. "运行 X" 指运行插件命令 `project-navigator X`.
  */
 
+import { PAUSED_HANDBACK, PRECHECK_VERDICTS } from "./briefs.mjs";
 import { COMMIT_SKILL, SUBAGENT_TYPES } from "./guard.mjs";
 import { APPROVAL_REPLY_TYPE, APPROVAL_STATUSES } from "./order-approval.mjs";
 import { lastStageNumber } from "./spec.mjs";
+import { MODEL_ROLES, modelArgument } from "./subagent-models.mjs";
 import { SELECTION_ORDER_KIND } from "./workflow-orders.mjs";
 import { isProjectFinished } from "./workflow-plan.mjs";
 
@@ -71,19 +73,60 @@ export const COMPLETE_REPLY_TYPE = "项目完成";
 export const BLOCKED_RECEIPT_KEYWORD = "受阻";
 
 /**
- * 发布并派出执行子代理的一串动作.
+ * 等待调研, 阅读与核对子代理期间的回复类型.
  * @type {string}
  */
-const DISPATCH_STEP = `运行 order set issued, 再运行 exec-brief, 把输出原样作为提示词, 用 Agent 工具在后台 (run_in_background) 派 ${SUBAGENT_TYPES.executor}, 然后`;
+const WAITING_REPLY_TYPE = "等待结果";
+
+/**
+ * 执行子代理中途交回, 等用户完成操作期间的回复类型.
+ * @type {string}
+ */
+const PAUSED_REPLY_TYPE = "等待操作";
+
+/**
+ * 派出执行子代理的动作, 写明这种工单使用的模型.
+ *
+ * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
+ * @param {{kind: string}} order 当前工单.
+ * @returns {string} 动作.
+ */
+export function executorDispatchAction(models, order) {
+  return `运行 exec-brief, 把输出原样作为提示词, 用 Agent 工具在后台 (run_in_background) 派 ${SUBAGENT_TYPES.executor} (${modelArgument(models, MODEL_ROLES.executor, order.kind)})`;
+}
+
+/**
+ * 发布并派出执行子代理的一串动作.
+ *
+ * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
+ * @param {{kind: string}} order 当前工单.
+ * @returns {string} 动作.
+ */
+function dispatchStep(models, order) {
+  return `运行 order set issued, 再${executorDispatchAction(models, order)}, 然后`;
+}
+
+/**
+ * 派出核对子代理并按结果改好工单的一串动作; 子代理在后台运行, 本轮要先结束时
+ * 回复 "等待结果".
+ *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
+ * @returns {string} 动作.
+ */
+export function precheckStep(spec, models) {
+  return `运行 precheck-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.checker} (${modelArgument(models, MODEL_ROLES.checker)}); 子代理在后台运行, 本轮要先结束时${replyStep(spec, WAITING_REPLY_TYPE)}; 结果回来后改正 "${PRECHECK_VERDICTS.fails}" 的事实, "${PRECHECK_VERDICTS.unknown}" 的条目自己查证或改写成能核对的说法, 遗漏的决定写进 "需要决定", 然后运行 order precheck`;
+}
 
 /**
  * 派出验收子代理的一串动作; 子代理在后台运行, 本轮要先结束时回复 "工单验收".
  *
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
  * @returns {string} 动作.
  */
-function reviewDispatchStep(spec) {
-  return `运行 review-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.reviewer}; 子代理在后台运行, 本轮要先结束时${replyStep(spec, REVIEWING_REPLY_TYPE)}, 不写其它说明`;
+function reviewDispatchStep(spec, models) {
+  return `运行 review-brief, 把输出原样作为提示词派 ${SUBAGENT_TYPES.reviewer} (${modelArgument(models, MODEL_ROLES.reviewer)}); 子代理在后台运行, 本轮要先结束时${replyStep(spec, REVIEWING_REPLY_TYPE)}, 不写其它说明`;
 }
 
 /**
@@ -156,68 +199,77 @@ function finishedAction(spec, hasUncommittedRecords) {
  * @returns {string} 下一动作.
  */
 function orderAction(spec, order, input) {
+  const models = input.state.models;
   switch (order.status) {
     case "drafting":
-      return draftingAction(spec, order, input.orderApproval);
+      return draftingAction(spec, order, input);
     case "issued":
-      return issuedAction(spec, order, input.receiptStatus);
+      return issuedAction(spec, order, input);
     case "blocked":
       return blockedAction(spec, order, input);
     case "reviewing":
-      return reviewingAction(spec, order);
+      return reviewingAction(spec, order, models);
     default:
       return `工单 ${order.id} 处于未知状态 ${order.status}`;
   }
 }
 
 /**
- * 起草中的工单的下一动作: 先请用户审阅, 用户认可当前内容后发布并派出执行子代理.
+ * 起草中的工单的下一动作: 先做发布前核对, 再请用户审阅, 用户认可当前内容后
+ * 发布并派出执行子代理.
  *
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {{id: string}} order 当前工单.
- * @param {string | undefined} orderApproval 工单的审阅状态.
+ * @param {import("./state.mjs").OrderState} order 当前工单.
+ * @param {GuidanceInput} input 判断信息.
  * @returns {string} 下一动作.
  */
-function draftingAction(spec, order, orderApproval) {
-  const dispatch = `${DISPATCH_STEP}${replyStep(spec, RUNNING_REPLY_TYPE)}`;
-  switch (orderApproval) {
+function draftingAction(spec, order, input) {
+  const models = input.state.models;
+  const dispatch = `${dispatchStep(models, order)}${replyStep(spec, RUNNING_REPLY_TYPE)}`;
+  const approve = `${replyStep(spec, APPROVAL_REPLY_TYPE)}; 用户选 A 后${dispatch}`;
+  if (order.prechecked !== true) {
+    return `写完工单 ${order.id} 的 order.md, ${precheckStep(spec, models)}, 再${approve}`;
+  }
+  switch (input.orderApproval) {
     case APPROVAL_STATUSES.approved:
       return `工单 ${order.id} 已经用户审阅: ${dispatch}`;
     case APPROVAL_STATUSES.awaiting:
       return `等用户在 "${APPROVAL_REPLY_TYPE}" 中选择: 选 A 后${dispatch}; 用户要修改时, 改好工单文件后再${replyStep(spec, APPROVAL_REPLY_TYPE)}`;
     default:
-      return `写完工单 ${order.id} 的 order.md, ${replyStep(spec, APPROVAL_REPLY_TYPE)}; 用户选 A 后${dispatch}`;
+      return `工单 ${order.id} 已做发布前核对: ${approve}`;
   }
 }
 
 /**
  * 已发布工单的下一动作: 回执写入前等执行子代理, 写入后按执行状态处理.
- *
- * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
- * @param {{id: string}} order 当前工单.
- * @param {string | undefined} receiptStatus 回执中的执行状态.
- * @returns {string} 下一动作.
- */
-function issuedAction(spec, order, receiptStatus) {
-  if (receiptStatus === undefined) {
-    return `工单 ${order.id} 由执行子代理处理中: ${replyStep(spec, RUNNING_REPLY_TYPE)}; 子代理结束后会自动通知, 届时运行 status. 子代理已结束但回执没有写入时, 用 SendMessage 请它按回执骨架补写`;
-  }
-  return receiptStatus.includes(BLOCKED_RECEIPT_KEYWORD)
-    ? `工单 ${order.id} 执行受阻: 读回执, 运行 order set blocked, 再${replyStep(spec, BLOCKED_REPLY_TYPE)}, 按受阻类型选择选项组`
-    : `工单 ${order.id} 执行完成: 运行 order set reviewing, 再${reviewDispatchStep(spec)}`;
-}
-
-/**
- * 受阻工单的下一动作: 内容没有改动时直接继续, 改动后要重新审阅.
+ * 执行子代理也可能不写回执, 中途交回等用户操作.
  *
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @param {{id: string}} order 当前工单.
  * @param {GuidanceInput} input 判断信息.
  * @returns {string} 下一动作.
  */
+function issuedAction(spec, order, input) {
+  const { receiptStatus } = input;
+  if (receiptStatus === undefined) {
+    return `工单 ${order.id} 由执行子代理处理中: ${replyStep(spec, RUNNING_REPLY_TYPE)}; 子代理结束后会自动通知, 届时运行 status. 子代理交回的第一行是 "${PAUSED_HANDBACK}" 时, ${replyStep(spec, PAUSED_REPLY_TYPE)}, 用户做完后用 SendMessage 把用户的话转给它继续, 再${replyStep(spec, RUNNING_REPLY_TYPE)}. 子代理已结束, 既没有等待操作也没有写回执时, 用 SendMessage 请它按回执骨架补写`;
+  }
+  return receiptStatus.includes(BLOCKED_RECEIPT_KEYWORD)
+    ? `工单 ${order.id} 执行受阻: 读回执, 运行 order set blocked, 再${replyStep(spec, BLOCKED_REPLY_TYPE)}, 按受阻类型选择选项组`
+    : `工单 ${order.id} 执行完成: 运行 order set reviewing, 再${reviewDispatchStep(spec, input.state.models)}`;
+}
+
+/**
+ * 受阻工单的下一动作: 内容没有改动时直接继续, 改动后要重新审阅.
+ *
+ * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
+ * @param {{id: string, kind: string}} order 当前工单.
+ * @param {GuidanceInput} input 判断信息.
+ * @returns {string} 下一动作.
+ */
 function blockedAction(spec, order, input) {
   if (input.orderApproval === APPROVAL_STATUSES.approved) {
-    return `工单 ${order.id} 的修改已经用户审阅: ${DISPATCH_STEP}${replyStep(spec, RUNNING_REPLY_TYPE)}`;
+    return `工单 ${order.id} 的修改已经用户审阅: ${dispatchStep(input.state.models, order)}${replyStep(spec, RUNNING_REPLY_TYPE)}`;
   }
   return `工单 ${order.id} 受阻: ${replyStep(spec, BLOCKED_REPLY_TYPE)}; 用户完成所需操作而工单没有改动时, 运行 order set issued, 用 SendMessage 让原执行子代理继续 (找不到它时运行 exec-brief 重新派出), 再${replyStep(spec, RUNNING_REPLY_TYPE)}; 要修改工单时, 改好后${replyStep(spec, APPROVAL_REPLY_TYPE)}${input.isOrderUnchanged === false ? ". 工单文件已在发布后改动, 必须重新审阅" : ""}`;
 }
@@ -227,10 +279,11 @@ function blockedAction(spec, order, input) {
  *
  * @param {import("./spec.mjs").TemplateSpec} spec 模板规格.
  * @param {{id: string, kind: string}} order 当前工单.
+ * @param {Record<string, string> | undefined} models 状态中登记的模型分配.
  * @returns {string} 下一动作.
  */
-function reviewingAction(spec, order) {
-  const brief = `${reviewDispatchStep(spec)}; 结果回来后把结论写入 review.md, 再`;
+function reviewingAction(spec, order, models) {
+  const brief = `${reviewDispatchStep(spec, models)}; 结果回来后把结论写入 review.md, 再`;
   return order.kind === SELECTION_ORDER_KIND
     ? `选型工单 ${order.id} 验收中: ${brief}${replyStep(spec, REVIEW_REPLY_TYPE, REVIEW_OPTIONS.selection)}, 由用户决定是否采用`
     : `工单 ${order.id} 验收中: ${brief}${replyStep(spec, REVIEW_REPLY_TYPE)}: 判据全部通过用第 ${REVIEW_OPTIONS.passed} 组, 有不通过用第 ${REVIEW_OPTIONS.fix} 组, 只有未验证用第 ${REVIEW_OPTIONS.unverified} 组`;

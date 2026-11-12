@@ -8,6 +8,7 @@ import { test } from "node:test";
 
 import {
   buildExecutorBrief,
+  buildPrecheckBrief,
   buildReviewBrief,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/briefs.mjs";
 import { nextAction } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/guidance.mjs";
@@ -26,10 +27,17 @@ import {
   STATE_SCHEMA_VERSION,
   createInitialState,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/state.mjs";
+import {
+  MODEL_ROLES,
+  assignModel,
+  describeModels,
+  resolveModel,
+} from "../../plugins/waypoint/skills/project-navigator/runtime/lib/subagent-models.mjs";
 import { WorkflowError } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-error.mjs";
 import {
   consecutiveRejections,
   createOrder,
+  markPrechecked,
   setOrderStatus,
 } from "../../plugins/waypoint/skills/project-navigator/runtime/lib/workflow-orders.mjs";
 import {
@@ -432,11 +440,16 @@ test("下一动作: 首次接入, 进入时恢复进度, 项目完成", () => {
   );
 });
 
-test("下一动作: 起草中的工单先审阅, 认可后发布并在后台派执行子代理", () => {
-  const drafting = draft(stateWithRoadmap());
+test("下一动作: 起草中的工单先核对再审阅, 认可后发布并在后台派执行子代理", () => {
+  const unchecked = draft(stateWithRoadmap());
+  assert.match(
+    nextAction({ ...GUIDANCE_BASE, state: unchecked }),
+    /运行 precheck-brief, 把输出原样作为提示词派 waypoint:navigator-checker \(model 参数写 "sonnet"\).+然后运行 order precheck, 再回复 "工单审阅"/u,
+  );
+  const drafting = markPrechecked(unchecked);
   assert.match(
     nextAction({ ...GUIDANCE_BASE, state: drafting }),
-    /回复 "工单审阅" \(reply approve\); 用户选 A 后运行 order set issued, 再运行 exec-brief/u,
+    /已做发布前核对: 回复 "工单审阅" \(reply approve\); 用户选 A 后运行 order set issued, 再运行 exec-brief/u,
   );
   assert.match(
     nextAction({
@@ -452,7 +465,55 @@ test("下一动作: 起草中的工单先审阅, 认可后发布并在后台派�
       state: drafting,
       orderApproval: APPROVAL_STATUSES.approved,
     }),
-    /run_in_background\) 派 waypoint:navigator-executor, 然后回复 "工单执行"/u,
+    /run_in_background\) 派 waypoint:navigator-executor \(不传 model 参数\), 然后回复 "工单执行"/u,
+  );
+});
+
+test("子代理模型: 默认分配, 按工单类型指定执行模型, 不合法的取值被拒", () => {
+  const state = draft(stateWithRoadmap());
+  assert.equal(resolveModel(state.models, MODEL_ROLES.reviewer), "sonnet");
+  assert.equal(resolveModel(state.models, MODEL_ROLES.executor), "inherit");
+  const assigned = assignModel(
+    assignModel(state, { role: "executor", model: "sonnet", kind: "fix" }),
+    { role: "reviewer", model: "inherit" },
+  );
+  assert.equal(resolveModel(assigned.models, "executor", "fix"), "sonnet");
+  assert.equal(
+    resolveModel(assigned.models, "executor", "implementation"),
+    "inherit",
+  );
+  assert.match(
+    describeModels(assigned.models),
+    /^执行 跟随会话, 核对 sonnet, 验收 跟随会话, 阅读 sonnet, 调研 sonnet, 执行 \(fix 工单\) sonnet$/u,
+  );
+  const fix = { ...assigned, order: { ...assigned.order, kind: "fix" } };
+  assert.match(
+    nextAction({
+      ...GUIDANCE_BASE,
+      state: markPrechecked(fix),
+      orderApproval: APPROVAL_STATUSES.approved,
+    }),
+    /派 waypoint:navigator-executor \(model 参数写 "sonnet"\)/u,
+  );
+  assert.throws(
+    () => assignModel(state, { role: "executor", model: "gpt" }),
+    /模型应为/u,
+  );
+  assert.throws(
+    () => assignModel(state, { role: "reviewer", model: "opus", kind: "fix" }),
+    /只能与 executor 一起用/u,
+  );
+});
+
+test("委派: 核对提示词写明工单路径与三种结论; 执行提示词写明等待操作的交回", () => {
+  const order = stateWithIssuedOrder().order;
+  const precheck = buildPrecheckBrief({ projectRoot: "/项目", order });
+  assert.match(precheck, /^# 发布前核对 0001/u);
+  assert.match(precheck, /order\.md/u);
+  assert.match(precheck, /成立, 不成立, 无法核对 之一/u);
+  assert.match(
+    buildExecutorBrief({ projectRoot: "/项目", order }),
+    /第一行写 "执行状态: 等待操作"/u,
   );
 });
 
