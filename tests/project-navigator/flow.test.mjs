@@ -404,6 +404,32 @@ test("工单往返: 认可之后改过工单, 发布被拒; 未验证的判据�
   );
 });
 
+test("工单审阅: 没有选发布之后, 写明发布工单的消息仍然认可, 单独的字母不算", (context) => {
+  const setup = setupProject(context);
+  const { root, project, orchestrator } = setup;
+  project(["order", "new", "--kind", "implementation", "--slug", "export"]);
+  const folder = ".navigator/orders/0001-export";
+  const order = fill(commandSkeleton(project(["template", "order"]).stdout));
+  writeProjectFile(root, `${folder}/order.md`, order);
+  stop(
+    root,
+    orchestrator,
+    fill(commandSkeleton(project(["reply", "approve"]).stdout)),
+  );
+  prompt(root, orchestrator, "判据 3 是什么意思?");
+  const refused = project(["order", "set", "issued"]);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stdout, /只运行 reply 命令不算审阅/u);
+  prompt(root, orchestrator, "A");
+  assert.equal(project(["order", "set", "issued"]).status, 1);
+  writeProjectFile(root, `${folder}/order.md`, `${order}\n补一句.\n`);
+  prompt(root, orchestrator, "发布工单");
+  assert.equal(project(["order", "set", "issued"]).status, 1);
+  writeProjectFile(root, `${folder}/order.md`, order);
+  prompt(root, orchestrator, "发布工单");
+  assert.equal(project(["order", "set", "issued"]).status, 0);
+});
+
 test("基准提交: 新建工单之后仓库有新提交时, 审阅拒绝旧值, 发布后验收提示词用当前提交", (context) => {
   const setup = setupProject(context);
   const { root, project, orchestrator } = setup;

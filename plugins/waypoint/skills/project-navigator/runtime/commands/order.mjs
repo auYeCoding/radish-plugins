@@ -229,7 +229,7 @@ function assertIssuable(context) {
   throw new WorkflowError(
     approval === APPROVAL_STATUSES.awaiting
       ? `工单 ${order.id} 正在等用户审阅: 用户在 "${APPROVAL_REPLY_TYPE}" 中选 A 之后才能发布.`
-      : `工单 ${order.id} 还没有经用户审阅, 或审阅之后内容有改动: 先${replyStep(context.spec, APPROVAL_REPLY_TYPE)}, 用户选 A 后再运行 order set issued.`,
+      : `工单 ${order.id} 还没有经用户审阅, 或审阅之后内容有改动: 先${replyStep(context.spec, APPROVAL_REPLY_TYPE)}并结束本轮, 用户选 A 后再运行 order set issued. 只运行 reply 命令不算审阅.`,
   );
 }
 

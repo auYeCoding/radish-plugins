@@ -4,6 +4,7 @@
  * hook 在编排会话回复 "工单审阅" 时记下当时工单文件的摘要, 在用户回答时记下
  * 选择; `order set issued` 只接受摘要与当前工单文件一致的认可. 认可在发布时
  * 用掉; 工单内容改过之后重新发布要重新审阅, 受阻后内容没有改动时可以直接继续.
+ * 用户没有选发布时记录保留: 之后的消息写明 "发布工单" 时仍可认可同一份内容.
  * 审阅记录存在运行期登记目录中, hook 不写状态文件.
  */
 
@@ -11,7 +12,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { isChoiceSelected } from "./option-answer.mjs";
+import { isChoiceNamed, isChoiceSelected } from "./option-answer.mjs";
 import { orderFilePath } from "./paths.mjs";
 import {
   readOrderApproval,
@@ -40,6 +41,21 @@ export const APPROVAL_STATUSES = Object.freeze({
   awaiting: "awaiting",
   none: "none",
 });
+
+/**
+ * 审阅记录中的状态: 用户看过审阅, 但没有选发布. 对外等同于没有有效的审阅.
+ * @type {string}
+ */
+const DECLINED_STATUS = "declined";
+
+/**
+ * 用户的消息还能改变结果的记录状态: 正在等用户选择, 或用户没有选发布.
+ * @type {readonly string[]}
+ */
+const ANSWERABLE_STATUSES = Object.freeze([
+  APPROVAL_STATUSES.awaiting,
+  DECLINED_STATUS,
+]);
 
 /**
  * 计算工单文件内容的摘要; 统一换行符, 避免编辑器的换行差异让认可失效.
@@ -95,9 +111,10 @@ export function readApprovalStatus(projectRoot, order) {
   ) {
     return APPROVAL_STATUSES.none;
   }
-  return record.status === APPROVAL_STATUSES.approved
-    ? APPROVAL_STATUSES.approved
-    : APPROVAL_STATUSES.awaiting;
+  return record.status === APPROVAL_STATUSES.approved ||
+    record.status === APPROVAL_STATUSES.awaiting
+    ? record.status
+    : APPROVAL_STATUSES.none;
 }
 
 /**
@@ -124,8 +141,12 @@ export function markAwaitingApproval(projectRoot, order, now) {
 }
 
 /**
- * 记录用户对 "工单审阅" 的回答: 选 A 时认可审阅时的内容; 其它回答撤销等待,
- * 编排会话按要求修改后要重新回复 "工单审阅". 没有等待中的审阅时不做任何事.
+ * 记录用户对 "工单审阅" 的回答. 紧跟着审阅的那条消息选 A (字母或选项文字) 时
+ * 认可审阅时的内容, 其它回答记为没有选发布. 没有选发布之后, 用户的消息以
+ * "发布工单" 的选项文字开头时仍然认可: 用户撤回上一条消息重新回答时, 审阅回复
+ * 不会再结束一次, 只能靠这条记录认出来; 单独的字母此时可能在回答别的回复, 不算.
+ * 认可的始终是审阅时的内容, 工单文件改过之后要重新审阅. 没有针对当前工单的
+ * 审阅记录时不做任何事.
  *
  * @param {object} options 参数.
  * @param {string} options.projectRoot 项目根目录.
@@ -139,22 +160,22 @@ export function applyApprovalAnswer({ projectRoot, order, prompt, spec, now }) {
   const record = readOrderApproval(projectRoot);
   if (
     record === undefined ||
-    record.status !== APPROVAL_STATUSES.awaiting ||
-    record.order !== order?.id
+    record.order !== order?.id ||
+    !ANSWERABLE_STATUSES.includes(record.status)
   ) {
     return;
   }
   const optionSet =
     spec.replies[APPROVAL_REPLY_TYPE].optionSets[APPROVE_CHOICE.optionSet];
-  if (isChoiceSelected(prompt, optionSet, APPROVE_CHOICE.choice)) {
-    writeOrderApproval(projectRoot, {
-      ...record,
-      status: APPROVAL_STATUSES.approved,
-      updatedAt: now,
-    });
-  } else {
-    removeOrderApproval(projectRoot);
-  }
+  const isApproved =
+    record.status === APPROVAL_STATUSES.awaiting
+      ? isChoiceSelected(prompt, optionSet, APPROVE_CHOICE.choice)
+      : isChoiceNamed(prompt, optionSet, APPROVE_CHOICE.choice);
+  writeOrderApproval(projectRoot, {
+    ...record,
+    status: isApproved ? APPROVAL_STATUSES.approved : DECLINED_STATUS,
+    updatedAt: now,
+  });
 }
 
 /**
