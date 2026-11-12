@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-12
+
 ### Changed
 
 - `project-navigator`: a work order now has two layers. The goal, the decisions needed, what is out of scope, and the scope are hard constraints; every other detail (data formats, paths, specific instances, implementation routes) is a working assumption. When an assumption does not match reality, the executor follows reality and records the correction in the new "事实修正" (fact corrections) table of the receipt instead of ending as blocked. The reviewer checks each correction for evidence and for overstepping under the new "修正核对" (correction check) item, and the review report lists them. Before, a mismatched detail was a specification problem, so exploratory work such as reverse engineering sent the same order back and forth.
@@ -306,7 +308,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.4.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.5.0...HEAD
+[1.5.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.5.0
 [1.4.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.4.0
 [1.3.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.2
 [1.3.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.1
