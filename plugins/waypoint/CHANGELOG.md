@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-12
+
 ### Added
 
 - `project-navigator`: a precheck before the order review. A new read-only subagent `waypoint:navigator-checker`, dispatched with the output of the new `precheck-brief` command, checks each fact written in the work order (file paths, ids in the data, the release form and license of external resources) and whether each criterion can be verified. The orchestrator fixes the order and runs the new `order precheck`; until then `reply approve` and `order set issued` refuse a drafting order. In a real project every blocked round of the implementation orders came from an unchecked fact in the order.
@@ -299,7 +301,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.3.2...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.4.0...HEAD
+[1.4.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.4.0
 [1.3.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.2
 [1.3.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.1
 [1.3.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.0
