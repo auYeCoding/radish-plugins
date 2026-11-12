@@ -13,5 +13,5 @@
 - 自然语言文本遵守 [标点规则](plugins/waypoint/shared/punctuation.md): 英文 (ASCII) 标点, 每个标点后加一个空格.
 - 提交消息用 `waypoint:commit-message` 技能生成, 不附加任何署名.
 - 提交前运行 `npm run format`, `npm run validate` 与 `npm test`.
-- `project-navigator` 的 `references/replies.md`, `references/files.md`, `references/writing.md` 与 `guide/executor.md` 是生成文件. 修改 `spec/templates.json`, `scripts/navigator-docs/` 或 `shared/punctuation.md` 后运行 `npm run gen:docs`, 不直接改生成文件.
+- `project-navigator` 中每条知识只有一个来源: 切片文件的小节在 `spec/slice.json`, 下一动作在 `runtime/lib/guidance.mjs`, 委派提示词在 `runtime/lib/briefs.mjs`, 工程规范在 `standards/engineering.md`. 规则文件引用它们, 不重复写.
 - 运行脚本只用 Node.js 内置模块; 每个声明都写 JSDoc, 函数体内不写注释.

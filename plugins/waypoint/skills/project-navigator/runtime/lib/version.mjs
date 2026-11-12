@@ -26,12 +26,6 @@ const PLUGIN_MANIFEST = path.join(".claude-plugin", "plugin.json");
 const UNKNOWN_VERSION = "0.0.0";
 
 /**
- * 参与比较的版本号段数: 主版本, 次版本, 修订号.
- * @type {number}
- */
-const VERSION_PART_COUNT = 3;
-
-/**
  * 返回当前运行脚本的版本号.
  *
  * @param {string} [skillRoot] 技能目录; 默认为当前脚本所在的技能目录.
@@ -47,23 +41,4 @@ export function runtimeVersion(skillRoot = SKILL_ROOT) {
     directory = path.dirname(directory);
   }
   return UNKNOWN_VERSION;
-}
-
-/**
- * 比较两个语义化版本号的主, 次, 修订号.
- *
- * @param {string} first 第一个版本号.
- * @param {string} second 第二个版本号.
- * @returns {number} first 较旧时为负数, 相同时为 0, 较新时为正数.
- */
-export function compareVersions(first, second) {
-  const firstParts = first.split(".").map(Number);
-  const secondParts = second.split(".").map(Number);
-  for (let index = 0; index < VERSION_PART_COUNT; index += 1) {
-    const difference = (firstParts[index] ?? 0) - (secondParts[index] ?? 0);
-    if (difference !== 0) {
-      return difference;
-    }
-  }
-  return 0;
 }

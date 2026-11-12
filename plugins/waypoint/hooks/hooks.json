@@ -42,20 +42,6 @@
           }
         ]
       }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/skills/project-navigator/runtime/hook.mjs"
-            ],
-            "timeout": 30
-          }
-        ]
-      }
     ]
   }
 }

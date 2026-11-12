@@ -1,22 +1,22 @@
 /**
- * @file 状态文件 `state.json` 的创建, 读取与原子写入.
+ * @file 状态文件 `state.json` 的结构, 创建, 读取与原子写入.
  *
- * `state.json` 是阶段, 里程, 切片, 工单状态与各类编号的唯一来源. 写入时比较
- * 版本号, 并用 "写临时文件再改名" 的方式替换, 防止并发写入互相覆盖或写出半个文件.
- * 读取时迁移旧结构: 去掉 1.0.0 之前的会话登记, 对账与提交结算字段.
+ * `state.json` 是阶段, 项目设置, 里程, 切片与各类编号的唯一来源. 写入时比较
+ * 版本号, 并用 "写临时文件再改名" 的方式替换, 防止并发写入互相覆盖或写出半个
+ * 文件. 结构版本 6 是 2.0.0 的结构; 更早的结构不迁移, 由 init 归档.
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import { writeJsonAtomically } from "./atomic-file.mjs";
-import { navigatorPath } from "./paths.mjs";
+import { STATE_FILE } from "./paths.mjs";
 
 /**
- * 状态文件结构的版本号; 结构变化时加一, 并在读取时迁移.
- * 版本 5 去掉会话登记, 对账, 阶段提交与取证工具登记, 工单不再有提交中的状态.
+ * 状态文件结构的版本号.
  * @type {number}
  */
-export const STATE_SCHEMA_VERSION = 5;
+export const STATE_SCHEMA_VERSION = 6;
 
 /**
  * 初始化状态: 已初始化, 插件的 hook 在本项目中生效.
@@ -31,23 +31,122 @@ export const INIT_ACTIVE = "active";
 export const INIT_UNINSTALLED = "uninstalled";
 
 /**
- * 旧结构中已经不用的顶层字段, 读取时移除.
- * @type {readonly string[]}
+ * 项目阶段的取值.
+ * @type {Readonly<{intake: string, slicing: string, finished: string}>}
  */
-const LEGACY_KEYS = Object.freeze([
-  "session",
-  "formerSessions",
-  "lastCommit",
-  "stageCommit",
-  "pendingAnomaly",
-  "evidenceTools",
-]);
+export const STAGES = Object.freeze({
+  intake: "intake",
+  slicing: "slicing",
+  finished: "finished",
+});
 
 /**
- * 旧结构中表示验收通过之后正在或等待提交的工单状态; 读取时视为已通过并结束.
- * @type {readonly string[]}
+ * 项目阶段的中文名.
+ * @type {Readonly<Record<string, string>>}
  */
-const LEGACY_ACCEPTED_STATUSES = Object.freeze(["accepted", "committing"]);
+export const STAGE_LABELS = Object.freeze({
+  [STAGES.intake]: "立项",
+  [STAGES.slicing]: "切片循环",
+  [STAGES.finished]: "已收尾",
+});
+
+/**
+ * 模块组织方式的取值.
+ * @type {Readonly<{directories: string, filters: string}>}
+ */
+export const ORGANIZATIONS = Object.freeze({
+  directories: "directories",
+  filters: "filters",
+});
+
+/**
+ * 模块组织方式的中文名.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const ORGANIZATION_LABELS = Object.freeze({
+  [ORGANIZATIONS.directories]: "按物理目录分模块",
+  [ORGANIZATIONS.filters]: "文件平铺, 用 Visual Studio 虚拟筛选器分模块",
+});
+
+/**
+ * 需要登记命令的验证方式.
+ * @type {string}
+ */
+export const AUTO_VERIFICATION = "auto";
+
+/**
+ * 验证方式的中文名, 键为验证方式的取值.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const VERIFICATION_LABELS = Object.freeze({
+  [AUTO_VERIFICATION]: "自动测试",
+  manual: "用户手动运行",
+  measured: "实测",
+});
+
+/**
+ * 里程状态的取值.
+ * @type {Readonly<{pending: string, active: string, done: string}>}
+ */
+export const MILESTONE_STATUSES = Object.freeze({
+  pending: "pending",
+  active: "active",
+  done: "done",
+});
+
+/**
+ * 里程状态的中文名.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const MILESTONE_LABELS = Object.freeze({
+  [MILESTONE_STATUSES.pending]: "未开始",
+  [MILESTONE_STATUSES.active]: "进行中",
+  [MILESTONE_STATUSES.done]: "已完成",
+});
+
+/**
+ * 切片种类的取值.
+ * @type {Readonly<{build: string, findings: string}>}
+ */
+export const SLICE_KINDS = Object.freeze({
+  build: "build",
+  findings: "findings",
+});
+
+/**
+ * 切片种类的中文名.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const SLICE_KIND_LABELS = Object.freeze({
+  [SLICE_KINDS.build]: "改代码",
+  [SLICE_KINDS.findings]: "只产出结论",
+});
+
+/**
+ * 切片状态的取值.
+ * @type {Readonly<{pending: string, planned: string, running: string, reviewing: string, done: string, dropped: string}>}
+ */
+export const SLICE_STATUSES = Object.freeze({
+  pending: "pending",
+  planned: "planned",
+  running: "running",
+  reviewing: "reviewing",
+  done: "done",
+  dropped: "dropped",
+});
+
+/**
+ * 切片状态的中文名.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const SLICE_STATUS_LABELS = Object.freeze({
+  [SLICE_STATUSES.pending]: "未开始",
+  [SLICE_STATUSES.planned]: "计划中",
+  [SLICE_STATUSES.running]: "实现中",
+  [SLICE_STATUSES.reviewing]: "验收中",
+  [SLICE_STATUSES.done]: "已完成",
+  [SLICE_STATUSES.dropped]: "已放弃",
+});
 
 /**
  * 读取状态文件时发现版本号与预期不一致时抛出的错误.
@@ -63,17 +162,38 @@ export class StateConflictError extends Error {
 }
 
 /**
- * @typedef {object} OrderState 当前工单.
- * @property {string} id 工单编号.
- * @property {string} slug 文件夹短名.
- * @property {string} folder 工单文件夹名.
- * @property {string} kind 工单类型.
- * @property {string | null} slice 所属切片编号.
- * @property {string} status 工单状态.
- * @property {number} round 发布轮次.
- * @property {string} baseCommit 基准提交.
- * @property {string} [issuedDigest] 最近一次发布时工单文件内容的摘要.
- * @property {boolean} [prechecked] 是否已做过发布前核对.
+ * @typedef {object} SliceState 一个切片.
+ * @property {string} id 切片编号.
+ * @property {string} name 切片名称.
+ * @property {string} kind 切片种类, 见 SLICE_KINDS.
+ * @property {boolean} skeleton 是否为最小骨架.
+ * @property {boolean} interactive 是否由用户正在对话的会话直接做.
+ * @property {string} status 切片状态, 见 SLICE_STATUSES.
+ * @property {string | null} file 切片文件的项目相对路径; 还没有写计划时为 null.
+ */
+
+/**
+ * @typedef {object} MilestoneState 一个里程.
+ * @property {string} id 里程编号.
+ * @property {string} name 里程名称.
+ * @property {string} goal 里程目标.
+ * @property {string} status 里程状态, 见 MILESTONE_STATUSES.
+ * @property {SliceState[]} slices 里程中的切片.
+ */
+
+/**
+ * @typedef {object} CurrentSlice 进行中的切片的运行信息.
+ * @property {string} sliceId 切片编号.
+ * @property {string | null} baseCommit 开工时的提交; 还没有开工时为 null.
+ * @property {string | null} planDigest 开工时计划段的摘要; 还没有开工时为 null.
+ * @property {number} round 轮次, 补做一次加一.
+ */
+
+/**
+ * @typedef {object} ProjectSettings 项目设置.
+ * @property {string | null} organization 模块组织方式, 见 ORGANIZATIONS; 没有登记时为 null.
+ * @property {{mode: string, commands: string[]} | null} verification 验证方式; 没有登记时为 null.
+ * @property {string[]} conventions 项目自己的约定, 写入项目规范.
  */
 
 /**
@@ -82,23 +202,14 @@ export class StateConflictError extends Error {
  * @property {number} revision 写入次数, 用于并发比较.
  * @property {string} skillVersion 写入该状态的技能版本.
  * @property {{status: string, initializedAt: string, uninstalledAt?: string}} init 初始化信息.
- * @property {number | null} stage 当前阶段编号, 0 至 6; 尚未开始时为 null.
- * @property {string} step 当前步骤标识.
- * @property {string | null} milestone 当前里程编号.
- * @property {string | null} slice 当前切片编号.
- * @property {OrderState | null} order 当前工单.
- * @property {object[]} milestones 里程列表.
- * @property {object[]} slices 切片列表.
- * @property {object[]} orders 已结束的工单摘要.
- * @property {object[]} risks 风险列表.
- * @property {object[]} decisions 决策列表.
- * @property {object[]} changes 变更列表.
- * @property {import("./code-checks.mjs").CodeChecks | null} codeChecks 登记的代码检查命令; 尚未登记时为 null.
- * @property {Record<string, string>} models 子代理模型分配中与默认不同的部分, 键见 subagent-models.mjs.
+ * @property {string} stage 项目阶段, 见 STAGES.
+ * @property {ProjectSettings} project 项目设置.
+ * @property {MilestoneState[]} milestones 里程列表.
+ * @property {CurrentSlice | null} current 进行中的切片; 没有时为 null.
+ * @property {{id: string, title: string, supersededBy: string | null}[]} decisions 决策列表.
+ * @property {Record<string, number>} next 各类编号的下一个值.
  * @property {string} lastAction 最后一个动作的中文描述.
  * @property {string} updatedAt 最后写入时间.
- * @property {object[]} skipped 被跳过的阶段及原因.
- * @property {Record<string, number>} next 各类编号的下一个值.
  */
 
 /**
@@ -115,64 +226,58 @@ export function createInitialState({ skillVersion, now }) {
     revision: 0,
     skillVersion,
     init: { status: INIT_ACTIVE, initializedAt: now },
-    stage: null,
-    step: "entry",
-    milestone: null,
-    slice: null,
-    order: null,
+    stage: STAGES.intake,
+    project: { organization: null, verification: null, conventions: [] },
     milestones: [],
-    slices: [],
-    orders: [],
-    risks: [],
+    current: null,
     decisions: [],
-    changes: [],
-    codeChecks: null,
-    models: {},
+    next: { milestone: 1, slice: 1, decision: 1 },
     lastAction: "初始化",
     updatedAt: now,
-    skipped: [],
-    next: {
-      milestone: 1,
-      slice: 1,
-      order: 1,
-      decision: 1,
-      change: 1,
-      risk: 1,
-      checkup: 1,
-    },
   };
 }
 
 /**
- * 读取状态文件.
+ * 读取状态文件, 不判断结构版本.
  *
  * @param {string} projectRoot 项目根目录.
- * @returns {NavigatorState | undefined} 状态; 文件不存在时为 undefined.
- * @throws {SyntaxError} 文件不是合法 JSON 时.
- */
-export function readState(projectRoot) {
-  const file = navigatorPath(projectRoot, "state");
-  return existsSync(file)
-    ? normalizeState(JSON.parse(readFileSync(file, "utf8")))
-    : undefined;
-}
-
-/**
- * 读取状态文件; 文件不存在或不是合法 JSON 时返回 undefined.
- *
- * @param {string} projectRoot 项目根目录.
- * @returns {NavigatorState | undefined} 状态.
+ * @returns {Record<string, any> | undefined} 文件内容; 文件不存在或不是合法 JSON 时为 undefined.
  * @throws {Error} 读取文件本身失败时.
  */
-export function readStateIfValid(projectRoot) {
+export function readRawState(projectRoot) {
+  const file = path.join(projectRoot, STATE_FILE);
+  if (!existsSync(file)) {
+    return undefined;
+  }
   try {
-    return readState(projectRoot);
+    return JSON.parse(readFileSync(file, "utf8"));
   } catch (error) {
     if (error instanceof SyntaxError) {
       return undefined;
     }
     throw error;
   }
+}
+
+/**
+ * 判断读取到的内容是不是当前结构的状态.
+ *
+ * @param {Record<string, any> | undefined} raw 读取到的内容.
+ * @returns {raw is NavigatorState} 是当前结构时返回 true.
+ */
+export function isCurrentState(raw) {
+  return raw !== undefined && raw.schema === STATE_SCHEMA_VERSION;
+}
+
+/**
+ * 读取当前结构的状态.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @returns {NavigatorState | undefined} 状态; 文件不存在, 损坏或是更早的结构时为 undefined.
+ */
+export function readState(projectRoot) {
+  const raw = readRawState(projectRoot);
+  return isCurrentState(raw) ? raw : undefined;
 }
 
 /**
@@ -185,98 +290,13 @@ export function readStateIfValid(projectRoot) {
  * @throws {StateConflictError} 当磁盘上的版本号与传入的不一致时.
  */
 export function writeState(projectRoot, state, now) {
-  const current = readStateIfValid(projectRoot);
+  const current = readState(projectRoot);
   if (current !== undefined && current.revision !== state.revision) {
     throw new StateConflictError(
       `state: 版本冲突, 磁盘为 ${current.revision}, 写入基于 ${state.revision}`,
     );
   }
-  const next = normalizeState({
-    ...state,
-    revision: state.revision + 1,
-    updatedAt: now,
-  });
-  writeJsonAtomically(navigatorPath(projectRoot, "state"), next);
+  const next = { ...state, revision: state.revision + 1, updatedAt: now };
+  writeJsonAtomically(path.join(projectRoot, STATE_FILE), next);
   return next;
-}
-
-/**
- * 为旧版本写入的状态补齐字段, 去掉不再使用的字段, 并标为当前结构版本,
- * 不修改传入对象. 验收通过后等待或正在提交的旧工单视为已通过并结束.
- *
- * @param {Record<string, any>} raw 读取到的状态.
- * @returns {NavigatorState} 字段齐全的状态.
- */
-function normalizeState(raw) {
-  const rest = Object.fromEntries(
-    Object.entries(raw).filter(([key]) => !LEGACY_KEYS.includes(key)),
-  );
-  const order = raw.order ?? null;
-  const isLegacyAccepted =
-    order !== null && LEGACY_ACCEPTED_STATUSES.includes(order.status);
-  const orders = raw.orders ?? [];
-  const slices = raw.slices ?? [];
-  return {
-    ...rest,
-    schema: STATE_SCHEMA_VERSION,
-    init: { ...raw.init, status: normalizeInitStatus(raw.init?.status) },
-    order: isLegacyAccepted ? null : stripLegacyOrderFields(order),
-    milestones: raw.milestones ?? [],
-    slices: isLegacyAccepted
-      ? slices.map((slice) =>
-          slice.id === order.slice
-            ? { ...slice, orders: [...(slice.orders ?? []), order.id] }
-            : slice,
-        )
-      : slices,
-    orders: isLegacyAccepted
-      ? [...orders, summarizeLegacyOrder(order)]
-      : orders,
-    risks: raw.risks ?? [],
-    decisions: raw.decisions ?? [],
-    changes: raw.changes ?? [],
-    codeChecks: raw.codeChecks ?? null,
-    models: raw.models ?? {},
-    skipped: raw.skipped ?? [],
-  };
-}
-
-/**
- * 旧结构中 "已写入配置, 等待自检" 的状态现在视为已初始化.
- *
- * @param {string | undefined} status 读取到的初始化状态.
- * @returns {string} 当前结构中的初始化状态.
- */
-function normalizeInitStatus(status) {
-  return status === INIT_UNINSTALLED ? INIT_UNINSTALLED : INIT_ACTIVE;
-}
-
-/**
- * 去掉旧工单中不再使用的字段.
- *
- * @param {Record<string, any> | null} order 当前工单.
- * @returns {OrderState | null} 去掉字段后的工单.
- */
-function stripLegacyOrderFields(order) {
-  if (order === null) {
-    return null;
-  }
-  const { authorizedTests: _authorizedTests, ...rest } = order;
-  return /** @type {OrderState} */ (rest);
-}
-
-/**
- * 生成验收通过后等待或正在提交的旧工单的历史摘要.
- *
- * @param {Record<string, any>} order 旧工单.
- * @returns {{id: string, slug: string, kind: string, slice: string | null, status: string}} 摘要.
- */
-function summarizeLegacyOrder(order) {
-  return {
-    id: order.id,
-    slug: order.slug,
-    kind: order.kind,
-    slice: order.slice,
-    status: "accepted",
-  };
 }

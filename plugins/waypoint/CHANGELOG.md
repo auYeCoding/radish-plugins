@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING** `project-navigator`: rebuilt around slices instead of work orders. The skill now does five things: confirm requirements and lay out a roadmap, keep track of progress, run each slice through plan, implementation, and independent review, hold modular-design constraints, and insist on a walking skeleton with wiring evidence. Records written by 1.x are not read and not migrated; see "Upgrading from 1.x" below.
+- `project-navigator`: one slice is one file under `.navigator/slices/` with three parts: the plan (written by the orchestrator), the result (written by the executor), and the review (written from what the reviewer hands back). It replaces the work order, receipt, and review record. The script records a digest of the plan when the slice starts and refuses to submit it for review if the plan changed in between.
+- `project-navigator`: by default you decide once per slice, after the review. The plan is put to you beforehand only when it lists something you must decide (`slice start --decided`). The precheck subagent is gone; the orchestrator reads the code itself before writing a plan.
+- `project-navigator`: there is no blocked state. The executor hands back with "交回: 需要回答" (needs an answer) or "交回: 需要操作" (needs an action), the orchestrator relays it, and the same executor continues after your reply. Corrections of details that do not match reality and criteria that cannot be met are recorded in the result and settled at review, as in 1.5.0.
+- `project-navigator`: replies are no longer templated or checked. The rule is a conclusion on the first line and the progress on the second; nothing is sent back for rewriting, and the `Stop` hook is removed.
+- `project-navigator`: commands went from about 30 to 12: `init`, `status`, `ref`, `setup`, `roadmap`, `slice`, `brief`, `milestone`, `decision`, `check`, `finish`, `uninstall`.
+
+### Added
+
+- `project-navigator`: the walking skeleton is enforced. The first slice of the first milestone must change code and run from a real entry point through every planned layer; no other slice can start until it passes review, and it cannot be dropped.
+- `project-navigator`: wiring evidence. The executor writes the call path from the entry point to the new code, and the reviewer traces it independently. A slice whose new code is not wired in fails review and cannot be accepted.
+- `project-navigator`: module organization is a registered project setting, `directories` (one physical directory per module) or `filters` (source files flat in the project directory, modules expressed as Visual Studio virtual filters). `setup` suggests one from the files in the repository and writes the matching wording into `.claude/rules/engineering.md`.
+- `project-navigator`: every code slice carries a "模块安排" (module layout) in its plan (each file's module, layer, and single responsibility, where each new constant or type is defined once, and what is reused) and a "结构核对" (structure check) in its review, six questions covering single source of truth, layering, reuse, and premature shared modules.
+- `project-navigator`: `check --filters` verifies that every source file of a Visual Studio project is assigned to a filter and that files added by the current slice are not placed in physical subdirectories. Its result is included in the review brief.
+- `project-navigator`: the way of verifying is a registered project setting: `auto` (commands the reviewer runs), `manual` (you build or run it yourself), or `measured` (measured in the real environment). With the last two, subagents do not build or run anything, and the criteria that need running are listed as steps for you.
+- `project-navigator`: slices that only produce findings (`findings`), for reverse engineering, measurement, and research. They are interactive by default: the orchestrator session does them directly in conversation and writes each conclusion to `.navigator/findings/`, so tasks that need you at every step no longer go through a subagent.
+- `project-navigator`: `.navigator/backlog.md` for ideas outside the current slice, sorted at each milestone review.
+
+### Removed
+
+- `project-navigator`: work orders, receipts, review records, and the order state machine; about 20 reply types with the reply check; the order review approval record; the checker, researcher, and reader subagents; brainstorm records, the glossary, and the risk and change lists; checkup numbering and the semantic checkup; the standards comparison step; the `evidence` command and source cache; the `model` command; skill self-diagnosis and the `report` command; writing-rule checks; reply buttons; stage numbers 0 to 6; and the document generator (`npm run gen:docs`).
+
+### Upgrading from 1.x
+
+- In a project initialized by 1.x, the skill says that it does not read the old records. With your consent it runs `project-navigator init --archive`, which renames `.navigator/` to `.navigator-1.x/` without deleting anything, and you start again from intake. Until then the plugin's hooks do nothing in that project.
+- To keep the 1.x workflow, pin the plugin to 1.5.0.
+- A project still on 0.x must remove its project-level hooks first, by upgrading with 1.x or by deleting them from `.claude/settings.json`.
+
 ## [1.5.0] - 2026-11-12
 
 ### Changed

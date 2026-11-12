@@ -14,11 +14,11 @@ WayPoint is a [Claude Code](https://code.claude.com) plugin of practical workflo
 
 ## Skills
 
-| Skill               | Command                                    | Purpose                                                                                                                                                                                             | Docs                                                                                                |
-| ------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `commit-message`    | `/waypoint:commit-message [extra request]` | Drafts a Simplified Chinese Conventional Commits message from the actual Git changes, then commits or pushes on request.                                                                            | [Guide](docs/commit-message.en.md)                                                                  |
-| `repo-init`         | `/waypoint:repo-init`                      | Initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files.                                                                                        | [Guide](docs/repo-init.en.md)                                                                       |
-| `project-navigator` | `/waypoint:project-navigator [argument]`   | Guides a large project from a single idea through framing, technology selection, a skeleton, and slice-by-slice delivery; it only plans and reviews, while background executor subagents implement. | [Guide](docs/project-navigator.en.md), [maintainer guide](docs/project-navigator-maintaining.en.md) |
+| Skill               | Command                                    | Purpose                                                                                                                                                                                                                                                    | Docs                                                                                                |
+| ------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `commit-message`    | `/waypoint:commit-message [extra request]` | Drafts a Simplified Chinese Conventional Commits message from the actual Git changes, then commits or pushes on request.                                                                                                                                   | [Guide](docs/commit-message.en.md)                                                                  |
+| `repo-init`         | `/waypoint:repo-init`                      | Initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files.                                                                                                                                               | [Guide](docs/repo-init.en.md)                                                                       |
+| `project-navigator` | `/waypoint:project-navigator [argument]`   | Guides a large project from a single idea through confirmed requirements, a roadmap, a walking skeleton, and delivery one vertical slice at a time, and keeps track of progress; it only plans and reviews, while background executor subagents implement. | [Guide](docs/project-navigator.en.md), [maintainer guide](docs/project-navigator-maintaining.en.md) |
 
 `commit-message` and `repo-init` trigger automatically when you ask for them in plain language, and you can also call them directly with the slash commands above. `project-navigator` runs only when invoked explicitly with its slash command.
 
@@ -31,7 +31,7 @@ Take a new project that is not under version control yet:
 
 From then on, repeat step 2 whenever you finish a change.
 
-To drive a larger project from scratch, run `/waypoint:project-navigator <your requirement>` after step 1, and move forward with the options at the end of each reply. See [Quick start](docs/project-navigator.en.md#quick-start) for a full walkthrough.
+To drive a larger project from scratch, run `/waypoint:project-navigator <your requirement>` after step 1, and move forward as each reply prompts. See [Quick start](docs/project-navigator.en.md#quick-start) for a full walkthrough.
 
 ## Tips
 

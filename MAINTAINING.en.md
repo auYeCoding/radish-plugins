@@ -6,19 +6,19 @@ This guide is for maintainers. It lists what else needs updating when you change
 
 ## Change checklist
 
-| What you changed                                              | What else to update                                                                                                                                        |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any Chinese document                                          | Its English counterpart (`*.en.md`), and the other way around                                                                                              |
-| A skill's behavior (`SKILL.md` or `references/`)              | The skill's Chinese and English guides, the skill summary in the plugin and root READMEs (if its purpose changed), and `Unreleased` in `CHANGELOG.md`      |
-| A skill's `description`                                       | Test automatic triggering again by hand (see [Pre-release manual tests](#pre-release-manual-tests))                                                        |
-| `shared/punctuation.md`                                       | Every skill is affected, so test them all; also run `npm run gen:docs`, because the generated documents of `project-navigator` embed the punctuation rules |
-| The spec, runtime, or document sources of `project-navigator` | See the [project-navigator maintainer guide](plugins/waypoint/docs/project-navigator-maintaining.en.md#change-process)                                     |
-| A new skill                                                   | See [Adding a skill](#adding-a-skill)                                                                                                                      |
-| A new plugin                                                  | See [Adding a plugin](#adding-a-plugin)                                                                                                                    |
-| Anything users will notice in a plugin                        | Release it: bump `version` in `plugin.json`, or users never receive the change                                                                             |
-| The CI job name (`validate.yml`)                              | The required check name in the GitHub branch rules, or no pull request can be merged                                                                       |
-| What the banner shows, such as the skill list                 | Regenerate the PNG and upload the social preview again in the GitHub settings                                                                              |
-| The repository, user, marketplace, or plugin name             | See [Hard-coded names and links](#hard-coded-names-and-links)                                                                                              |
+| What you changed                                        | What else to update                                                                                                                                   |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Any Chinese document                                    | Its English counterpart (`*.en.md`), and the other way around                                                                                         |
+| A skill's behavior (`SKILL.md` or `references/`)        | The skill's Chinese and English guides, the skill summary in the plugin and root READMEs (if its purpose changed), and `Unreleased` in `CHANGELOG.md` |
+| A skill's `description`                                 | Test automatic triggering again by hand (see [Pre-release manual tests](#pre-release-manual-tests))                                                   |
+| `shared/punctuation.md`                                 | Every skill is affected, so test them all                                                                                                             |
+| The spec, runtime, or rule files of `project-navigator` | See the [project-navigator maintainer guide](plugins/waypoint/docs/project-navigator-maintaining.en.md#change-process)                                |
+| A new skill                                             | See [Adding a skill](#adding-a-skill)                                                                                                                 |
+| A new plugin                                            | See [Adding a plugin](#adding-a-plugin)                                                                                                               |
+| Anything users will notice in a plugin                  | Release it: bump `version` in `plugin.json`, or users never receive the change                                                                        |
+| The CI job name (`validate.yml`)                        | The required check name in the GitHub branch rules, or no pull request can be merged                                                                  |
+| What the banner shows, such as the skill list           | Regenerate the PNG and upload the social preview again in the GitHub settings                                                                         |
+| The repository, user, marketplace, or plugin name       | See [Hard-coded names and links](#hard-coded-names-and-links)                                                                                         |
 
 ## Documentation
 
@@ -146,7 +146,7 @@ These settings live on GitHub, not in the repository files. Check them whenever 
 - **After upgrading `@anthropic-ai/claude-code`**, the new validator may report new warnings. CI runs with `--strict`, so warnings fail the build. Fix the plugin files as reported instead of dropping `--strict`.
 - **GitHub Actions** are pinned to full commit SHAs with the version in a comment, and dependabot upgrades them.
 - **Node.js:** CI uses version 24. `engines` in `package.json` requires 22 or later, because the Claude Code npm package does.
-- **Before committing**, run `npm run format`, `npm run validate`, and `npm test`. After changing the spec or document sources of `project-navigator`, run `npm run gen:docs` first. CI runs the same checks, and confirms with `npm run gen:docs -- --check` that the generated documents are in sync.
+- **Before committing**, run `npm run format`, `npm run validate`, and `npm test`. CI runs the same checks.
 
 ## Hard-coded names and links
 
@@ -158,7 +158,7 @@ When the repository moves or something is renamed, replace every occurrence belo
 | User `auYeCoding`                      | `owner` in `marketplace.json`, `author` in `plugin.json`, `.github/CODEOWNERS`, `LICENSE`                                                                                                                                                                                   |
 | Marketplace `radish-plugins`           | `name` in `marketplace.json`, the install, update, and uninstall commands in the READMEs, local testing in `CONTRIBUTING.md`, the banner source                                                                                                                             |
 | Plugin `waypoint`                      | `marketplace.json`, `plugin.json`, the plugin table, commands, and version badge URL in the READMEs, examples in `CONTRIBUTING.md`, examples in the issue forms, the banner source, the subagent and skill names in the `project-navigator` guard (`runtime/lib/guard.mjs`) |
-| State directory `.navigator`           | `runtime/lib/paths.mjs` of `project-navigator`, the allow rules (`runtime/lib/settings.mjs`), its references and guides                                                                                                                                                     |
+| State directory `.navigator`           | `runtime/lib/paths.mjs` of `project-navigator` (including the archive directory name `.navigator-1.x`), the allow rules (`runtime/lib/settings.mjs`), its references and guides                                                                                             |
 | Command `project-navigator`            | The plugin's `bin/project-navigator` and `bin/project-navigator.cmd`, `COMMAND_NAME` in `runtime/lib/paths.mjs`, the allow rules, `allowed-tools` in `SKILL.md`, and its references                                                                                         |
 | Code of Conduct contact email          | `CODE_OF_CONDUCT.md`                                                                                                                                                                                                                                                        |
 

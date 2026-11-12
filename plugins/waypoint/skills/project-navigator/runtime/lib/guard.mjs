@@ -1,10 +1,9 @@
 /**
  * @file 写入守卫: 只看写入类工具的目标路径, 四条规则.
  *
- * 1. 任何会话与子代理都不能直接写状态文件与脚本生成的视图文件.
- * 2. 核对与验收子代理不能写任何文件.
- * 3. 执行子代理在 `.navigator/` 下只能写当前工单的回执与证据文件; 只产出记录的
- *    工单 (运行检查与分析) 不能写业务文件.
+ * 1. 任何会话与子代理都不能直接写状态文件与脚本生成的路线视图.
+ * 2. 验收子代理不能写任何文件.
+ * 3. 实现子代理在 `.navigator/` 下只能写进行中的切片文件与结论目录.
  * 4. 编排会话不能写 `.navigator/` 之外的文件.
  *
  * 命令行与其它工具不检查: 守卫只管不会误伤正常工作的几条边界, 其余靠技能规则.
@@ -12,18 +11,13 @@
  */
 
 import {
+  FINDINGS_DIRECTORY,
   GENERATED_FILES,
   NAVIGATOR_DIRECTORY,
   isUnderDirectory,
-  orderArtifactsPath,
-  orderFilePath,
   projectRelativePath,
   relativePathsEqual,
 } from "./paths.mjs";
-import {
-  ISSUED_ORDER_STATUS,
-  isRecordOnlyOrderKind,
-} from "./workflow-orders.mjs";
 
 /**
  * 会写入文件的工具名.
@@ -38,24 +32,12 @@ export const WRITE_TOOLS = Object.freeze([
 
 /**
  * 插件自带的子代理类型.
- * @type {Readonly<{reader: string, researcher: string, checker: string, reviewer: string, executor: string}>}
+ * @type {Readonly<{executor: string, reviewer: string}>}
  */
 export const SUBAGENT_TYPES = Object.freeze({
-  reader: "waypoint:navigator-reader",
-  researcher: "waypoint:navigator-researcher",
-  checker: "waypoint:navigator-checker",
-  reviewer: "waypoint:navigator-reviewer",
   executor: "waypoint:navigator-executor",
+  reviewer: "waypoint:navigator-reviewer",
 });
-
-/**
- * 只读的子代理类型: 可以运行命令取证, 不能写任何文件.
- * @type {readonly string[]}
- */
-const READ_ONLY_SUBAGENT_TYPES = Object.freeze([
-  SUBAGENT_TYPES.checker,
-  SUBAGENT_TYPES.reviewer,
-]);
 
 /**
  * 生成提交消息并提交的技能.
@@ -68,42 +50,25 @@ export const COMMIT_SKILL = "waypoint:commit-message";
  * @type {string}
  */
 const GENERATED_REASON =
-  "这个文件由插件命令生成: 状态只用插件命令修改, 推进路线与风险清单随状态自动更新.";
+  "这个文件由插件命令生成: 状态只用插件命令修改, 路线视图随状态自动更新.";
 
 /**
- * 核对与验收子代理写文件时的拒绝理由.
+ * 验收子代理写文件时的拒绝理由.
  * @type {string}
  */
-const READ_ONLY_REASON =
-  "核对与验收子代理只读, 不写任何文件; 只报告事实与证据.";
+const REVIEWER_REASON = "验收子代理只读, 不写任何文件; 只报告事实与证据.";
 
 /**
- * 执行子代理写本工单回执与证据文件之外的编排记录时的拒绝理由.
+ * 实现子代理写其它编排记录时的拒绝理由.
  * @type {string}
  */
-const EXECUTOR_RECORD_REASON =
-  ".navigator/ 下只能写本工单的回执, 以及本工单文件夹 artifacts/ 下的证据文件; 其它文件是编排记录, 执行中的发现写进回执.";
-
-/**
- * 工单不在执行中时, 执行子代理改动业务文件的拒绝理由.
- * @type {string}
- */
-const EXECUTOR_INACTIVE_REASON =
-  "当前工单不在执行中 (已结束, 验收中, 受阻或被撤回修改), 不能再改动业务文件. 写进回执, 交回编排会话.";
-
-/**
- * 只产出记录的工单的执行子代理改动业务文件时的拒绝理由.
- * @type {string}
- */
-const EXECUTOR_RECORD_ONLY_REASON =
-  "本工单是运行检查或分析工单, 只产出记录: 只能写本工单的回执, 以及本工单文件夹 artifacts/ 下的文档, 脚本等证据文件, 不能改动业务文件与项目配置. 确实需要改代码时, 写进回执, 由编排会话另发实现工单.";
+const EXECUTOR_REASON = `${NAVIGATOR_DIRECTORY}/ 下只能写进行中的切片文件与 ${FINDINGS_DIRECTORY}/ 下的结论文件; 其它文件是编排记录, 需要改动时写进执行结果, 交回编排会话.`;
 
 /**
  * 编排会话写业务文件时的拒绝理由.
  * @type {string}
  */
-const ORCHESTRATOR_REASON =
-  "编排会话只写 .navigator/ 下的编排记录, 不写业务代码与项目配置; 需要改动时发布工单, 交给执行子代理.";
+const ORCHESTRATOR_REASON = `编排会话只写 ${NAVIGATOR_DIRECTORY}/ 下的编排记录, 不写业务代码与项目配置; 需要改动时排进切片, 交给实现子代理.`;
 
 /**
  * @typedef {object} WriteRequest 一次写入的判定输入.
@@ -111,7 +76,7 @@ const ORCHESTRATOR_REASON =
  * @property {Record<string, any>} toolInput 工具参数.
  * @property {boolean} isSubagent 调用是否来自子代理.
  * @property {string | undefined} agentType 子代理类型.
- * @property {import("./state.mjs").OrderState | null} order 当前工单.
+ * @property {string | null} sliceFile 进行中的切片文件的项目相对路径; 没有时为 null.
  * @property {() => boolean} isOrchestrator 判断主会话是否为编排会话; 只在需要时调用.
  */
 
@@ -139,49 +104,34 @@ export function decideWrite(request) {
   if (GENERATED_FILES.some((file) => relativePathsEqual(relativePath, file))) {
     return deny(GENERATED_REASON);
   }
-  if (READ_ONLY_SUBAGENT_TYPES.includes(request.agentType ?? "")) {
-    return deny(READ_ONLY_REASON);
+  if (request.agentType === SUBAGENT_TYPES.reviewer) {
+    return deny(REVIEWER_REASON);
   }
+  const isRecord = isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY);
   if (request.agentType === SUBAGENT_TYPES.executor) {
-    return decideExecutorWrite(relativePath, request.order);
+    return !isRecord || isExecutorRecord(relativePath, request.sliceFile)
+      ? allow()
+      : deny(EXECUTOR_REASON);
   }
-  if (request.isSubagent) {
+  if (request.isSubagent || isRecord) {
     return allow();
   }
-  if (
-    !isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY) &&
-    request.isOrchestrator()
-  ) {
-    return deny(ORCHESTRATOR_REASON);
-  }
-  return allow();
+  return request.isOrchestrator() ? deny(ORCHESTRATOR_REASON) : allow();
 }
 
 /**
- * 判定执行子代理的写入: `.navigator/` 下只能写当前工单的回执与证据文件;
- * 业务文件要求工单在执行中, 且不是只产出记录的工单.
+ * 判断 `.navigator/` 下的路径是否是实现子代理可以写的: 进行中的切片文件, 或
+ * 结论目录下的文件.
  *
  * @param {string} relativePath 目标的项目相对路径.
- * @param {import("./state.mjs").OrderState | null} order 当前工单.
- * @returns {GuardDecision} 判定结果.
+ * @param {string | null} sliceFile 进行中的切片文件.
+ * @returns {boolean} 可以写时返回 true.
  */
-function decideExecutorWrite(relativePath, order) {
-  if (isUnderDirectory(relativePath, NAVIGATOR_DIRECTORY)) {
-    const isOwnRecord =
-      order !== null &&
-      (relativePathsEqual(
-        relativePath,
-        orderFilePath(order.folder, "receipt"),
-      ) ||
-        isUnderDirectory(relativePath, orderArtifactsPath(order.folder)));
-    return isOwnRecord ? allow() : deny(EXECUTOR_RECORD_REASON);
-  }
-  if (order === null || order.status !== ISSUED_ORDER_STATUS) {
-    return deny(EXECUTOR_INACTIVE_REASON);
-  }
-  return isRecordOnlyOrderKind(order.kind)
-    ? deny(EXECUTOR_RECORD_ONLY_REASON)
-    : allow();
+function isExecutorRecord(relativePath, sliceFile) {
+  return (
+    isUnderDirectory(relativePath, FINDINGS_DIRECTORY) ||
+    (sliceFile !== null && relativePathsEqual(relativePath, sliceFile))
+  );
 }
 
 /**

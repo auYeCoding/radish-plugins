@@ -1,91 +1,75 @@
 /**
- * @file precheck-brief, exec-brief, review-brief, research-brief 命令: 输出派子代理
- * 时使用的固定提示词.
+ * @file brief 命令: 输出实现子代理与验收子代理的委派提示词.
  *
- * 提示词由脚本生成, 编排会话原样使用, 不在其中加入倾向性说明.
+ * 用法: brief exec | brief review. 提示词只对进行中的切片生成, 编排会话原样使用.
  */
 
-import {
-  RESEARCH_FRAME,
-  buildExecutorBrief,
-  buildPrecheckBrief,
-  buildReviewBrief,
-} from "../lib/briefs.mjs";
-import { orderCheckCommands } from "../lib/code-checks.mjs";
-import { readOrderText } from "../lib/order-approval.mjs";
-import { orderFilePath } from "../lib/paths.mjs";
-import { criteriaTableSpec } from "../lib/review-record.mjs";
+import { buildExecutorBrief, buildReviewBrief } from "../lib/briefs.mjs";
+import { runFilterCheck } from "../lib/filters.mjs";
+import { activeSlice } from "../lib/roadmap.mjs";
+import { loadSliceSpec } from "../lib/slice-file.mjs";
+import { SLICE_STATUSES, SLICE_STATUS_LABELS } from "../lib/state.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
-import {
-  ISSUED_ORDER_STATUS,
-  REVIEWABLE_ORDER_STATUSES,
-} from "../lib/workflow-orders.mjs";
 import { openProject } from "./support.mjs";
 
 /**
- * 执行提示词命令.
- *
- * @param {object} options 命令参数.
- * @param {"precheck-brief" | "exec-brief" | "review-brief" | "research-brief"} options.command 命令名.
- * @param {string} options.cwd 会话工作目录.
- * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 没有当前工单, 工单不在需要的状态, 或命令未知时.
+ * 提示词的种类.
+ * @type {Readonly<{exec: string, review: string}>}
  */
-export function runBrief({ command, cwd }) {
-  const context = openProject(cwd);
-  if (command === "research-brief") {
-    return RESEARCH_FRAME.split("\n");
-  }
-  const order = context.state.order;
-  if (order === null) {
-    throw new WorkflowError("当前没有工单.");
-  }
-  switch (command) {
-    case "precheck-brief":
-      assertPrecheckable(context.projectRoot, order);
-      return buildPrecheckBrief({
-        projectRoot: context.projectRoot,
-        order,
-      }).split("\n");
-    case "exec-brief":
-      if (order.status !== ISSUED_ORDER_STATUS) {
-        throw new WorkflowError(
-          `工单 ${order.id} 处于 ${order.status}, 发布 (order set issued) 之后才能派执行子代理.`,
-        );
-      }
-      return buildExecutorBrief({
-        projectRoot: context.projectRoot,
-        order,
-      }).split("\n");
-    case "review-brief":
-      return buildReviewBrief({
-        projectRoot: context.projectRoot,
-        order,
-        checkCommands: orderCheckCommands(context.state),
-        criteriaTable: criteriaTableSpec(context.spec),
-      }).split("\n");
-    default:
-      throw new WorkflowError(`未知命令 ${command}.`);
-  }
-}
+const BRIEF_KINDS = Object.freeze({ exec: "exec", review: "review" });
 
 /**
- * 核对当前工单可以做发布前核对: 还没有发布, 工单文件已写好.
- *
- * @param {string} projectRoot 项目根目录.
- * @param {import("../lib/state.mjs").OrderState} order 当前工单.
- * @returns {void}
- * @throws {WorkflowError} 工单已发布, 或工单文件还没有写入时.
+ * 每种提示词要求切片所处的状态.
+ * @type {Readonly<Record<string, string>>}
  */
-function assertPrecheckable(projectRoot, order) {
-  if (!REVIEWABLE_ORDER_STATUSES.includes(order.status)) {
+const REQUIRED_STATUSES = Object.freeze({
+  [BRIEF_KINDS.exec]: SLICE_STATUSES.running,
+  [BRIEF_KINDS.review]: SLICE_STATUSES.reviewing,
+});
+
+/**
+ * 执行 brief 命令.
+ *
+ * @param {import("./handlers.mjs").CommandInvocation} invocation 命令调用.
+ * @returns {string[]} 输出各行.
+ * @throws {WorkflowError} 种类未知, 或进行中的切片不在对应状态时.
+ */
+export function runBrief({ positionals, cwd }) {
+  const [kind] = positionals;
+  if (kind === undefined || !Object.hasOwn(REQUIRED_STATUSES, kind)) {
     throw new WorkflowError(
-      `工单 ${order.id} 处于 ${order.status}, 发布前核对只用于 ${REVIEWABLE_ORDER_STATUSES.join(", ")} 状态的工单.`,
+      `brief 的用法: brief <${Object.keys(REQUIRED_STATUSES).join(" | ")}>.`,
     );
   }
-  if (readOrderText(projectRoot, order) === undefined) {
+  const { projectRoot, state } = openProject(cwd);
+  const slice = activeSlice(state)?.slice;
+  const required = REQUIRED_STATUSES[kind];
+  if (
+    slice === undefined ||
+    state.current === null ||
+    slice.status !== required
+  ) {
     throw new WorkflowError(
-      `工单文件 ${orderFilePath(order.folder, "order")} 还没有写入.`,
+      `brief ${kind} 要求进行中的切片处于 "${SLICE_STATUS_LABELS[required]}"${slice === undefined ? "; 现在没有进行中的切片" : `; 切片 ${slice.id} 现在是 "${SLICE_STATUS_LABELS[slice.status]}"`}.`,
     );
   }
+  const context = {
+    projectRoot,
+    slice,
+    current: state.current,
+    project: state.project,
+    spec: loadSliceSpec(),
+  };
+  if (kind === BRIEF_KINDS.review) {
+    return buildReviewBrief({
+      ...context,
+      filterLines: runFilterCheck(projectRoot, state),
+    }).split("\n");
+  }
+  if (slice.interactive) {
+    throw new WorkflowError(
+      `切片 ${slice.id} 是交互式切片, 在本会话执行, 不派实现子代理.`,
+    );
+  }
+  return buildExecutorBrief(context).split("\n");
 }

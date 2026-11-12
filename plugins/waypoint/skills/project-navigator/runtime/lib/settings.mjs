@@ -1,5 +1,5 @@
 /**
- * @file 在项目配置中合并与移除本技能的放行规则, 并清理 1.0.0 之前的项目级 hook.
+ * @file 在项目配置中合并与移除本技能的放行规则.
  *
  * hook 由插件的 `hooks/hooks.json` 提供, 不写进项目配置. 项目配置中只放放行规则,
  * 同时写入 `.claude/settings.json` 与本机的 `.claude/settings.local.json`: 入库的
@@ -14,12 +14,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import {
-  COMMAND_NAME,
-  LEGACY_COMMAND_PATH,
-  LEGACY_HOOK_ENTRY_ARGUMENT,
-  NAVIGATOR_DIRECTORY,
-} from "./paths.mjs";
+import { COMMAND_NAME, NAVIGATOR_DIRECTORY } from "./paths.mjs";
 
 /**
  * 放行规则: 插件命令 (两种 shell 各一条), 以及状态目录中的文件写入.
@@ -30,15 +25,6 @@ export const NAVIGATOR_PERMISSION_RULES = Object.freeze([
   `Bash(${COMMAND_NAME} *)`,
   `PowerShell(${COMMAND_NAME} *)`,
   `Edit(${NAVIGATOR_DIRECTORY}/**)`,
-]);
-
-/**
- * 1.0.0 之前写入的放行规则, 升级与卸载时移除.
- * @type {readonly string[]}
- */
-const LEGACY_PERMISSION_RULES = Object.freeze([
-  `Bash(node ${LEGACY_COMMAND_PATH} *)`,
-  `PowerShell(node ${LEGACY_COMMAND_PATH} *)`,
 ]);
 
 /**
@@ -78,30 +64,30 @@ export function writeSettingsFile(projectRoot, relativeFile, settings) {
 }
 
 /**
- * 返回合并了本技能放行规则的新配置, 同时去掉 1.0.0 之前的放行规则,
- * 不修改传入对象.
+ * 返回合并了本技能放行规则的新配置, 不修改传入对象.
  *
  * @param {Record<string, any>} settings 原配置.
  * @returns {Record<string, any>} 新配置.
  */
 export function mergeNavigatorPermissions(settings) {
-  const allow = (settings.permissions?.allow ?? []).filter(
-    (rule) => !LEGACY_PERMISSION_RULES.includes(rule),
-  );
-  for (const rule of NAVIGATOR_PERMISSION_RULES) {
-    if (!allow.includes(rule)) {
-      allow.push(rule);
-    }
-  }
+  const existing = settings.permissions?.allow ?? [];
   return {
     ...settings,
-    permissions: { ...(settings.permissions ?? {}), allow },
+    permissions: {
+      ...(settings.permissions ?? {}),
+      allow: [
+        ...existing,
+        ...NAVIGATOR_PERMISSION_RULES.filter(
+          (rule) => !existing.includes(rule),
+        ),
+      ],
+    },
   };
 }
 
 /**
- * 返回移除了本技能放行规则 (含 1.0.0 之前的规则) 的新配置, 不修改传入对象.
- * 移除后为空的 `allow` 与 `permissions` 字段一并删除.
+ * 返回移除了本技能放行规则的新配置, 不修改传入对象. 移除后为空的 `allow` 与
+ * `permissions` 字段一并删除.
  *
  * @param {Record<string, any>} settings 原配置.
  * @returns {Record<string, any>} 新配置.
@@ -111,47 +97,21 @@ export function removeNavigatorPermissions(settings) {
     return settings;
   }
   const allow = (settings.permissions.allow ?? []).filter(
-    (rule) =>
-      !NAVIGATOR_PERMISSION_RULES.includes(rule) &&
-      !LEGACY_PERMISSION_RULES.includes(rule),
+    (rule) => !NAVIGATOR_PERMISSION_RULES.includes(rule),
   );
   const permissions = replaceField(settings.permissions, "allow", allow);
   return replaceField(settings, "permissions", permissions);
 }
 
 /**
- * 判断配置中是否还有 1.0.0 之前写入的项目级 hook.
+ * 判断配置中是否已有本技能的全部放行规则.
  *
  * @param {Record<string, any>} settings 配置对象.
- * @returns {boolean} 有时返回 true.
+ * @returns {boolean} 全部写入时返回 true.
  */
-export function hasLegacyHooks(settings) {
-  return Object.values(settings.hooks ?? {}).some((groups) =>
-    groups.some((group) => (group.hooks ?? []).some(isLegacyHook)),
-  );
-}
-
-/**
- * 返回移除了 1.0.0 之前项目级 hook 的新配置, 不修改传入对象. 移除后为空的
- * 分组, 事件与 `hooks` 字段一并删除.
- *
- * @param {Record<string, any>} settings 原配置.
- * @returns {Record<string, any>} 新配置.
- */
-export function removeLegacyHooks(settings) {
-  const kept = {};
-  for (const [event, groups] of Object.entries(settings.hooks ?? {})) {
-    const remaining = groups
-      .map((group) => ({
-        ...group,
-        hooks: (group.hooks ?? []).filter((hook) => !isLegacyHook(hook)),
-      }))
-      .filter((group) => group.hooks.length > 0);
-    if (remaining.length > 0) {
-      kept[event] = remaining;
-    }
-  }
-  return replaceField(settings, "hooks", kept);
+export function hasNavigatorPermissions(settings) {
+  const allow = settings.permissions?.allow ?? [];
+  return NAVIGATOR_PERMISSION_RULES.every((rule) => allow.includes(rule));
 }
 
 /**
@@ -173,18 +133,4 @@ function replaceField(source, field, value) {
     result[field] = value;
   }
   return result;
-}
-
-/**
- * 判断一个 hook 命令是否是 1.0.0 之前写入的项目级 hook.
- *
- * @param {Record<string, any>} hook hook 命令对象.
- * @returns {boolean} 是时返回 true.
- */
-function isLegacyHook(hook) {
-  return (
-    hook.type === "command" &&
-    Array.isArray(hook.args) &&
-    hook.args[0] === LEGACY_HOOK_ENTRY_ARGUMENT
-  );
 }

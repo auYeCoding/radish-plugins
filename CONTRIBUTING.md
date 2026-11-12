@@ -22,7 +22,7 @@ plugins/<plugin>/                 One directory per plugin, installed and versio
   docs/<skill>.md, <skill>.en.md  Detailed guide for each skill, in Simplified Chinese and English
   README.md, README.en.md         Plugin overview and skill index, in Simplified Chinese and English
   CHANGELOG.md                    Plugin changelog
-scripts/                          Repository tooling, including the project-navigator document generator
+scripts/                          Repository tooling
 tests/                            Automated tests, run with npm test
 .github/                          Issue forms, pull request template, CI workflows, and README assets
 ```
@@ -55,7 +55,7 @@ Prerequisites: Git, Node.js 22 or later, and [Claude Code](https://code.claude.c
    ```
 
 2. Make your change and [test it locally](#testing-locally).
-3. Format, validate, and test. If you changed the `project-navigator` spec or the sources in `scripts/navigator-docs/`, run `npm run gen:docs` first:
+3. Format, validate, and test:
 
    ```bash
    npm run format
@@ -67,7 +67,7 @@ Prerequisites: Git, Node.js 22 or later, and [Claude Code](https://code.claude.c
 5. Push the branch to your fork and open a pull request against `main`. Fill in the pull request template.
 6. Keep the pull request focused on one change. If `main` moves ahead, rebase your branch onto `upstream/main` instead of merging it in.
 
-CI runs the same format, validation, and test checks on every pull request, and checks that the generated `project-navigator` documents are in sync. A pull request can be merged only after these checks pass, and only a maintainer can merge it.
+CI runs the same format, validation, and test checks on every pull request. A pull request can be merged only after these checks pass, and only a maintainer can merge it.
 
 ## Testing locally
 

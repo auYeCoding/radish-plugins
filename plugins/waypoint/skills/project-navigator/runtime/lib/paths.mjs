@@ -3,7 +3,7 @@
  *
  * 运行脚本只在插件目录中运行: 命令经插件 `bin/` 中的 `project-navigator` 调用,
  * hook 由插件的 `hooks/hooks.json` 调用. 所有相对路径都在这里定义, 其它模块不写
- * 路径字面量. 以 LEGACY 开头的常量是 1.0.0 之前写进项目的内容, 只供升级时清理.
+ * 路径字面量.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -23,60 +23,67 @@ export const COMMAND_NAME = "project-navigator";
 export const NAVIGATOR_DIRECTORY = ".navigator";
 
 /**
- * 状态目录中各子路径, 相对于状态目录.
- * @type {Readonly<Record<string, string>>}
+ * 1.x 的状态目录归档后的目录名, 相对于项目根目录.
+ * @type {string}
  */
-export const NAVIGATOR_ENTRIES = Object.freeze({
-  state: "state.json",
-  plan: "plan",
-  orders: "orders",
-  drafts: "drafts",
-  ignoreFile: ".gitignore",
-});
+export const ARCHIVE_DIRECTORY = ".navigator-1.x";
 
 /**
  * 状态文件, 相对于项目根目录.
  * @type {string}
  */
-export const STATE_FILE = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.state}`;
+export const STATE_FILE = `${NAVIGATOR_DIRECTORY}/state.json`;
 
 /**
  * 状态目录自己的 `.gitignore`, 相对于项目根目录; 由 init 写入.
  * @type {string}
  */
-export const NAVIGATOR_IGNORE_FILE = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.ignoreFile}`;
+export const NAVIGATOR_IGNORE_FILE = `${NAVIGATOR_DIRECTORY}/.gitignore`;
+
+/**
+ * 路线视图, 相对于项目根目录; 由脚本从状态文件整份生成.
+ * @type {string}
+ */
+export const ROADMAP_FILE = `${NAVIGATOR_DIRECTORY}/roadmap.md`;
+
+/**
+ * 需求文件, 相对于项目根目录; 由编排会话在立项时写入.
+ * @type {string}
+ */
+export const REQUIREMENTS_FILE = `${NAVIGATOR_DIRECTORY}/requirements.md`;
+
+/**
+ * 决策记录, 相对于项目根目录; 由 decision 命令追加条目.
+ * @type {string}
+ */
+export const DECISIONS_FILE = `${NAVIGATOR_DIRECTORY}/decisions.md`;
+
+/**
+ * 待办文件, 相对于项目根目录; 记录当前切片之外的想法.
+ * @type {string}
+ */
+export const BACKLOG_FILE = `${NAVIGATOR_DIRECTORY}/backlog.md`;
+
+/**
+ * 切片文件所在目录, 相对于项目根目录.
+ * @type {string}
+ */
+export const SLICES_DIRECTORY = `${NAVIGATOR_DIRECTORY}/slices`;
+
+/**
+ * 只产出结论的切片存放产物的目录, 相对于项目根目录.
+ * @type {string}
+ */
+export const FINDINGS_DIRECTORY = `${NAVIGATOR_DIRECTORY}/findings`;
 
 /**
  * 草稿目录, 相对于项目根目录; 编排会话在这里写命令的输入, 不入库.
  * @type {string}
  */
-export const DRAFTS_DIRECTORY = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.drafts}`;
+export const DRAFTS_DIRECTORY = `${NAVIGATOR_DIRECTORY}/drafts`;
 
 /**
- * 工单文件夹所在目录, 相对于项目根目录.
- * @type {string}
- */
-export const ORDERS_DIRECTORY = `${NAVIGATOR_DIRECTORY}/${NAVIGATOR_ENTRIES.orders}`;
-
-/**
- * 工单文件夹中各文件的文件名.
- * @type {Readonly<{order: string, receipt: string, review: string}>}
- */
-export const ORDER_FILES = Object.freeze({
-  order: "order.md",
-  receipt: "receipt.md",
-  review: "review.md",
-});
-
-/**
- * 工单文件夹中存放证据文件的子目录名: 执行子代理留下的抓包原文, 复现脚本等
- * 供验收独立复核的产物.
- * @type {string}
- */
-export const ORDER_ARTIFACTS_DIRECTORY = "artifacts";
-
-/**
- * 项目规范文件, 相对于项目根目录. 项目内所有会话自动加载, 由 standards 命令写入.
+ * 项目规范文件, 相对于项目根目录. 项目内所有会话自动加载, 由 setup 命令写入.
  * @type {string}
  */
 export const ENGINEERING_RULES_FILE = ".claude/rules/engineering.md";
@@ -94,118 +101,37 @@ export const PROJECT_LOCAL_SETTINGS_FILE = ".claude/settings.local.json";
 export const PROJECT_SETTINGS_FILE = ".claude/settings.json";
 
 /**
- * 推进路线文件, 相对于项目根目录; 由脚本从状态文件整份生成.
- * @type {string}
- */
-export const ROADMAP_FILE = ".navigator/plan/roadmap.md";
-
-/**
- * 风险清单文件, 相对于项目根目录; 由脚本从状态文件整份生成.
- * @type {string}
- */
-export const RISKS_FILE = ".navigator/plan/risks.md";
-
-/**
- * 术语表, 相对于项目根目录; init 写入流程术语, 编排会话追加项目术语.
- * @type {string}
- */
-export const GLOSSARY_FILE = ".navigator/plan/glossary.md";
-
-/**
  * 由脚本生成, 禁止用工具直接编辑的文件, 相对于项目根目录.
  * @type {readonly string[]}
  */
-export const GENERATED_FILES = Object.freeze([
-  STATE_FILE,
-  ROADMAP_FILE,
-  RISKS_FILE,
-]);
+export const GENERATED_FILES = Object.freeze([STATE_FILE, ROADMAP_FILE]);
 
 /**
- * 工单审阅记录在运行期登记目录中的文件名: 用户在 "工单审阅" 中对哪张工单的
- * 哪一版内容作出了选择.
- * @type {string}
- */
-export const ORDER_APPROVAL_FILE = "order-approval.json";
-
-/**
- * 技能异常记录在运行期登记目录中的文件名: 脚本自己发现的内部错误, hook 错误,
- * 状态不自洽等, 供生成问题报告.
- * @type {string}
- */
-export const DIAGNOSTICS_FILE = "diagnostics.json";
-
-/**
- * 最近一次给出的下一动作在运行期登记目录中的文件名, 用来发现 "照着做却被拒"
- * 与原地打转.
- * @type {string}
- */
-export const GUIDANCE_FILE = "guidance.json";
-
-/**
- * 问题报告所在目录, 相对于项目根目录. 在草稿目录之下, 不入库.
- * @type {string}
- */
-export const REPORTS_DIRECTORY = `${DRAFTS_DIRECTORY}/reports`;
-
-/**
- * 运行期登记信息在 Git 目录中的子目录名. 不入库, 也不受回退影响.
- * @type {string}
- */
-export const RUNTIME_REGISTRY_DIRECTORY = "navigator";
-
-/**
- * 源码证据缓存在运行期登记目录中的子目录名: 每个第三方仓库一个裸仓库.
- * 放在 Git 目录中, 不进入工作区, 检查工具与格式化工具都扫不到.
- * @type {string}
- */
-export const EVIDENCE_CACHE_DIRECTORY = "evidence";
-
-/**
- * 1.0.0 之前复制进项目的运行脚本目录, 相对于项目根目录.
- * @type {string}
- */
-export const LEGACY_BIN_DIRECTORY = ".navigator/bin";
-
-/**
- * 1.0.0 之前复制进项目的执行手册目录, 相对于项目根目录.
- * @type {string}
- */
-export const LEGACY_GUIDE_DIRECTORY = ".navigator/guide";
-
-/**
- * 1.0.0 之前的项目级 hook 引用的入口脚本, 用于从项目配置中移除这些 hook.
- * @type {string}
- */
-export const LEGACY_HOOK_ENTRY_ARGUMENT =
-  "${CLAUDE_PROJECT_DIR}/.navigator/bin/runtime/hook.mjs";
-
-/**
- * 1.0.0 之前的放行规则中引用的项目内命令路径.
- * @type {string}
- */
-export const LEGACY_COMMAND_PATH = ".navigator/bin/runtime/navigator.mjs";
-
-/**
- * 1.0.0 之前写在运行期登记目录中的文件与目录: 会话登记, 待并入快照的写入,
- * 用户消息记录, 提交结算记录, 自检请求与心跳.
+ * 技能产物的范围: 状态目录与插件管理的项目配置. 草稿由状态目录的忽略规则排除.
  * @type {readonly string[]}
  */
-export const LEGACY_REGISTRY_ENTRIES = Object.freeze([
-  "orchestrator.json",
-  "sessions",
-  "pending-writes",
-  "prompts.json",
-  "commit-settlement.json",
-  "probe.json",
-  "probe-request.json",
+export const COMMITTED_PATHSPECS = Object.freeze([
+  NAVIGATOR_DIRECTORY,
+  PROJECT_SETTINGS_FILE,
+  ENGINEERING_RULES_FILE,
 ]);
 
 /**
- * 1.0.0 之前存放状态目录快照的隐藏引用.
- * @type {string}
+ * 必须能入库的路径, 用于检查项目的忽略规则; 切片与结论各取一个示例位置.
+ * @type {readonly string[]}
  */
-export const LEGACY_SNAPSHOT_REF = "refs/navigator/snapshots";
+export const REQUIRED_TRACKED_PATHS = Object.freeze([
+  NAVIGATOR_IGNORE_FILE,
+  STATE_FILE,
+  ROADMAP_FILE,
+  REQUIREMENTS_FILE,
+  DECISIONS_FILE,
+  BACKLOG_FILE,
+  `${SLICES_DIRECTORY}/0001-sample.md`,
+  `${FINDINGS_DIRECTORY}/sample.md`,
+  PROJECT_SETTINGS_FILE,
+  ENGINEERING_RULES_FILE,
+]);
 
 /**
  * 技能目录的绝对路径, 由本文件位置 (`<技能目录>/runtime/lib/paths.mjs`) 推出.
@@ -218,10 +144,10 @@ export const SKILL_ROOT = path.resolve(
 );
 
 /**
- * 模板规格文件的绝对路径.
+ * 切片文件规格的绝对路径.
  * @type {string}
  */
-export const SPEC_FILE = path.join(SKILL_ROOT, "spec", "templates.json");
+export const SLICE_SPEC_FILE = path.join(SKILL_ROOT, "spec", "slice.json");
 
 /**
  * 通用工程规范默认包的绝对路径.
@@ -234,16 +160,28 @@ export const STANDARDS_FILE = path.join(
 );
 
 /**
- * 技能目录中执行手册的绝对路径, 由生成脚本产出.
+ * 实现手册的绝对路径.
  * @type {string}
  */
-export const GUIDE_SOURCE_FILE = path.join(SKILL_ROOT, "guide", "executor.md");
+export const GUIDE_FILE = path.join(SKILL_ROOT, "guide", "executor.md");
 
 /**
- * 技能目录中参考文件所在目录的绝对路径.
+ * 参考文件所在目录的绝对路径.
  * @type {string}
  */
 export const REFERENCES_DIRECTORY = path.join(SKILL_ROOT, "references");
+
+/**
+ * 插件共享的标点规则文件的绝对路径.
+ * @type {string}
+ */
+export const PUNCTUATION_FILE = path.resolve(
+  SKILL_ROOT,
+  "..",
+  "..",
+  "shared",
+  "punctuation.md",
+);
 
 /**
  * 当前平台的文件系统是否不区分大小写.
@@ -252,36 +190,14 @@ export const REFERENCES_DIRECTORY = path.join(SKILL_ROOT, "references");
 const IS_CASE_INSENSITIVE = process.platform === "win32";
 
 /**
- * 返回状态目录中某个条目的绝对路径.
+ * 返回切片文件的项目相对路径.
  *
- * @param {string} projectRoot 项目根目录的绝对路径.
- * @param {keyof typeof NAVIGATOR_ENTRIES} [entry] 条目名; 省略时返回状态目录本身.
- * @returns {string} 绝对路径.
- */
-export function navigatorPath(projectRoot, entry) {
-  const base = path.join(projectRoot, NAVIGATOR_DIRECTORY);
-  return entry === undefined ? base : path.join(base, NAVIGATOR_ENTRIES[entry]);
-}
-
-/**
- * 返回工单文件夹中某个文件的项目相对路径.
- *
- * @param {string} folder 工单文件夹名, 例如 "0007-export-csv".
- * @param {keyof typeof ORDER_FILES} kind 文件种类.
+ * @param {string} id 切片编号, 例如 "0003".
+ * @param {string} slug 短名, 例如 "export-csv".
  * @returns {string} 以正斜杠分隔的项目相对路径.
  */
-export function orderFilePath(folder, kind) {
-  return `${ORDERS_DIRECTORY}/${folder}/${ORDER_FILES[kind]}`;
-}
-
-/**
- * 返回工单文件夹中证据文件目录的项目相对路径.
- *
- * @param {string} folder 工单文件夹名, 例如 "0007-export-csv".
- * @returns {string} 以正斜杠分隔的项目相对路径, 不带结尾斜杠.
- */
-export function orderArtifactsPath(folder) {
-  return `${ORDERS_DIRECTORY}/${folder}/${ORDER_ARTIFACTS_DIRECTORY}`;
+export function sliceFilePath(id, slug) {
+  return `${SLICES_DIRECTORY}/${id}-${slug}.md`;
 }
 
 /**
@@ -328,29 +244,6 @@ export function gitCommonDirectory(worktreeRoot) {
     return gitDirectory;
   }
   return path.resolve(gitDirectory, readFileSync(commonFile, "utf8").trim());
-}
-
-/**
- * 返回运行期登记目录的绝对路径.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @returns {string} 登记目录的绝对路径.
- */
-export function registryDirectory(worktreeRoot) {
-  return path.join(
-    gitCommonDirectory(worktreeRoot),
-    RUNTIME_REGISTRY_DIRECTORY,
-  );
-}
-
-/**
- * 返回源码证据缓存目录的绝对路径.
- *
- * @param {string} worktreeRoot 工作区根目录.
- * @returns {string} 缓存目录的绝对路径.
- */
-export function evidenceCacheDirectory(worktreeRoot) {
-  return path.join(registryDirectory(worktreeRoot), EVIDENCE_CACHE_DIRECTORY);
 }
 
 /**
