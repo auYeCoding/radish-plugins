@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-12
+
 ### Fixed
 
 - `project-navigator`: answering "工单审阅" (order review) with anything other than A discarded the review, so withdrawing that message and answering "发布工单" (issue the order) left the order unissuable until it was reviewed again. The review is now kept: a later message that starts with "发布工单" approves the reviewed content as long as the order file is unchanged; a bare letter counts only right after the review. The refusal message also says that running the `reply` command alone is not a review.
@@ -285,7 +287,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.3.1...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.3.2...HEAD
+[1.3.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.2
 [1.3.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.1
 [1.3.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.0
 [1.2.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.2.1
