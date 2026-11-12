@@ -129,7 +129,7 @@ test("文件: 回执的填写要求写明键值节每个键只占一行, 多行�
   }).join("\n");
   assert.ok(guide.includes(KEY_SECTION_RULE));
   assert.match(guide, /"测试记录"/u);
-  assert.match(guide, /表格与多行内容写进没有键名的节 \("前提核对"/u);
+  assert.match(guide, /表格与多行内容写进没有键名的节 \("假设核对"/u);
   assert.match(guide, /project-navigator check <文件路径>/u);
 });
 

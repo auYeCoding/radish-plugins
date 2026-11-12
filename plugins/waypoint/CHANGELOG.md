@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `project-navigator`: a work order now has two layers. The goal, the decisions needed, what is out of scope, and the scope are hard constraints; every other detail (data formats, paths, specific instances, implementation routes) is a working assumption. When an assumption does not match reality, the executor follows reality and records the correction in the new "事实修正" (fact corrections) table of the receipt instead of ending as blocked. The reviewer checks each correction for evidence and for overstepping under the new "修正核对" (correction check) item, and the review report lists them. Before, a mismatched detail was a specification problem, so exploratory work such as reverse engineering sent the same order back and forth.
+- `project-navigator`: the order section "前提假设" is renamed "工作假设" (working assumptions) and the receipt section "前提核对" is renamed "假设核对"; the blocked type "前提不符" becomes "目标不可达" (goal unreachable). Orders and receipts already written keep working.
+
 ## [1.4.0] - 2026-11-12
 
 ### Added

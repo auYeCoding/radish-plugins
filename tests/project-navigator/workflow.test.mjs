@@ -388,6 +388,11 @@ test("委派: 验收提示词写明代码检查, 不重跑外部影响的测试,
   assert.match(brief, /"外部影响" 中列出的命令.+不运行/u);
   assert.match(brief, /只读调用/u);
   assert.match(brief, /从程序入口追到本工单的新代码/u);
+  assert.match(
+    brief,
+    /修正核对: 回执 "事实修正" 表中的每一行.+越界的修正不成立: 相关判据为 不通过/u,
+  );
+  assert.match(brief, /专项检查: 依次写 .+测试运行, 修正核对, 规范核查/u);
   const runcheck = buildReviewBrief({
     projectRoot: "/项目",
     order: { ...order, kind: "runcheck" },
@@ -511,6 +516,7 @@ test("委派: 核对提示词写明工单路径与三种结论; 执行提示词�
   assert.match(precheck, /^# 发布前核对 0001/u);
   assert.match(precheck, /order\.md/u);
   assert.match(precheck, /成立, 不成立, 无法核对 之一/u);
+  assert.match(precheck, /逐条核对工单 "工作假设"/u);
   assert.match(
     buildExecutorBrief({ projectRoot: "/项目", order }),
     /第一行写 "执行状态: 等待操作"/u,

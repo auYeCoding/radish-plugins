@@ -357,10 +357,14 @@ test("工单往返: 审阅发布, 执行子代理写回执, 验收通过, 输出
     project(["reply", "paused"]).stdout,
     /· 工单 0001 \(待你操作\)\n[\s\S]*- 完成之后: 回复 "操作完成"/u,
   );
+  const receiptSkeleton = project(["template", "receipt"]).stdout;
+  assert.match(receiptSkeleton, /- 待定判据: <待填写>/u);
   assert.match(
-    project(["template", "receipt"]).stdout,
-    /- 待定判据: <待填写>/u,
+    receiptSkeleton,
+    /## 事实修正\n\n\| 工单原文 \| 实际情况 \| 证据位置 \| 处理办法 \|/u,
   );
+  assert.match(project(["template", "order"]).stdout, /## 工作假设\n/u);
+  assert.match(project(["reply", "review"]).stdout, /- 修正核对: /u);
   assert.match(
     project(["model", "set", "reviewer", "inherit"]).stdout,
     /验收 跟随会话/u,
