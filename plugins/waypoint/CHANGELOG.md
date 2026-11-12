@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-12
+
 ### Changed
 
 - **BREAKING** `project-navigator`: rebuilt around slices instead of work orders. The skill now does five things: confirm requirements and lay out a roadmap, keep track of progress, run each slice through plan, implementation, and independent review, hold modular-design constraints, and insist on a walking skeleton with wiring evidence. Records written by 1.x are not read and not migrated; see "Upgrading from 1.x" below.
@@ -338,7 +340,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v1.5.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.0.0...HEAD
+[2.0.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.0
 [1.5.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.5.0
 [1.4.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.4.0
 [1.3.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.3.2
