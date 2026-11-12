@@ -4,17 +4,20 @@
  * 用法:
  * - order new --kind <类型> --slug <短名> [--slice <切片编号>]
  * - order set <状态> [--accept-unverified]
+ * - order precheck: 记下当前工单已做过发布前核对
  */
 
 import { existsSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { creationBlocker, issueBlocker } from "../lib/code-checks.mjs";
-import { COMMIT_SKILL, SUBAGENT_TYPES } from "../lib/guard.mjs";
+import { COMMIT_SKILL } from "../lib/guard.mjs";
 import {
   REVIEW_OPTIONS,
   REVIEW_REPLY_TYPE,
   RUNNING_REPLY_TYPE,
+  executorDispatchAction,
+  precheckStep,
   replyStep,
 } from "../lib/guidance.mjs";
 import { formatNumber } from "../lib/numbering.mjs";
@@ -41,6 +44,8 @@ import {
   consecutiveRejections,
   createOrder,
   isRecordOnlyOrderKind,
+  markPrechecked,
+  precheckBlocker,
   setOrderStatus,
 } from "../lib/workflow-orders.mjs";
 import { openProject, resultLines, saveState } from "./support.mjs";
@@ -50,12 +55,6 @@ import { openProject, resultLines, saveState } from "./support.mjs";
  * @type {number}
  */
 const RESPLIT_THRESHOLD = 2;
-
-/**
- * 派出执行子代理并回复 "工单执行" 的一串动作.
- * @type {string}
- */
-const DISPATCH_ACTION = `运行 exec-brief, 把输出原样作为提示词, 用 Agent 工具在后台 (run_in_background) 派 ${SUBAGENT_TYPES.executor}`;
 
 /**
  * 提交范围的写法, 验收通过后的提交使用.
@@ -83,9 +82,27 @@ export function runOrder({ positionals, values, cwd, now }) {
       return createNewOrder(context, values, now);
     case "set":
       return changeStatus(context, argument, values, now);
+    case "precheck":
+      return recordPrecheck(context, now);
     default:
-      throw new WorkflowError("order 的用法: new, set <状态>.");
+      throw new WorkflowError("order 的用法: new, set <状态>, precheck.");
   }
+}
+
+/**
+ * 记下当前工单已做过发布前核对, 之后才能请用户审阅.
+ *
+ * @param {import("./support.mjs").ProjectContext} context 项目上下文.
+ * @param {string} now 当前时间.
+ * @returns {string[]} 输出各行.
+ * @throws {WorkflowError} 没有当前工单, 或工单已经发布时.
+ */
+function recordPrecheck(context, now) {
+  const state = saveState(context, markPrechecked(context.state), now);
+  return [
+    ...resultLines(state),
+    `- 下一动作: ${replyStep(context.spec, APPROVAL_REPLY_TYPE)}; 用户选 A 后运行 order set issued`,
+  ];
 }
 
 /**
@@ -119,7 +136,7 @@ function createNewOrder(context, values, now) {
   );
   return [
     ...resultLines(state),
-    `- 下一动作: 运行 template order 取得骨架, 用 Write 写入 ${orderFile}, 再${replyStep(context.spec, APPROVAL_REPLY_TYPE)}; 用户选 A 后运行 order set issued`,
+    `- 下一动作: 运行 template order 取得骨架, 用 Write 写入 ${orderFile}, 再${precheckStep(context.spec, state.models)}, 再${replyStep(context.spec, APPROVAL_REPLY_TYPE)}; 用户选 A 后运行 order set issued`,
   ];
 }
 
@@ -185,17 +202,19 @@ function issueOrder(context, now) {
   );
   consumeApproval(context.projectRoot);
   const running = replyStep(context.spec, RUNNING_REPLY_TYPE);
+  const dispatch = executorDispatchAction(state.models, order);
   return [
     ...resultLines(state),
     ...(archived === undefined ? [] : [`- 旧回执已归档: ${archived}`]),
     isContinuing
-      ? `- 下一动作: 用 SendMessage 让原执行子代理继续 (说明用户已完成的操作); 找不到它时${DISPATCH_ACTION}; 然后${running}`
-      : `- 下一动作: ${DISPATCH_ACTION}, 然后${running}`,
+      ? `- 下一动作: 用 SendMessage 让原执行子代理继续 (说明用户已完成的操作); 找不到它时${dispatch}; 然后${running}`
+      : `- 下一动作: ${dispatch}, 然后${running}`,
   ];
 }
 
 /**
- * 核对当前工单能否发布: 会改动代码的工单必须带代码检查判据; 用户必须已在
+ * 核对当前工单能否发布: 会改动代码的工单必须带代码检查判据; 起草中的工单
+ * 必须做过发布前核对; 用户必须已在
  * "工单审阅" 中认可当前的工单内容, 且工单文件中的基准提交是当前提交; 或工单
  * 受阻后内容与上次发布时相同.
  *
@@ -211,8 +230,9 @@ function assertIssuable(context) {
     context.state,
     readOrderText(context.projectRoot, order),
   );
-  if (blocker !== undefined) {
-    throw new WorkflowError(blocker);
+  const unchecked = blocker ?? precheckBlocker(order);
+  if (unchecked !== undefined) {
+    throw new WorkflowError(unchecked);
   }
   const approval = readApprovalStatus(context.projectRoot, order);
   if (approval === APPROVAL_STATUSES.approved) {

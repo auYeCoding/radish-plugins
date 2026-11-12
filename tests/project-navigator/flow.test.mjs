@@ -172,6 +172,12 @@ function approveAndIssue(setup, kind) {
     `${folder}/order.md`,
     fill(commandSkeleton(project(["template", "order"]).stdout)),
   );
+  assert.match(
+    project(["reply", "approve"]).stdout,
+    /还没有做发布前核对: 运行 precheck-brief/u,
+  );
+  assert.match(project(["precheck-brief"]).stdout, /^# 发布前核对 \d{4}/u);
+  project(["order", "precheck"]);
   const review = fill(commandSkeleton(project(["reply", "approve"]).stdout));
   assert.equal(stop(root, orchestrator, review), undefined);
   prompt(root, orchestrator, "A");
@@ -303,7 +309,7 @@ test("hook: 只校验编排会话回复的结构, 打回一次后放行, 后台�
   );
   const background = { background_tasks: [{ id: "t" }] };
   assert.equal(stop(root, orchestrator, broken, background)?.decision, "block");
-  for (const id of ["reviewing", "waiting"]) {
+  for (const id of ["reviewing", "waiting", "paused"]) {
     const waiting = fill(commandSkeleton(project(["reply", id]).stdout));
     assert.doesNotMatch(waiting, /```/u);
     assert.equal(stop(root, orchestrator, waiting, background), undefined);
@@ -333,15 +339,37 @@ test("工单往返: 审阅发布, 执行子代理写回执, 验收通过, 输出
     }),
     "deny",
   );
-  assert.match(project(["status"]).stdout, /回复 "工单执行"/u);
+  const running = project(["status"]).stdout;
+  assert.match(running, /回复 "工单执行"/u);
+  assert.match(
+    running,
+    /第一行是 "执行状态: 等待操作" 时, 回复 "等待操作" \(reply paused\)/u,
+  );
+  assert.match(
+    running,
+    /- 子代理模型: 执行 跟随会话, 核对 sonnet, 验收 sonnet, 阅读 sonnet, 调研 sonnet\n/u,
+  );
   assert.match(
     project(["reply", "running"]).stdout,
     /· 工单 0001 \(执行中\)\n/u,
   );
+  assert.match(
+    project(["reply", "paused"]).stdout,
+    /· 工单 0001 \(待你操作\)\n[\s\S]*- 完成之后: 回复 "操作完成"/u,
+  );
+  assert.match(
+    project(["template", "receipt"]).stdout,
+    /- 待定判据: <待填写>/u,
+  );
+  assert.match(
+    project(["model", "set", "reviewer", "inherit"]).stdout,
+    /验收 跟随会话/u,
+  );
+  assert.equal(project(["model", "set", "reviewer", "gpt"]).status, 1);
   writeReceipt(setup, folder, "完成");
   assert.match(
     project(["status"]).stdout,
-    /执行状态 完成[\s\S]*order set reviewing, 再运行 review-brief[\s\S]*回复 "工单验收" \(reply reviewing\)/u,
+    /执行状态 完成[\s\S]*order set reviewing, 再运行 review-brief, 把输出原样作为提示词派 waypoint:navigator-reviewer \(不传 model 参数\)[\s\S]*回复 "工单验收" \(reply reviewing\)/u,
   );
   project(["order", "set", "reviewing"]);
   assert.match(
@@ -373,6 +401,7 @@ test("工单往返: 认可之后改过工单, 发布被拒; 未验证的判据�
   const folder = ".navigator/orders/0001-export";
   const order = fill(commandSkeleton(project(["template", "order"]).stdout));
   writeProjectFile(root, `${folder}/order.md`, order);
+  project(["order", "precheck"]);
   stop(
     root,
     orchestrator,
@@ -411,6 +440,7 @@ test("工单审阅: 没有选发布之后, 写明发布工单的消息仍然认�
   const folder = ".navigator/orders/0001-export";
   const order = fill(commandSkeleton(project(["template", "order"]).stdout));
   writeProjectFile(root, `${folder}/order.md`, order);
+  project(["order", "precheck"]);
   stop(
     root,
     orchestrator,
@@ -440,6 +470,7 @@ test("基准提交: 新建工单之后仓库有新提交时, 审阅拒绝旧值,
   const head = commitPaths(root, ["CHANGES.md"], "升级").trim();
   assert.doesNotMatch(stale, new RegExp(head, "u"));
   writeProjectFile(root, `${folder}/order.md`, stale);
+  project(["order", "precheck"]);
   const refused = project(["reply", "approve"]);
   assert.equal(refused.status, 1);
   assert.match(refused.stdout, new RegExp(`把 "基准提交" 改为 ${head}`, "u"));
@@ -468,6 +499,7 @@ test("工单审阅: 骨架从工单文件的审阅要点预填, 并写出工单�
     commandSkeleton(project(["template", "order"]).stdout),
   ).replace("- 需要决定: 已填写", "- 需要决定: 是否在仓库内维护补丁");
   writeProjectFile(root, ".navigator/orders/0001-export/order.md", order);
+  project(["order", "precheck"]);
   const skeleton = commandSkeleton(project(["reply", "approve"]).stdout);
   assert.match(skeleton, /- 需要决定: 是否在仓库内维护补丁/u);
   assert.match(

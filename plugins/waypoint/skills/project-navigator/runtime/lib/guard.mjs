@@ -2,7 +2,7 @@
  * @file 写入守卫: 只看写入类工具的目标路径, 四条规则.
  *
  * 1. 任何会话与子代理都不能直接写状态文件与脚本生成的视图文件.
- * 2. 验收子代理不能写任何文件.
+ * 2. 核对与验收子代理不能写任何文件.
  * 3. 执行子代理在 `.navigator/` 下只能写当前工单的回执与证据文件; 只产出记录的
  *    工单 (运行检查与分析) 不能写业务文件.
  * 4. 编排会话不能写 `.navigator/` 之外的文件.
@@ -38,14 +38,24 @@ export const WRITE_TOOLS = Object.freeze([
 
 /**
  * 插件自带的子代理类型.
- * @type {Readonly<{reader: string, researcher: string, reviewer: string, executor: string}>}
+ * @type {Readonly<{reader: string, researcher: string, checker: string, reviewer: string, executor: string}>}
  */
 export const SUBAGENT_TYPES = Object.freeze({
   reader: "waypoint:navigator-reader",
   researcher: "waypoint:navigator-researcher",
+  checker: "waypoint:navigator-checker",
   reviewer: "waypoint:navigator-reviewer",
   executor: "waypoint:navigator-executor",
 });
+
+/**
+ * 只读的子代理类型: 可以运行命令取证, 不能写任何文件.
+ * @type {readonly string[]}
+ */
+const READ_ONLY_SUBAGENT_TYPES = Object.freeze([
+  SUBAGENT_TYPES.checker,
+  SUBAGENT_TYPES.reviewer,
+]);
 
 /**
  * 生成提交消息并提交的技能.
@@ -61,10 +71,11 @@ const GENERATED_REASON =
   "这个文件由插件命令生成: 状态只用插件命令修改, 推进路线与风险清单随状态自动更新.";
 
 /**
- * 验收子代理写文件时的拒绝理由.
+ * 核对与验收子代理写文件时的拒绝理由.
  * @type {string}
  */
-const REVIEWER_REASON = "验收子代理只读, 不写任何文件; 只报告事实与证据.";
+const READ_ONLY_REASON =
+  "核对与验收子代理只读, 不写任何文件; 只报告事实与证据.";
 
 /**
  * 执行子代理写本工单回执与证据文件之外的编排记录时的拒绝理由.
@@ -128,8 +139,8 @@ export function decideWrite(request) {
   if (GENERATED_FILES.some((file) => relativePathsEqual(relativePath, file))) {
     return deny(GENERATED_REASON);
   }
-  if (request.agentType === SUBAGENT_TYPES.reviewer) {
-    return deny(REVIEWER_REASON);
+  if (READ_ONLY_SUBAGENT_TYPES.includes(request.agentType ?? "")) {
+    return deny(READ_ONLY_REASON);
   }
   if (request.agentType === SUBAGENT_TYPES.executor) {
     return decideExecutorWrite(relativePath, request.order);

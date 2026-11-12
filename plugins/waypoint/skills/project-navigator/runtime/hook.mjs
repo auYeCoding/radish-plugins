@@ -43,6 +43,7 @@ import {
 import { checkReply, locateReply } from "./lib/reply-checks.mjs";
 import { loadSpec } from "./lib/spec.mjs";
 import { INIT_UNINSTALLED, readStateIfValid } from "./lib/state.mjs";
+import { REVIEWABLE_ORDER_STATUSES } from "./lib/workflow-orders.mjs";
 
 /**
  * 回复结构不合格时, 打回原因的开头. 只让模型改列出的问题: 重写整条回复
@@ -63,12 +64,6 @@ const COMPACT_SOURCE = "compact";
  * @type {string}
  */
 const UNKNOWN_EVENT = "未知事件";
-
-/**
- * 可以请用户审阅的工单状态: 起草中, 以及受阻后修改待重新发布.
- * @type {readonly string[]}
- */
-const REVIEWABLE_STATUSES = Object.freeze(["drafting", "blocked"]);
 
 /**
  * @typedef {object} HookEvent 一次 hook 调用的上下文.
@@ -239,7 +234,8 @@ function handleSessionStart({ input, state, isOrchestrator }) {
  * 或本轮不校验时, 开始等待用户对工单审阅的选择.
  *
  * `stop_hook_active` 为 true 表示本轮已被打回过, 此时不再校验, 避免循环.
- * 有后台任务时照常校验: 等待子代理的回复有自己的类型 ("工单执行", "工单验收", "等待结果").
+ * 有后台任务时照常校验: 等待子代理或用户操作的回复有自己的类型 ("工单执行",
+ * "工单验收", "等待结果", "等待操作").
  *
  * @param {HookEvent} event hook 调用上下文.
  * @returns {Record<string, unknown> | undefined} 要输出的 JSON.
@@ -268,7 +264,7 @@ function handleStop({ input, projectRoot, state, isOrchestrator, now }) {
   if (
     locateReply(text).heading?.text === APPROVAL_REPLY_TYPE &&
     state.order !== null &&
-    REVIEWABLE_STATUSES.includes(state.order.status)
+    REVIEWABLE_ORDER_STATUSES.includes(state.order.status)
   ) {
     markAwaitingApproval(projectRoot, state.order, now);
   }

@@ -9,7 +9,8 @@
  * - 骨架与参考: reply <回复类型> [--option <组号>], template <文件种类> [--option <结构编号>], ref <名称>
  * - 阶段: stage <阶段编号>, step <步骤标识>, skip <阶段编号> --from <草稿>, finish
  * - 推进路线: roadmap --from <草稿>, milestone <编号> <状态>, slice <编号> <状态>
- * - 工单: order new|set, exec-brief, review-brief, research-brief
+ * - 工单: order new|set|precheck, precheck-brief, exec-brief, review-brief, research-brief
+ * - 子代理模型: model, model set <角色> <模型> [--kind <工单类型>]
  * - 源码证据: evidence, evidence check <仓库> <版本> <路径> <行号>
  * - 记录: risk, decision, change
  * - 体检与规范: check [文件...], standards --from <草稿>, codecheck set --from <草稿>

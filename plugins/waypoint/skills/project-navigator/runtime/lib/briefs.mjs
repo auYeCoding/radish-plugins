@@ -1,5 +1,5 @@
 /**
- * @file 由脚本生成的委派提示词: 执行子代理, 验收子代理与调研子代理.
+ * @file 由脚本生成的委派提示词: 核对子代理, 执行子代理, 验收子代理与调研子代理.
  *
  * 提示词由脚本生成, 编排会话原样使用, 不在其中加入倾向性说明或删掉检查项.
  * 这里是这些提示词的唯一来源.
@@ -38,6 +38,18 @@ const RESEARCH_CALL_LIMIT = 20;
 const EXECUTOR_SUMMARY_LINES = 3;
 
 /**
+ * 执行子代理中途交回, 等用户完成操作时, 交回内容第一行的写法.
+ * @type {string}
+ */
+export const PAUSED_HANDBACK = "执行状态: 等待操作";
+
+/**
+ * 回执 "偏差记录" 中列出待定判据的键, 与规格 files.receipt 一致.
+ * @type {string}
+ */
+export const PENDING_CRITERIA_KEY = "待定判据";
+
+/**
  * 问题域调研提示词的固定框架; 编排会话只在其后填写调研问题.
  * @type {string}
  */
@@ -61,6 +73,52 @@ export const RESEARCH_FRAME = [
   "## 调研问题",
   "",
 ].join("\n");
+
+/**
+ * 发布前核对的三种结论.
+ * @type {Readonly<{holds: string, fails: string, unknown: string}>}
+ */
+export const PRECHECK_VERDICTS = Object.freeze({
+  holds: "成立",
+  fails: "不成立",
+  unknown: "无法核对",
+});
+
+/**
+ * 生成发布前核对的委派提示词: 工单发布之前, 由核对子代理逐条核对工单中写下的
+ * 事实. 工单由编排会话凭已有记录写成, 其中的具体事实不成立时, 执行子代理要做到
+ * 一半才发现, 整张工单往返一轮.
+ *
+ * @param {object} options 生成参数.
+ * @param {string} options.projectRoot 项目根目录.
+ * @param {{id: string, folder: string}} options.order 当前工单.
+ * @returns {string} 提示词全文.
+ */
+export function buildPrecheckBrief({ projectRoot, order }) {
+  const { holds, fails, unknown } = PRECHECK_VERDICTS;
+  return [
+    `# 发布前核对 ${order.id}`,
+    "",
+    "你是核对子代理: 只读, 不写任何文件, 不改写工单, 只报告事实与证据.",
+    "",
+    "## 核对对象",
+    "",
+    `- 工单文件: ${path.join(projectRoot, orderFilePath(order.folder, "order"))}`,
+    "",
+    "## 核对要求",
+    "",
+    '1. 前提假设: 逐条核对工单 "前提假设", 读代码, 配置与数据核实.',
+    '2. 具体事实: 找出 "执行守则", "工作范围" 与 "验收判据" 中的每个具体事实, 逐个核对: 文件与目录路径, 函数与接口名, 命令, 数据中的编号或实例, 引用的记录中的结论, 外部资源的地址, 发布形式与许可. 判据点名某个实例时, 核对这个实例存在, 并且带有判据要求的特征.',
+    '3. 判据可验证: 逐条看 "验证方式" 能否照做: 命令是否存在, 需要的数据, 工具与环境是否具备.',
+    '4. 遗漏的决定: 列出执行中必须由用户决定, 而工单 "需要决定" 没有写的事, 例如许可条款的解释, 要改动仓库之外的文件, 几种做法的取舍.',
+    `5. 每条给出结论与证据 (文件路径与行号, 命令输出, 或网页地址与摘录). 结论只能是 ${holds}, ${fails}, ${unknown} 之一; ${unknown} 时写明缺少什么. ${holds} 的条目可以合并成一行, 只写条数.`,
+    "",
+    "## 交回格式",
+    "",
+    `1. 核对结果: 表格, 列为 位置, 内容, 结论, 证据; 只列 ${fails} 与 ${unknown} 的条目, 最后一行写 ${holds} 的条数.`,
+    '2. 遗漏的决定: 逐条列出, 没有时写 "无".',
+  ].join("\n");
+}
 
 /**
  * 生成执行子代理的委派提示词: 手册与工单的位置, 改动范围, 交回格式.
@@ -89,7 +147,8 @@ export function buildExecutorBrief({ projectRoot, order }) {
     "## 交回格式",
     "",
     `- 第一行: 执行状态 (完成或受阻) 与回执路径.`,
-    `- 其后不超过 ${EXECUTOR_SUMMARY_LINES} 行要点: 受阻时写受阻类型与需要的决定或操作; 完成时写最重要的实现决定与风险.`,
+    `- 其后不超过 ${EXECUTOR_SUMMARY_LINES} 行要点: 受阻时写受阻类型与需要的决定或操作; 完成时写最重要的实现决定与风险, 有待定判据时写明是哪几条.`,
+    `- 例外: 按手册 "等待操作" 一节中途交回时不写回执, 第一行写 "${PAUSED_HANDBACK}", 其后逐条写要用户做的操作.`,
   ].join("\n");
 }
 
@@ -143,7 +202,7 @@ export function buildReviewBrief({
     "",
     "## 核对要求",
     "",
-    `1. 逐条对照工单的 "验收判据", 每条给出结论与证据 (文件路径与行号, 或命令输出). 结论只能是 ${verdicts} 之一, 不用其它说法; 无法确认的写 ${unverified}, 并写明缺少什么.`,
+    `1. 逐条对照工单的 "验收判据", 每条给出结论与证据 (文件路径与行号, 或命令输出). 结论只能是 ${verdicts} 之一, 不用其它说法; 无法确认的写 ${unverified}, 并写明缺少什么. 回执 "偏差记录" 的 "${PENDING_CRITERIA_KEY}" 列出的判据, 核对回执给出的原因是否属实: 属实时结论写 ${unverified}, 证据写 "待定: " 加上原因与你核对到的事实; 不属实时按实际情况下结论.`,
     `2. 回执一致: 用 git diff ${order.baseCommit} --stat 与回执的 "改动清单" 比对, 列出不一致之处.`,
     wiringCheckItem(order.kind),
     '4. 范围核查: 列出工单 "工作范围" 之外的改动.',

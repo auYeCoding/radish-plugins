@@ -55,6 +55,7 @@ import {
   summarizeIgnoredPaths,
 } from "../lib/tracked-paths.mjs";
 import { checkStateConsistency } from "../lib/state-checks.mjs";
+import { describeModels } from "../lib/subagent-models.mjs";
 import { ISSUED_ORDER_STATUS } from "../lib/workflow-orders.mjs";
 import { isProjectFinished } from "../lib/workflow-plan.mjs";
 
@@ -207,6 +208,7 @@ function describeProgress({ projectRoot, state, isEntry, spec, now }) {
           `- 工单状态: ${order.id} ${order.status}, 回执${describeReceipt(receiptStatus)}`,
         ]),
     `- 工作区域: ${uncommitted.length === 0 ? "技能产物都已入库" : `${uncommitted.length} 个技能产物未入库`}`,
+    `- 子代理模型: ${describeModels(state.models)}`,
     ...(pending.length === 0
       ? []
       : [

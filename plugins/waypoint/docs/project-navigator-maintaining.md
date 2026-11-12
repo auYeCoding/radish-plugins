@@ -23,7 +23,7 @@
 | `hooks/hooks.json`          | 四个事件 (PreToolUse 只匹配写入类工具, UserPromptSubmit, SessionStart, Stop) 都调用 `runtime/hook.mjs` |
 | `bin/project-navigator`     | Bash 工具中的命令入口, `exec node .../navigator.mjs "$@"`                                              |
 | `bin/project-navigator.cmd` | PowerShell 工具中的命令入口                                                                            |
-| `agents/navigator-*.md`     | 执行, 验收, 调研与阅读子代理                                                                           |
+| `agents/navigator-*.md`     | 核对, 执行, 验收, 调研与阅读子代理                                                                     |
 
 在用户项目中, 技能会用到以下位置:
 
@@ -47,13 +47,15 @@
 - **编排会话不做登记, 按转录中的编排标记认出.** `enter` 的输出带 "编排标记: project-navigator 编排标记 <编号>", 编号是项目路径 SHA-256 的前 12 位 (Windows 上先转小写); 输出注入技能内容, 技能内容记在会话转录中, hook 读 `transcript_path` 找这个标记. 源代码里只有前缀, 读源代码的会话不会被误认; status 不输出标记, 子代理运行 status 不影响主会话. 分叉出的会话复制了转录, 自然带着标记, 回退与编辑消息之后不需要任何处理. 0.x 把身份登记在 `.git/navigator/orchestrator.json`, 为此有接管, 被接管, 分叉认领, 重新登记一系列规则. 改掉的后果: 回到登记与认领, 每次换编号都可能误判身份.
 - **受阻后工单没有改动时直接继续, 由原执行子代理接着做.** `order set issued` 记下发布时工单文件的摘要 (`issuedDigest`); 受阻工单的文件与摘要一致时不要求重新审阅, 输出要求用 SendMessage 让原子代理继续 (实测 SendMessage 能带着上下文续接已结束的子代理), 找不到时重新派出. 工单改过就要重新审阅. 改掉的后果: 用户完成一个小操作也要重新审阅一次, 或子代理每次从头再来.
 - **执行子代理不写 `tools`, 继承会话的全部工具.** 它要写代码, 运行构建与测试, 用户装的 MCP 工具也可能用到. 插件子代理不支持 `hooks`, `mcpServers`, `permissionMode` 字段 (官方文档), 写入范围由插件级 hook 的守卫限制. 改掉的后果: 列出 `tools` 时漏掉用户的工具.
-- **委派提示词由脚本生成, 编排会话原样使用, 守卫不核对.** `exec-brief`, `review-brief`, `research-brief` 是提示词的唯一来源. 0.x 守卫逐字核对验收提示词, 偶尔因空白差异拒绝派出. 改掉的后果: 提示词散落在规则文件里, 版本之间不一致.
+- **子代理的模型在派出时指定, 分配记在状态文件中.** 默认: 执行跟随编排会话, 核对, 验收, 阅读与调研用 sonnet (`lib/subagent-models.mjs`); `model set` 可以改, 执行子代理可以按工单类型单独指定. "下一动作" 与 `status` 的 "子代理模型" 一行写出 Agent 工具 `model` 参数的写法. 不写进子代理定义的 `model` 字段有三个原因: 官方文档写明派出参数优先于定义, 用 SendMessage 续接时保留, 而定义中的 `model` 续接时是否保留没有说明; 写死会影响所有项目; 用户换模型不用改插件文件. 执行默认不降: 在一个实际项目中, 实现工单的 5 轮受阻都是执行子代理拿出证据指出工单有错, 较弱的模型更可能硬凑结果. 改掉的后果: 续接时模型可能变回会话模型, 或所有项目的执行都被迫用同一个模型.
+- **需要用户亲手操作时, 执行子代理中途交回, 不写回执.** 交回第一行写 "执行状态: 等待操作", 编排会话回复 "等待操作" (没有选项块), 用户回复后用 SendMessage 转给原子代理; 工单状态一直是 issued. 同一项目的逆向分析工单受阻 8 轮, 每轮都只是请用户在被分析的程序里操作一次, 却要重写回执, 转为受阻, 回复带选项的 "受阻处理", 再重新发布. 要用户做决定或改工单时仍走受阻. 会话中断后原子代理找不回, 所以手册要求交回前把已查清的内容写进 `artifacts/`. 改掉的后果: 交互式的分析任务每一步都是一轮完整的受阻往返.
+- **委派提示词由脚本生成, 编排会话原样使用, 守卫不核对.** `precheck-brief`, `exec-brief`, `review-brief`, `research-brief` 是提示词的唯一来源. 0.x 守卫逐字核对验收提示词, 偶尔因空白差异拒绝派出. 改掉的后果: 提示词散落在规则文件里, 版本之间不一致.
 
 ### 守卫与回复校验
 
-- **守卫只看写入类工具的目标路径, 四条规则.** 状态文件与生成的视图谁都不能直接写; 验收子代理不写文件; 执行子代理在 `.navigator/` 下只写当前工单的回执与 `artifacts/`, 只产出记录的工单不写业务文件, 工单不在执行中时不写业务文件; 编排会话只写 `.navigator/`. 子代理按 hook 输入的 `agent_type` 区分 (`waypoint:navigator-executor` 等, 实测插件子代理的值为 "<插件>:<名称>"). 0.x 还解析 Bash 命令文字, 按白名单放行编排会话的工具, 核对提示词, 记录文件结构, 用户测试输出与 `.claude/settings.json` 的改动; 这些规则多数为跨会话场景与历次事故补上, 也是拒绝与误判的主要来源. 改掉的后果: 加回去的每条规则都会在某个正常操作上误伤.
+- **守卫只看写入类工具的目标路径, 四条规则.** 状态文件与生成的视图谁都不能直接写; 核对与验收子代理不写文件; 执行子代理在 `.navigator/` 下只写当前工单的回执与 `artifacts/`, 只产出记录的工单不写业务文件, 工单不在执行中时不写业务文件; 编排会话只写 `.navigator/`. 子代理按 hook 输入的 `agent_type` 区分 (`waypoint:navigator-executor` 等, 实测插件子代理的值为 "<插件>:<名称>"). 0.x 还解析 Bash 命令文字, 按白名单放行编排会话的工具, 核对提示词, 记录文件结构, 用户测试输出与 `.claude/settings.json` 的改动; 这些规则多数为跨会话场景与历次事故补上, 也是拒绝与误判的主要来源. 改掉的后果: 加回去的每条规则都会在某个正常操作上误伤.
 - **保留 "编排会话不写业务文件".** 目的不是防恶意, 是防角色坍塌: 用户一句 "顺手改一下", 模型就会自己写代码, 编排会话的上下文从此混乱. 只在主会话写项目内 `.navigator/` 之外的文件时才读转录判断身份. 改掉的后果: 编排会话逐渐变成执行会话.
-- **Stop 只校验回复结构: 标题是回复类型, 标题下第一行是结论, 恰好一个与规格一致的选项块, 代码块都关闭, 没有占位标记.** 标题用来识别回复类型, 选项块用来识别用户的选择 (工单审阅的认可依赖它), 这两项不能放松. 规格中 `optionSets` 为空的回复 ("工单执行", "工单验收" 与等待调研, 阅读子代理的 "等待结果") 不需要用户选择, 不带选项块, 带了会被打回: 1.0.0 与 1.1.0 的 "工单执行" 有 "等待完成" 选项, 用户以为要先选 A 才开始等待. 节, 键名, 进展值与写作规则只在填写要求中提醒. 0.x 按写作规则与总结字数打回, 打回后屏幕上留着两遍回复. 打回最多一次 (`stop_hook_active` 时放行). 有后台任务时照常校验: 1.2.1 及之前不校验, 验收子代理在后台时模型写了一段没有标题的说明, 与前后的回复混在一起; 现在等待子代理的两种情况都有回复类型. 进展行的工单编号之后写环节 (`format.orderStages`, "验收报告" 用 `orderStage` 写 "待你决定"), 连续几条回复靠它区分. 建议只写在 "验收报告" 的 "处理建议" 一节, 填写要求写明各节之外不加文字. 改掉的后果: 写作规则重新变成频繁打回.
+- **Stop 只校验回复结构: 标题是回复类型, 标题下第一行是结论, 恰好一个与规格一致的选项块, 代码块都关闭, 没有占位标记.** 标题用来识别回复类型, 选项块用来识别用户的选择 (工单审阅的认可依赖它), 这两项不能放松. 规格中 `optionSets` 为空的回复 ("工单执行", "工单验收", 等待核对, 调研, 阅读子代理的 "等待结果", 与等用户操作的 "等待操作") 不需要用户选择, 不带选项块, 带了会被打回: 1.0.0 与 1.1.0 的 "工单执行" 有 "等待完成" 选项, 用户以为要先选 A 才开始等待. 节, 键名, 进展值与写作规则只在填写要求中提醒. 0.x 按写作规则与总结字数打回, 打回后屏幕上留着两遍回复. 打回最多一次 (`stop_hook_active` 时放行). 有后台任务时照常校验: 1.2.1 及之前不校验, 验收子代理在后台时模型写了一段没有标题的说明, 与前后的回复混在一起; 现在等待子代理的两种情况都有回复类型. 进展行的工单编号之后写环节 (`format.orderStages`, "验收报告" 用 `orderStage` 写 "待你决定"), 连续几条回复靠它区分. 建议只写在 "验收报告" 的 "处理建议" 一节, 填写要求写明各节之外不加文字. 改掉的后果: 写作规则重新变成频繁打回.
 - **两个选项的组同时做成按钮, 选项块照常保留.** Claude 桌面应用有一个填写 "下一步框" 的工具 (`mcp__ccd_turn__wrap_up`, 见 `lib/reply-guide.mjs` 的 `BUTTON_TOOL`), 最多 2 个按钮, 点按钮等于把按钮文字作为回复发出. `reply` 的填写要求给出 "按钮" 一条, 按钮文字是选项的第一个分句 (`choiceLead`), 与打字回复走同一条识别 (`isChoiceSelected`). 三项以上的组, 以及规格中写了 `"buttons": false` 的组 (选择后还要打字补充, 或选了就会提交: 应用规定提交不能用回复按钮) 不做按钮. 选项块不能因为有按钮而去掉: 框可以被关掉, 不留在对话记录中, Stop 的校验与工单审阅的认可都读选项块. 这个工具是应用内部的, 没有公开约定, hook 也不核对是否调用; 工具改名或消失时退回只有选项块, 不会出错. 改掉的后果: 去掉选项块, 其它环境与关掉框的用户看不到选项.
 - **回复以一行结论开头, 删掉末尾的人类总结块.** 读者注意力有限, 结论放在最前面才看得到; 末尾的总结与结论重复. 结论字数只作提醒 (`conclusionMaxLength`). 进展从四行压成一行. 改掉的后果: 关键信息落到回复末尾.
 - **记录文件写入时不校验结构, 写完用 `check <文件>` 自查.** 读记录的脚本 (审阅要点预填, 回执的执行状态, 验收记录的判据结论) 按键值行与表格读取, 读不到时命令给出明确原因. `check` 带文件时不分配体检编号, 不写状态, 执行子代理也能用. 改掉的后果: 写入被拦下的次数回到 0.x 的水平.
@@ -61,6 +63,8 @@
 ### 工单与验收
 
 - **一张工单只要用户做两次决定: 工单审阅中发布, 验收报告中通过并提交.** 审阅卡片只列 "审阅要点" (任务目标, 需要决定, 明确不做, 粒度依据) 与工单文件路径, 由 `reply approve` 从工单文件预填. 认可仍按工单文件的摘要绑定 (hook 在回复工单审阅时记下摘要, 用户回答时记下选择), 展示的内容变短不影响绑定. 0.x 原样摘录工单五节, 用户三秒内读不完, 而且多数细节用户判断不了. 改掉的后果: 审阅变成走过场, 或用户每张工单都要读完整工单.
+- **工单在审阅之前由核对子代理核对一次.** 编排会话凭已有的记录写工单, 其中的具体事实 (文件路径, 数据中的编号, 外部资源的发布形式与许可) 不成立时, 执行子代理做到一半才发现. 在同一个项目中, 实现工单的 5 轮受阻都属于这种情况, 而写这几张工单之前编排会话几乎没有读项目文件. `precheck-brief` 生成提示词, `waypoint:navigator-checker` 只读核对并交回不成立与无法核对的条目, 编排会话改好工单后运行 `order precheck`; 起草中的工单没有这个标记时, `reply approve` 与 `order set issued` 拒绝. 标记只记做过一次, 不绑定工单内容: 按核对结果修改, 或受阻后修改, 都不用再核对, 否则每改一次就多一轮子代理. 核对结果不另存文件, 落在改好的工单里. 改掉的后果: 工单中的错误回到执行阶段才暴露, 每个错误一轮往返.
+- **个别判据做不到时, 执行子代理做完其余部分, 把这几条列为待定.** 回执 "偏差记录" 有 "待定判据" 一项, 执行状态仍写完成; 验收子代理核对原因属实后把这几条判为未验证, 证据以 "待定:" 开头, 走已有的 "验收报告" 第 3 组, 由用户接受现状或发补正工单. 没有新增状态与选项组. 同一项目中有 3 轮受阻的回执写明 "其余工作已全部完成", 只卡在一条判据上. 用户的决定会改变其余部分的做法时仍然受阻. 改掉的后果: 一条判据的措辞问题让整张工单多走一轮审阅与发布.
 - **测试授权去掉.** 执行子代理不运行有外部影响的测试, 写进回执 "测试记录" 的 "外部影响"; 验收子代理运行代码检查与回执中其它测试命令, 不重跑外部影响的命令, 按回执输出判断. MCP 取证工具不再登记, 验收子代理按回执 "取证记录" 做只读查询, 约束写在提示词与子代理定义中. 改掉的后果: 每张带外部测试的工单多一次用户选择.
 - **未验证的判据可以由用户明确接受.** "验收报告" 第 3 组 (只有未验证, 没有不通过) 由用户选择接受现状并提交, 对应 `order set accepted --accept-unverified`, 未验证的判据登记为风险. 0.x 一律判不通过, 依赖外部取证的判据反复被拒. 不通过的判据仍然不能接受. 改掉的后果: 外部条件不足时工单无法收敛.
 - **提交不是工单状态.** 工单状态为 drafting, issued, blocked, reviewing, accepted, rejected, voided; `order set accepted` 之后编排会话按输出调用 commit-message, 状态文件随这次提交入库. 0.x 有 committing 与提交结算记录, 用来对上 `lastCommit`; 去掉对账之后不再需要. 读取旧状态时, accepted 与 committing 的工单视为已通过并结束. 改掉的后果: 每次提交后状态文件留在工作区.
@@ -116,7 +120,8 @@
 | `commands/plan.mjs`      | 推进路线, 里程与切片状态                                      |
 | `commands/order.mjs`     | 工单新建与状态转换, 旧回执归档                                |
 | `commands/records.mjs`   | 风险, 决策, 变更                                              |
-| `commands/brief.mjs`     | 执行, 验收与调研的委派提示词                                  |
+| `commands/brief.mjs`     | 核对, 执行, 验收与调研的委派提示词                            |
+| `commands/model.mjs`     | 查看与登记子代理模型                                          |
 | `commands/evidence.mjs`  | 从原仓库取回选型回执证据表引用的源码行                        |
 | `commands/check.mjs`     | 体检与自查                                                    |
 | `commands/standards.mjs` | 写入项目规范                                                  |
@@ -126,16 +131,16 @@
 
 `runtime/lib/` 中的模块:
 
-| 分组       | 文件                                                                                                                                                                                                          |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 路径与状态 | `paths.mjs`, `state.mjs`, `atomic-file.mjs`, `numbering.mjs`, `validation.mjs`, `workflow-error.mjs`, `tracked-paths.mjs`                                                                                     |
-| 规格与版式 | `spec.mjs`, `markdown.mjs`, `layout.mjs`, `reply-checks.mjs`, `file-checks.mjs`, `writing-checks.mjs`, `text-units.mjs`, `freeform-sections.mjs`                                                              |
-| 生成       | `render.mjs`, `render-plan.mjs`, `table.mjs`, `briefs.mjs`, `reminders.mjs`, `guidance.mjs`, `reply-guide.mjs`, `file-guide.mjs`, `writing-rules.mjs`                                                         |
-| 守卫与身份 | `guard.mjs` (四条写入规则), `orchestrator-marker.mjs` (按转录认出编排会话)                                                                                                                                    |
-| 工作流     | `workflow-orders.mjs`, `workflow-plan.mjs`, `workflow-records.mjs`, `code-checks.mjs`, `review-record.mjs`, `receipt-record.mjs`, `order-approval.mjs`, `order-base.mjs`, `option-answer.mjs`, `registry.mjs` |
-| 源码证据   | `source-evidence.mjs`, `source-fetch.mjs`                                                                                                                                                                     |
-| 异常自检   | `diagnostics.mjs` (异常的判断, 记录与原地打转), `state-checks.mjs` (状态自检)                                                                                                                                 |
-| 仓库与环境 | `repo.mjs`, `environment.mjs`, `version.mjs`, `settings.mjs`                                                                                                                                                  |
+| 分组       | 文件                                                                                                                                                                                                                                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 路径与状态 | `paths.mjs`, `state.mjs`, `atomic-file.mjs`, `numbering.mjs`, `validation.mjs`, `workflow-error.mjs`, `tracked-paths.mjs`                                                                                                            |
+| 规格与版式 | `spec.mjs`, `markdown.mjs`, `layout.mjs`, `reply-checks.mjs`, `file-checks.mjs`, `writing-checks.mjs`, `text-units.mjs`, `freeform-sections.mjs`                                                                                     |
+| 生成       | `render.mjs`, `render-plan.mjs`, `table.mjs`, `briefs.mjs`, `reminders.mjs`, `guidance.mjs`, `reply-guide.mjs`, `file-guide.mjs`, `writing-rules.mjs`                                                                                |
+| 守卫与身份 | `guard.mjs` (四条写入规则), `orchestrator-marker.mjs` (按转录认出编排会话)                                                                                                                                                           |
+| 工作流     | `workflow-orders.mjs`, `workflow-plan.mjs`, `workflow-records.mjs`, `code-checks.mjs`, `review-record.mjs`, `receipt-record.mjs`, `order-approval.mjs`, `order-base.mjs`, `option-answer.mjs`, `registry.mjs`, `subagent-models.mjs` |
+| 源码证据   | `source-evidence.mjs`, `source-fetch.mjs`                                                                                                                                                                                            |
+| 异常自检   | `diagnostics.mjs` (异常的判断, 记录与原地打转), `state-checks.mjs` (状态自检)                                                                                                                                                        |
+| 仓库与环境 | `repo.mjs`, `environment.mjs`, `version.mjs`, `settings.mjs`                                                                                                                                                                         |
 
 仓库中的其它部分:
 
@@ -144,33 +149,36 @@
 
 ## 排查手册
 
-| 症状                                                      | 根因                                                                                                                                                                      | 相关文件                                       | 验证方法                                                                                |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| 调用技能时直接中止, 提示权限检查失败                      | `allowed-tools` 被删除或改写                                                                                                                                              | `SKILL.md`                                     | 默认权限模式下调用一次                                                                  |
-| 运行 `project-navigator` 提示找不到命令                   | 插件没有启用, 或会话在插件更新前启动; PowerShell 中找不到 `.cmd`                                                                                                          | `bin/`                                         | `claude plugin list` 看插件是否启用; 重启会话                                           |
-| 插件命令或写记录弹出权限确认                              | 本机配置缺少放行规则, 或命令没有以 `project-navigator` 开头                                                                                                               | `lib/settings.mjs`                             | 检查 `.claude/settings.local.json` 中的规则                                             |
-| 编排会话写 `.navigator/` 之外的文件被拒                   | 这是规则 4; 需要改动时发工单                                                                                                                                              | `lib/guard.mjs`                                | 用标准输入驱动 `hook.mjs`, 带编排会话的转录                                             |
-| 不是编排会话的会话写业务文件被拒                          | 会话转录中出现了本项目的编排标记, 例如该会话曾调用过技能                                                                                                                  | `lib/orchestrator-marker.mjs`                  | 在转录中查找 "project-navigator 编排标记"                                               |
-| 执行子代理写业务文件被拒                                  | 工单不在已发布状态, 或是运行检查与分析工单                                                                                                                                | `lib/guard.mjs`, `lib/workflow-orders.mjs`     | `status` 的 "工单状态" 一行                                                             |
-| 执行子代理写编排记录被拒                                  | `.navigator/` 下只能写当前工单的回执与 `artifacts/`                                                                                                                       | `lib/guard.mjs`                                | 拒绝理由写明可写范围                                                                    |
-| 执行子代理写 `artifacts/` 下的文档被拒, 提示不是守卫的    | Claude Code 自身拒绝子代理写报告类文件                                                                                                                                    | `scripts/navigator-docs/executor-guide.md`     | 子代理在最终回复中交回全文, 编排会话按路径写入                                          |
-| 回复被打回                                                | 缺少一级标题, 结论行, 或选项块与规格不一致                                                                                                                                | `lib/reply-checks.mjs`, `spec/templates.json`  | `reply` 取骨架后填写再校验                                                              |
-| 执行子代理结束了, `status` 仍说回执未写入                 | 子代理没有按骨架写回执, 或写到了别的路径                                                                                                                                  | `commands/brief.mjs`, `lib/receipt-record.mjs` | 用 SendMessage 请子代理补写; 查看工单文件夹                                             |
-| 回执已写入, 下一动作分不清受阻还是完成                    | "回执概况" 的 "执行状态" 没有写, 或节名被改                                                                                                                               | `lib/receipt-record.mjs`                       | `check <回执路径>` 自查结构                                                             |
-| `order set issued` 被拒, 提到审阅                         | 用户没有在 "工单审阅" 中选 A, 或认可之后改过工单文件. 状态为 `declined` 表示用户回答了别的内容 (包括之后撤回的消息): 此后以 "发布工单" 开头的消息仍会认可, 单独的字母不会 | `lib/order-approval.mjs`, `commands/order.mjs` | 查看 `.git/navigator/order-approval.json` 的工单编号, 摘要与状态                        |
-| 受阻后继续发布被拒                                        | 工单文件在发布后改过, `issuedDigest` 对不上, 要重新审阅                                                                                                                   | `commands/order.mjs`                           | `status` 的下一动作写明 "必须重新审阅"                                                  |
-| `order set accepted` 被拒                                 | 有判据不通过; 有未验证但没带 `--accept-unverified`; 或 "用户结论" 还是 "待用户确认"                                                                                       | `lib/review-record.mjs`, `commands/order.mjs`  | 查看 `review.md` 的判据核对表与人工验收一节                                             |
-| `reply approve` 或 `order set issued` 被拒, 提到基准提交  | 工单文件 "工单概况" 的 "基准提交" 不是当前提交: 写好工单之后仓库有了新提交 (例如升级插件后的提交)                                                                         | `lib/order-base.mjs`                           | 把工单文件的 "基准提交" 改为提示中的当前提交, 重新审阅                                  |
-| `reply review --option 1` 或 `--option 3` 被拒            | 选项组与判据结论不符                                                                                                                                                      | `commands/reply.mjs`                           | 查看 `review.md` 的判据核对表                                                           |
-| 实现或修复工单新建或发布被拒, 提到代码检查                | 项目未登记检查命令, 或工单的验收判据不含检查判据原文                                                                                                                      | `lib/code-checks.mjs`, `commands/order.mjs`    | 查看 `state.json` 的 `codeChecks`; 重新取 `template order`                              |
-| 进入时说项目由旧版本初始化                                | 项目配置中还有 0.x 的项目级 hook, 或 `.navigator/bin/` 还在                                                                                                               | `commands/enter.mjs`, `commands/init.mjs`      | 运行 `project-navigator init` 升级                                                      |
-| 升级之前在旧编排会话中运行命令被拒                        | 旧的项目级 hook 仍在运行; 0.x 的 `orchestrator.json` 没有被删掉                                                                                                           | `commands/enter.mjs`                           | 重新调用技能 (进入时删掉旧登记), 或新开会话调用                                         |
-| init 输出 "设置结果: 未执行", 或进入时要求回复 "运行受阻" | 项目的忽略规则忽略了 `.navigator/`, `.claude/` 下的配置, 或其中必须入库的文件                                                                                             | `commands/init.mjs`, `lib/tracked-paths.mjs`   | `git check-ignore -v --no-index <路径>`                                                 |
-| `evidence` 报取不到版本或文件                             | 版本与仓库的 tag 写法不同, 路径写成了安装后的包内路径, 仓库需要账号, 或网络不通                                                                                           | `lib/source-fetch.mjs`                         | 用 `evidence check` 单条重试, 看输出中 git 的原始错误                                   |
-| 卸载后 hook 仍有输出                                      | 状态文件的 `init.status` 不是 `uninstalled`                                                                                                                               | `commands/uninstall.mjs`, `runtime/hook.mjs`   | 查看 `state.json` 的 `init`                                                             |
-| 收到用户转来的问题报告                                    | 报告的 "脚本记录的异常" 给出种类, 来源命令与调用栈; "状态" 给出当时的位置与工单状态                                                                                       | `lib/diagnostics.mjs`, `commands/report.mjs`   | 按 "复现步骤" 在临时仓库中重现; 调用栈中的 `<技能目录>` 对应 `skills/project-navigator` |
-| `status` 一直显示 "技能异常"                              | 有未上报的异常; 运行 `report` 后才标为已上报                                                                                                                              | `lib/diagnostics.mjs`                          | 查看 `.git/navigator/diagnostics.json` 中没有 `reportId` 的条目                         |
-| 操作失误被记成了技能异常                                  | 脚本抛出的错误不是 `WorkflowError`, 被当成内部错误; 或 "下一动作" 的文字里写了会被拒绝的命令                                                                              | `lib/diagnostics.mjs`, `lib/guidance.mjs`      | 查看异常的种类与信息; 流程规则的拒绝一律抛 `WorkflowError`                              |
+| 症状                                                          | 根因                                                                                                                                                                      | 相关文件                                                     | 验证方法                                                                                |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| 调用技能时直接中止, 提示权限检查失败                          | `allowed-tools` 被删除或改写                                                                                                                                              | `SKILL.md`                                                   | 默认权限模式下调用一次                                                                  |
+| 运行 `project-navigator` 提示找不到命令                       | 插件没有启用, 或会话在插件更新前启动; PowerShell 中找不到 `.cmd`                                                                                                          | `bin/`                                                       | `claude plugin list` 看插件是否启用; 重启会话                                           |
+| 插件命令或写记录弹出权限确认                                  | 本机配置缺少放行规则, 或命令没有以 `project-navigator` 开头                                                                                                               | `lib/settings.mjs`                                           | 检查 `.claude/settings.local.json` 中的规则                                             |
+| 编排会话写 `.navigator/` 之外的文件被拒                       | 这是规则 4; 需要改动时发工单                                                                                                                                              | `lib/guard.mjs`                                              | 用标准输入驱动 `hook.mjs`, 带编排会话的转录                                             |
+| 不是编排会话的会话写业务文件被拒                              | 会话转录中出现了本项目的编排标记, 例如该会话曾调用过技能                                                                                                                  | `lib/orchestrator-marker.mjs`                                | 在转录中查找 "project-navigator 编排标记"                                               |
+| 执行子代理写业务文件被拒                                      | 工单不在已发布状态, 或是运行检查与分析工单                                                                                                                                | `lib/guard.mjs`, `lib/workflow-orders.mjs`                   | `status` 的 "工单状态" 一行                                                             |
+| 执行子代理写编排记录被拒                                      | `.navigator/` 下只能写当前工单的回执与 `artifacts/`                                                                                                                       | `lib/guard.mjs`                                              | 拒绝理由写明可写范围                                                                    |
+| 执行子代理写 `artifacts/` 下的文档被拒, 提示不是守卫的        | Claude Code 自身拒绝子代理写报告类文件                                                                                                                                    | `scripts/navigator-docs/executor-guide.md`                   | 子代理在最终回复中交回全文, 编排会话按路径写入                                          |
+| 回复被打回                                                    | 缺少一级标题, 结论行, 或选项块与规格不一致                                                                                                                                | `lib/reply-checks.mjs`, `spec/templates.json`                | `reply` 取骨架后填写再校验                                                              |
+| 执行子代理结束了, `status` 仍说回执未写入                     | 子代理没有按骨架写回执, 或写到了别的路径                                                                                                                                  | `commands/brief.mjs`, `lib/receipt-record.mjs`               | 用 SendMessage 请子代理补写; 查看工单文件夹                                             |
+| 回执已写入, 下一动作分不清受阻还是完成                        | "回执概况" 的 "执行状态" 没有写, 或节名被改                                                                                                                               | `lib/receipt-record.mjs`                                     | `check <回执路径>` 自查结构                                                             |
+| `order set issued` 被拒, 提到审阅                             | 用户没有在 "工单审阅" 中选 A, 或认可之后改过工单文件. 状态为 `declined` 表示用户回答了别的内容 (包括之后撤回的消息): 此后以 "发布工单" 开头的消息仍会认可, 单独的字母不会 | `lib/order-approval.mjs`, `commands/order.mjs`               | 查看 `.git/navigator/order-approval.json` 的工单编号, 摘要与状态                        |
+| `reply approve` 或 `order set issued` 被拒, 提到发布前核对    | 起草中的工单没有运行过 `order precheck` (1.4.0 之前起草的工单也要补一次)                                                                                                  | `lib/workflow-orders.mjs`                                    | 查看 `state.json` 中当前工单的 `prechecked`                                             |
+| 子代理没有用上登记的模型                                      | 编排会话派出时没有传 `model` 参数, 或用户设置了 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`                                                                                        | `lib/subagent-models.mjs`, `lib/guidance.mjs`                | `status` 的 "子代理模型" 一行; 会话中 Agent 调用的参数                                  |
+| 执行子代理结束了, 没有回执, 交回第一行是 "执行状态: 等待操作" | 这是中途交回, 不是异常                                                                                                                                                    | `lib/briefs.mjs`, `scripts/navigator-docs/executor-guide.md` | 回复 "等待操作", 用户回复后用 SendMessage 续接                                          |
+| 受阻后继续发布被拒                                            | 工单文件在发布后改过, `issuedDigest` 对不上, 要重新审阅                                                                                                                   | `commands/order.mjs`                                         | `status` 的下一动作写明 "必须重新审阅"                                                  |
+| `order set accepted` 被拒                                     | 有判据不通过; 有未验证但没带 `--accept-unverified`; 或 "用户结论" 还是 "待用户确认"                                                                                       | `lib/review-record.mjs`, `commands/order.mjs`                | 查看 `review.md` 的判据核对表与人工验收一节                                             |
+| `reply approve` 或 `order set issued` 被拒, 提到基准提交      | 工单文件 "工单概况" 的 "基准提交" 不是当前提交: 写好工单之后仓库有了新提交 (例如升级插件后的提交)                                                                         | `lib/order-base.mjs`                                         | 把工单文件的 "基准提交" 改为提示中的当前提交, 重新审阅                                  |
+| `reply review --option 1` 或 `--option 3` 被拒                | 选项组与判据结论不符                                                                                                                                                      | `commands/reply.mjs`                                         | 查看 `review.md` 的判据核对表                                                           |
+| 实现或修复工单新建或发布被拒, 提到代码检查                    | 项目未登记检查命令, 或工单的验收判据不含检查判据原文                                                                                                                      | `lib/code-checks.mjs`, `commands/order.mjs`                  | 查看 `state.json` 的 `codeChecks`; 重新取 `template order`                              |
+| 进入时说项目由旧版本初始化                                    | 项目配置中还有 0.x 的项目级 hook, 或 `.navigator/bin/` 还在                                                                                                               | `commands/enter.mjs`, `commands/init.mjs`                    | 运行 `project-navigator init` 升级                                                      |
+| 升级之前在旧编排会话中运行命令被拒                            | 旧的项目级 hook 仍在运行; 0.x 的 `orchestrator.json` 没有被删掉                                                                                                           | `commands/enter.mjs`                                         | 重新调用技能 (进入时删掉旧登记), 或新开会话调用                                         |
+| init 输出 "设置结果: 未执行", 或进入时要求回复 "运行受阻"     | 项目的忽略规则忽略了 `.navigator/`, `.claude/` 下的配置, 或其中必须入库的文件                                                                                             | `commands/init.mjs`, `lib/tracked-paths.mjs`                 | `git check-ignore -v --no-index <路径>`                                                 |
+| `evidence` 报取不到版本或文件                                 | 版本与仓库的 tag 写法不同, 路径写成了安装后的包内路径, 仓库需要账号, 或网络不通                                                                                           | `lib/source-fetch.mjs`                                       | 用 `evidence check` 单条重试, 看输出中 git 的原始错误                                   |
+| 卸载后 hook 仍有输出                                          | 状态文件的 `init.status` 不是 `uninstalled`                                                                                                                               | `commands/uninstall.mjs`, `runtime/hook.mjs`                 | 查看 `state.json` 的 `init`                                                             |
+| 收到用户转来的问题报告                                        | 报告的 "脚本记录的异常" 给出种类, 来源命令与调用栈; "状态" 给出当时的位置与工单状态                                                                                       | `lib/diagnostics.mjs`, `commands/report.mjs`                 | 按 "复现步骤" 在临时仓库中重现; 调用栈中的 `<技能目录>` 对应 `skills/project-navigator` |
+| `status` 一直显示 "技能异常"                                  | 有未上报的异常; 运行 `report` 后才标为已上报                                                                                                                              | `lib/diagnostics.mjs`                                        | 查看 `.git/navigator/diagnostics.json` 中没有 `reportId` 的条目                         |
+| 操作失误被记成了技能异常                                      | 脚本抛出的错误不是 `WorkflowError`, 被当成内部错误; 或 "下一动作" 的文字里写了会被拒绝的命令                                                                              | `lib/diagnostics.mjs`, `lib/guidance.mjs`                    | 查看异常的种类与信息; 流程规则的拒绝一律抛 `WorkflowError`                              |
 
 ## 修改流程
 
@@ -204,7 +212,7 @@
 | `code-checks.test.mjs`    | 检查命令登记, 固定判据, 新建与发布前核对, 要运行的检查命令, 骨架预填                                                                                                             |
 | `evidence.test.mjs`       | 证据表的读取与写法校验, 从本机临时仓库按版本取行, 单条自查命令                                                                                                                   |
 | `guard.test.mjs`          | 四条写入规则各有放行例与拒绝例, 只产出记录的工单, 工单不在执行中, 只在需要时判断编排会话                                                                                         |
-| `workflow.test.mjs`       | 工单状态 (含受阻撤回, 发布摘要, 没有提交中的状态), 路线, 阶段, 记录, 编排标记, 选项识别, 验收结论分类, 委派提示词, 下一动作                                                      |
+| `workflow.test.mjs`       | 工单状态 (含受阻撤回, 发布摘要, 没有提交中的状态), 路线, 阶段, 记录, 编排标记, 选项识别, 验收结论分类, 委派提示词 (含发布前核对), 下一动作, 子代理模型                           |
 | `settings.test.mjs`       | 放行规则的合并与移除, 旧版本项目级 hook 的识别与清理, 插件 `hooks.json` 与 `bin/` 的接线                                                                                         |
 | `cli.test.mjs`            | 进入与初始化 (编排标记, 不写 hook 不复制脚本), 恢复进度, 忽略规则检查, 从 0.x 升级 (清理与工单撤回, 旧编排登记), 旧提交中工单的迁移, 卸载, `ref`, 回复骨架, 自查                 |
 | `flow.test.mjs`           | 未初始化的项目, 按转录认出编排会话, 提醒, 回复结构校验, 工单往返到验收与提交步骤, 认可后改工单, 接受未验证判据, 审阅预填, 受阻继续, 验收不通过的下一动作, 检查命令, 阶段提交步骤 |
@@ -250,6 +258,18 @@
 
 调研框架不设范围时, 一次立项调研超过 80 次网络调用, 耗时约 13 分钟; 框架现在限制为合计 20 次.
 
+### 子代理模型 (官方文档, 2026-11-12, 没有实测)
+
+以下内容摘自 Claude Code 文档的 sub-agents, plugins/components 与 model-config 三页, 由查询子代理摘录:
+
+| 待验证点       | 文档的说法                                                                                         |
+| -------------- | -------------------------------------------------------------------------------------------------- |
+| 取值顺序       | 派出时的 `model` 参数, 子代理定义的 `model`, 环境变量 `CLAUDE_CODE_SUBAGENT_MODEL`, 编排会话的模型 |
+| 派出参数的取值 | 只接受别名 `sonnet`, `opus`, `haiku`, `fable`, 不接受完整模型编号与 `inherit`                      |
+| 续接           | 派出参数在 SendMessage 续接时保留; 定义中的 `model` 续接时是否保留, 文档没有说明                   |
+| 强制覆盖       | 用户设置 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` 时子代理一律用会话模型                               |
+| 推理强度       | 会话的推理强度不带到另一个模型的子代理上; 子代理定义有 `effort` 字段. 本技能目前不设置             |
+
 ## 发版前手动测试
 
 在临时仓库中用 `claude --plugin-dir ./plugins/waypoint` 逐项确认:
@@ -276,14 +296,18 @@
 
 ### 工单往返
 
-1. "工单审阅" 只有审阅要点与工单文件路径, 与工单文件一致; 选 B 后修改再审阅; 选 A 后发布并在后台派出执行子代理, 回复 "工单执行"; 认可之后改工单文件, 发布被拒.
-2. 执行子代理在后台工作时, 能继续与编排会话对话; 子代理结束后编排会话自动运行 status 并进入验收.
-3. 默认权限模式下, 执行子代理的写入确认弹在编排会话中; 切到 Accept edits 后不再弹出.
-4. 执行子代理受阻 (例如需要用户提供账号): 回复 "受阻处理"; 用户完成操作后不需要重新审阅, 原子代理用 SendMessage 继续.
-5. "工单执行" 没有选项块; 执行期间回复 "停止执行": 子代理停止, 工单撤回为起草中, 修改后重新审阅.
-6. 验收子代理交回结论与证据, 它尝试写文件时被拒绝; 回执中列为外部影响的测试它不运行.
-7. 验收通过选 A 提交, 选 B 提交并推送; 有未验证判据时用第 3 组, 选 A 后工单通过并登记风险; 有不通过时补正, 实现工单先判断是否太大.
-8. 执行子代理写本工单回执与 `artifacts/` 之外的编排记录被拒; 编排会话写业务文件被拒.
+1. 写好工单后编排会话先派核对子代理 (Agent 调用带 `model: "sonnet"`), 核对子代理尝试写文件时被拒; 故意在判据里写一个不存在的文件, 核对结果指出来, 编排会话改好后运行 `order precheck`; 跳过核对直接 `reply approve` 被拒.
+2. 执行子代理遇到一条做不到的判据: 做完其余部分, 回执列为待定, 验收报告用第 3 组并写明这条判据的情况.
+3. 分析工单中执行子代理需要用户操作: 不写回执, 交回 "执行状态: 等待操作"; 编排会话回复 "等待操作" (没有选项块), 用户回复 "操作完成" 后原子代理继续, `status` 的工单状态一直是 issued.
+4. `model set executor sonnet --kind fix` 之后, 修复工单的下一动作写 `model 参数写 "sonnet"`, 实现工单仍写不传; 续接 (SendMessage) 之后子代理仍用派出时的模型.
+5. "工单审阅" 只有审阅要点与工单文件路径, 与工单文件一致; 选 B 后修改再审阅; 选 A 后发布并在后台派出执行子代理, 回复 "工单执行"; 认可之后改工单文件, 发布被拒.
+6. 执行子代理在后台工作时, 能继续与编排会话对话; 子代理结束后编排会话自动运行 status 并进入验收.
+7. 默认权限模式下, 执行子代理的写入确认弹在编排会话中; 切到 Accept edits 后不再弹出.
+8. 执行子代理受阻 (例如需要用户提供账号): 回复 "受阻处理"; 用户完成操作后不需要重新审阅, 原子代理用 SendMessage 继续.
+9. "工单执行" 没有选项块; 执行期间回复 "停止执行": 子代理停止, 工单撤回为起草中, 修改后重新审阅.
+10. 验收子代理交回结论与证据, 它尝试写文件时被拒绝; 回执中列为外部影响的测试它不运行.
+11. 验收通过选 A 提交, 选 B 提交并推送; 有未验证判据时用第 3 组, 选 A 后工单通过并登记风险; 有不通过时补正, 实现工单先判断是否太大.
+12. 执行子代理写本工单回执与 `artifacts/` 之外的编排记录被拒; 编排会话写业务文件被拒.
 
 ### 变更, 复查与异常
 
@@ -302,4 +326,7 @@
 - 编排会话的认定依赖转录中的标记, 转录格式是 Claude Code 的内部格式; 读不到转录时规则 4 不生效 (放行).
 - 执行子代理属于启动它的会话, 会话关闭后子代理的工作中断; 新会话按回执是否写入继续.
 - 后台子代理的写入确认不写明是子代理, 用户只能从 "工单执行" 回复与任务列表推断.
+- 发布前核对只记是否做过, 不核对编排会话是否按结果改了工单; 核对子代理只查工单中写出来的事实, 没写出来的隐含假设查不到.
+- 子代理模型只是写在 "下一动作" 里的参数, hook 不核对编排会话是否照传.
+- 等待操作期间工单状态不变, 原执行子代理随会话结束而丢失; 新派出的子代理只能靠 `artifacts/` 下的文档接着做.
 - 源码证据只支持公开 git 仓库的 https 地址; `evidence` 只核对被引用的行, 这些行是否真能支持 "说明" 仍由验收子代理判断.

@@ -41,6 +41,21 @@ export const TERMINAL_ORDER_STATUSES = Object.freeze([
 export const ISSUED_ORDER_STATUS = "issued";
 
 /**
+ * 起草状态: 发布前核对只对这个状态的工单强制要求.
+ * @type {string}
+ */
+export const DRAFTING_ORDER_STATUS = "drafting";
+
+/**
+ * 可以请用户审阅的工单状态: 起草中, 以及受阻后修改待重新发布.
+ * @type {readonly string[]}
+ */
+export const REVIEWABLE_ORDER_STATUSES = Object.freeze([
+  DRAFTING_ORDER_STATUS,
+  "blocked",
+]);
+
+/**
  * 实现工单的类型名.
  * @type {string}
  */
@@ -153,7 +168,7 @@ export function createOrder(state, { kind, slug, slice, baseCommit }) {
       folder: `${id}-${slug}`,
       kind,
       slice: slice ?? state.slice ?? null,
-      status: "drafting",
+      status: DRAFTING_ORDER_STATUS,
       round: 0,
       baseCommit,
     },
@@ -214,6 +229,43 @@ export function setOrderStatus(
     ),
     lastAction: `工单 ${order.id} 转为 ${status}`,
   };
+}
+
+/**
+ * 记下当前工单已做过发布前核对. 核对一次即可: 按核对结果修改工单, 或受阻后
+ * 修改工单, 都不要求再核对.
+ *
+ * @param {import("./state.mjs").NavigatorState} state 当前状态.
+ * @returns {import("./state.mjs").NavigatorState} 新状态.
+ * @throws {WorkflowError} 没有当前工单, 或工单已经发布时.
+ */
+export function markPrechecked(state) {
+  const order = state.order;
+  if (order === null) {
+    throw new WorkflowError("当前没有工单.");
+  }
+  if (!REVIEWABLE_ORDER_STATUSES.includes(order.status)) {
+    throw new WorkflowError(
+      `工单 ${order.id} 处于 ${order.status}, 发布前核对只用于 ${REVIEWABLE_ORDER_STATUSES.join(", ")} 状态的工单.`,
+    );
+  }
+  return {
+    ...state,
+    order: { ...order, prechecked: true },
+    lastAction: `工单 ${order.id} 已做发布前核对`,
+  };
+}
+
+/**
+ * 说明当前工单为什么还不能请用户审阅: 起草中的工单要先做发布前核对.
+ *
+ * @param {import("./state.mjs").OrderState} order 当前工单.
+ * @returns {string | undefined} 原因; 可以审阅时为 undefined.
+ */
+export function precheckBlocker(order) {
+  return order.status === DRAFTING_ORDER_STATUS && order.prechecked !== true
+    ? `工单 ${order.id} 还没有做发布前核对: 运行 precheck-brief, 派核对子代理, 按结果改好工单后运行 order precheck.`
+    : undefined;
 }
 
 /**

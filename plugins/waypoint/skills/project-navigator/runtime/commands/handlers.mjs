@@ -8,6 +8,7 @@ import { runCodeCheck } from "./codecheck.mjs";
 import { runEnter } from "./enter.mjs";
 import { runEvidence } from "./evidence.mjs";
 import { runInit } from "./init.mjs";
+import { runModel } from "./model.mjs";
 import { runOrder } from "./order.mjs";
 import { runPlan } from "./plan.mjs";
 import { runRecords } from "./records.mjs";
@@ -56,6 +57,7 @@ export const COMMAND_HANDLERS = Object.freeze({
   risk: runRecords,
   decision: runRecords,
   change: runRecords,
+  "precheck-brief": runBrief,
   "exec-brief": runBrief,
   "review-brief": runBrief,
   "research-brief": runBrief,
@@ -63,5 +65,6 @@ export const COMMAND_HANDLERS = Object.freeze({
   check: runCheck,
   standards: runStandards,
   codecheck: runCodeCheck,
+  model: runModel,
   report: runReport,
 });

@@ -73,6 +73,7 @@ export class StateConflictError extends Error {
  * @property {number} round 发布轮次.
  * @property {string} baseCommit 基准提交.
  * @property {string} [issuedDigest] 最近一次发布时工单文件内容的摘要.
+ * @property {boolean} [prechecked] 是否已做过发布前核对.
  */
 
 /**
@@ -93,6 +94,7 @@ export class StateConflictError extends Error {
  * @property {object[]} decisions 决策列表.
  * @property {object[]} changes 变更列表.
  * @property {import("./code-checks.mjs").CodeChecks | null} codeChecks 登记的代码检查命令; 尚未登记时为 null.
+ * @property {Record<string, string>} models 子代理模型分配中与默认不同的部分, 键见 subagent-models.mjs.
  * @property {string} lastAction 最后一个动作的中文描述.
  * @property {string} updatedAt 最后写入时间.
  * @property {object[]} skipped 被跳过的阶段及原因.
@@ -125,6 +127,7 @@ export function createInitialState({ skillVersion, now }) {
     decisions: [],
     changes: [],
     codeChecks: null,
+    models: {},
     lastAction: "初始化",
     updatedAt: now,
     skipped: [],
@@ -233,6 +236,7 @@ function normalizeState(raw) {
     decisions: raw.decisions ?? [],
     changes: raw.changes ?? [],
     codeChecks: raw.codeChecks ?? null,
+    models: raw.models ?? {},
     skipped: raw.skipped ?? [],
   };
 }

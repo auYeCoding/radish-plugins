@@ -52,38 +52,42 @@ allowed-tools: Bash(node *) PowerShell(node *) Bash(project-navigator *) PowerSh
 
 初始化之后, 命令一律写成 `project-navigator <命令>`, 由插件提供, 在 Bash 与 PowerShell 中都能直接运行. 一次只运行一条命令.
 
-| 命令                                                     | 用途与草稿格式                                                                                             |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `init`                                                   | 初始化, 或升级旧版本初始化的项目                                                                           |
-| `status`                                                 | 查看位置与下一动作                                                                                         |
-| `reply <编号> [--option <组号>]`                         | 取得填写要求与骨架; "下一动作" 已写出参数时照抄; 不带编号时列出全部类型与编号                              |
-| `template <种类> [--option <结构>]`                      | 取得记录文件骨架; 种类见 `ref files`                                                                       |
-| `ref <名称>`                                             | 输出参考文件, 执行手册 (`executor`) 或工程规范默认包 (`standards`)                                         |
-| `stage <编号>`, `step <标识>`, `finish`                  | 记录阶段与步骤; `finish` 在 "项目收尾" 中用户选 A 后运行                                                   |
-| `skip <编号> --from <草稿>`                              | 记录用户认可的跳过: `{"reason"}`                                                                           |
-| `roadmap --from <草稿>`                                  | 更新推进路线: `{"milestones": [{"name", "goal", "metrics": [], "slices": [{"name"}]}]}`, 已有条目保留 `id` |
-| `milestone <编号> <状态>`, `slice <编号> <状态>`         | 状态为 pending, active, done                                                                               |
-| `order new --kind <类型> --slug <短名> [--slice <编号>]` | 新建工单; 不带 `--slice` 时挂在当前切片                                                                    |
-| `order set <状态> [--accept-unverified]`                 | 转换工单状态                                                                                               |
-| `exec-brief`, `review-brief`, `research-brief`           | 取得执行, 验收与调研的委派提示词                                                                           |
-| `evidence`                                               | 从原仓库取回选型回执证据表引用的源码行; 由验收子代理运行                                                   |
-| `risk add --from <草稿>`                                 | 登记风险: `{"description", "severity": "high/medium/low", "source", "handling"}`                           |
-| `risk set <编号> <状态> [--from <草稿>]`                 | 状态为 open, investigating, resolved, accepted; 草稿 `{"handling"}`                                        |
-| `decision add --from <草稿>`                             | 登记决策: `{"title"}`                                                                                      |
-| `decision supersede <编号> --by <编号>`                  | 标记决策被取代                                                                                             |
-| `change add --from <草稿>`                               | 登记变更: `{"title", "status": "accepted/deferred/dropped"}`                                               |
-| `check [文件...]`                                        | 体检; 带文件时只自查这些文件                                                                               |
-| `standards --from <草稿>`                                | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                     |
-| `codecheck set --from <草稿>`                            | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                       |
-| `report [--from <草稿>]`                                 | 生成技能问题报告: `{"doing", "expected", "actual", "reproduce", "blocked": false}`, 只写事实               |
+| 命令                                                             | 用途与草稿格式                                                                                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `init`                                                           | 初始化, 或升级旧版本初始化的项目                                                                                         |
+| `status`                                                         | 查看位置与下一动作                                                                                                       |
+| `reply <编号> [--option <组号>]`                                 | 取得填写要求与骨架; "下一动作" 已写出参数时照抄; 不带编号时列出全部类型与编号                                            |
+| `template <种类> [--option <结构>]`                              | 取得记录文件骨架; 种类见 `ref files`                                                                                     |
+| `ref <名称>`                                                     | 输出参考文件, 执行手册 (`executor`) 或工程规范默认包 (`standards`)                                                       |
+| `stage <编号>`, `step <标识>`, `finish`                          | 记录阶段与步骤; `finish` 在 "项目收尾" 中用户选 A 后运行                                                                 |
+| `skip <编号> --from <草稿>`                                      | 记录用户认可的跳过: `{"reason"}`                                                                                         |
+| `roadmap --from <草稿>`                                          | 更新推进路线: `{"milestones": [{"name", "goal", "metrics": [], "slices": [{"name"}]}]}`, 已有条目保留 `id`               |
+| `milestone <编号> <状态>`, `slice <编号> <状态>`                 | 状态为 pending, active, done                                                                                             |
+| `order new --kind <类型> --slug <短名> [--slice <编号>]`         | 新建工单; 不带 `--slice` 时挂在当前切片                                                                                  |
+| `order set <状态> [--accept-unverified]`                         | 转换工单状态                                                                                                             |
+| `order precheck`                                                 | 记下当前工单已做过发布前核对, 之后才能审阅                                                                               |
+| `precheck-brief`, `exec-brief`, `review-brief`, `research-brief` | 取得核对, 执行, 验收与调研的委派提示词                                                                                   |
+| `model`, `model set <角色> <模型> [--kind <工单类型>]`           | 查看与登记子代理模型; 角色为 executor, checker, reviewer, reader, researcher; 模型为 sonnet, opus, haiku, fable, inherit |
+| `evidence`                                                       | 从原仓库取回选型回执证据表引用的源码行; 由验收子代理运行                                                                 |
+| `risk add --from <草稿>`                                         | 登记风险: `{"description", "severity": "high/medium/low", "source", "handling"}`                                         |
+| `risk set <编号> <状态> [--from <草稿>]`                         | 状态为 open, investigating, resolved, accepted; 草稿 `{"handling"}`                                                      |
+| `decision add --from <草稿>`                                     | 登记决策: `{"title"}`                                                                                                    |
+| `decision supersede <编号> --by <编号>`                          | 标记决策被取代                                                                                                           |
+| `change add --from <草稿>`                                       | 登记变更: `{"title", "status": "accepted/deferred/dropped"}`                                                             |
+| `check [文件...]`                                                | 体检; 带文件时只自查这些文件                                                                                             |
+| `standards --from <草稿>`                                        | 写入项目规范: `{"commentLanguage", "conventions": []}`                                                                   |
+| `codecheck set --from <草稿>`                                    | 登记代码检查命令: `{"commands": [], "reason"}`, 没有命令时必须写原因                                                     |
+| `report [--from <草稿>]`                                         | 生成技能问题报告: `{"doing", "expected", "actual", "reproduce", "blocked": false}`, 只写事实                             |
 
 ## 子代理
 
+- 发布前核对: `waypoint:navigator-checker`, 提示词是 `precheck-brief` 的输出原文. 每张工单审阅之前核对一次.
 - 执行: `waypoint:navigator-executor`, 提示词是 `exec-brief` 的输出原文, 用 Agent 工具在后台派出 (`run_in_background`). 子代理结束后会自动通知编排会话.
 - 验收: `waypoint:navigator-reviewer`, 提示词是 `review-brief` 的输出原文.
 - 问题域调研: `waypoint:navigator-researcher`, 提示词以 `research-brief` 的输出开头, 其后只写调研问题.
 - 盘点, 规范对照与语义体检: `waypoint:navigator-reader`, 或 Explore.
-- 调研与阅读子代理在后台运行, 本轮要先结束时回复 "等待结果" (`reply waiting`): "等待对象" 写子代理, "任务内容" 写它在查什么, "后续动作" 写结果回来后做什么; 不写其它说明. 这条回复不带选项块.
+- 模型: 派子代理时, Agent 工具的 `model` 参数按 `status` 输出的 "子代理模型" 一行填写 (执行, 核对, 验收, 阅读, 调研各一项); 写 "跟随会话" 的不传这个参数. "下一动作" 已写出参数时照抄. 用户要调整时运行 `model set`.
+- 核对, 调研与阅读子代理在后台运行, 本轮要先结束时回复 "等待结果" (`reply waiting`): "等待对象" 写子代理, "任务内容" 写它在查什么, "后续动作" 写结果回来后做什么; 不写其它说明. 这条回复不带选项块.
 - 委派提示词原样使用, 不增删内容. 不建 Agent Team.
 
 ## 初始设置
