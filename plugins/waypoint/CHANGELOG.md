@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-11-13
+
 ### Fixed
 
 - `project-navigator`: a criterion you verified by hand is no longer reported as unverified. Once you confirm the result, the orchestrator records the verdict as "用户已确认" (confirmed by the user), which counts as a pass, so you are not asked to "accept as is" for something you just checked. Results you already saw before the review, as in interactive slices, are recorded the same way without asking you to repeat them.
@@ -355,7 +357,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.0.1...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.0.2...HEAD
+[2.0.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.2
 [2.0.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.1
 [2.0.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.0
 [1.5.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.5.0
