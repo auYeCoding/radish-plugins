@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `project-navigator`: a criterion you verified by hand is no longer reported as unverified. Once you confirm the result, the orchestrator records the verdict as "用户已确认" (confirmed by the user), which counts as a pass, so you are not asked to "accept as is" for something you just checked. Results you already saw before the review, as in interactive slices, are recorded the same way without asking you to repeat them.
+- `project-navigator`: manual verification no longer assumes what you have. The account, character, items, and devices a manual check needs are asked when the plan is written, and the executor prepares steps and materials only from what you confirmed.
+- `project-navigator`: slices nobody needs are kept out of the roadmap. Before adding a slice the orchestrator answers what breaks without it and whether there is a cheaper way, and recommends the cheapest option; reverse-engineering and measurement slices are scheduled only when their conclusions are needed and cannot be obtained otherwise.
+- `project-navigator`: less repetition. The executor's own report is no longer relayed while the review is running, the same steps are written out in full only once, and repeated waiting notices get a one-line reply.
+- `project-navigator`: when you interrupt or raise a question after choosing, the orchestrator answers first and does not change state or commit until you confirm again.
+
 ## [2.0.1] - 2026-11-13
 
 ### Fixed

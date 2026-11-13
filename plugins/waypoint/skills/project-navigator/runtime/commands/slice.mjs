@@ -291,7 +291,7 @@ function runSliceAccept({ projectRoot, state, spec, values, now }) {
     values["accept-unverified"] !== true
   ) {
     throw new WorkflowError(
-      `"${verdictTitle}" 中有 ${spec.verdicts.unverified} 的标准: 用户明确接受现状时, 运行 slice accept --accept-unverified.`,
+      `"${verdictTitle}" 中有 ${spec.verdicts.unverified} 的标准: 用户已经亲手确认的, 把结论改成 "${spec.verdicts.confirmed}" 并在证据中写下用户的原话; 用户没有验证而明确接受现状时, 运行 slice accept --accept-unverified.`,
     );
   }
   saveState(projectRoot, next, now);

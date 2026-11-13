@@ -115,7 +115,8 @@ export const VERDICT_CLASSES = Object.freeze({
  * @property {string} none 表示 "没有" 的写法.
  * @property {string} doneStatus 执行状态中表示做完的写法.
  * @property {string} reworkStatus 补做期间脚本写入执行状态的内容.
- * @property {{pass: string, fail: string, unverified: string}} verdicts 标准核对的三种结论.
+ * @property {{pass: string, fail: string, unverified: string, confirmed: string}} verdicts 标准核对的结论: 前三种由验收子代理给出, confirmed 由编排会话在用户亲手确认之后写入.
+ * @property {string} userEvidencePrefix 验收子代理在证据开头标明 "已有用户亲眼确认的记录" 的写法.
  * @property {PartSpec[]} parts 各段.
  */
 
@@ -421,7 +422,8 @@ export function readVerdicts(parsed, spec) {
 }
 
 /**
- * 给标准核对的结果归类: 有不通过的归为不通过, 否则有未验证的归为未验证.
+ * 给标准核对的结果归类: 有不通过的归为不通过, 否则有未验证的归为未验证; 用户
+ * 已确认的标准与通过的标准同样对待.
  *
  * @param {readonly VerdictRow[]} rows 标准核对表各行.
  * @param {SliceSpec} spec 规格.

@@ -202,7 +202,7 @@ function verificationRequirement({ project, spec }, titles) {
   const verification = /** @type {{mode: string, commands: string[]}} */ (
     project.verification
   );
-  const manual = `需要用户亲手运行或操作才能确认的标准, 结论写 ${spec.verdicts.unverified}, 并在 "${titles[SECTIONS.manual]}" 中写成逐步操作, 命令原样取自 "${titles[SECTIONS.tests]}"; 没有时写 "${spec.none}"`;
+  const manual = `需要用户亲手运行或操作才能确认的标准, 结论写 ${spec.verdicts.unverified}, 并在 "${titles[SECTIONS.manual]}" 中写成逐步操作, 命令原样取自 "${titles[SECTIONS.tests]}"; 没有时写 "${spec.none}". 其中 "${titles[SECTIONS.tests]}" 或结论文件已经写明用户亲眼确认过 (有时间, 有用户看到了什么) 的标准, 结论仍写 ${spec.verdicts.unverified}, 证据以 "${spec.userEvidencePrefix}" 开头并写出记录的位置, 不再写进 "${titles[SECTIONS.manual]}"`;
   return verification.mode === AUTO_VERIFICATION
     ? `验证运行: 运行 "验证方式" 中的命令与 "${titles[SECTIONS.tests]}" 中的命令, 原样记录结果; 检查是否删除, 放宽或跳过了已有测试. 需要真实账号, 会产生费用或外部副作用的命令不运行. ${manual}.`
     : `${titles[SECTIONS.manual]}: 本项目不靠自动测试验证, 不构建, 不运行程序. ${manual}.`;

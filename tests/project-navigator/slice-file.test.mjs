@@ -161,7 +161,7 @@ test("切片文件: 读出完成标准, 需要决定与执行状态", () => {
   assert.equal(readResultStatus(undefined, SPEC), "");
 });
 
-test("切片文件: 标准核对表的结论只能取三种, 每行要有证据, 并按最差的归类", () => {
+test("切片文件: 标准核对表的结论只能取规格中的几种, 每行要有证据, 并按最差的归类", () => {
   const withRows = (rows) =>
     parseSliceFile(
       skeleton("build").replace(
@@ -195,6 +195,15 @@ test("切片文件: 标准核对表的结论只能取三种, 每行要有证据,
     ),
     VERDICT_CLASSES.pass,
   );
+  const confirmed = readVerdicts(
+    withRows([
+      "| 1 | 通过 | a.js:1 |",
+      `| 2 | ${SPEC.verdicts.confirmed} | 用户 2026-11-13: 看到了 |`,
+    ]),
+    SPEC,
+  );
+  assert.deepEqual(confirmed.problems, []);
+  assert.equal(classifyVerdicts(confirmed.rows, SPEC), VERDICT_CLASSES.pass);
   const invalid = readVerdicts(
     withRows(["| 1 | 部分通过 | a |", "| 2 | 通过 |  |"]),
     SPEC,
