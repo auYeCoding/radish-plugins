@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-13
+
 ### Fixed
 
 - `project-navigator`: replies were hard to read. They now follow one of three layouts (waiting, report, asking the user to decide or act); the question and its options come right after the first paragraph, with the options in a code block; the progress line moves to the end and appears only when it changed; intake raises open questions one at a time instead of listing them all; the review report leads with the conclusion and the steps the user must perform. When the session offers a question box at the end of a turn, the skill uses it for every decision, in Simplified Chinese.
@@ -345,7 +347,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.0.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.0.1...HEAD
+[2.0.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.1
 [2.0.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.0
 [1.5.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.5.0
 [1.4.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v1.4.0
