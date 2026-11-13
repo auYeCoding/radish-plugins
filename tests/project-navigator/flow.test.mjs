@@ -218,10 +218,21 @@ test("流程: 最小骨架从写计划到接受未验证的标准", () => {
       标准核对: verdictTable("未验证"),
       ...reviewRest(true),
     });
-    assert.match(line(ok(runner, ["status"]), "下一动作"), /接受现状/u);
+    assert.match(reviewBrief, /证据以 "用户实测: " 开头/u);
+    const unverifiedAction = line(ok(runner, ["status"]), "下一动作");
+    assert.match(unverifiedAction, /接受现状/u);
+    assert.match(unverifiedAction, /改成 "用户已确认"/u);
     assert.match(refused(runner, ["slice", "accept"]), /用户结论/u);
-    fillSections(root, file, { 用户结论: "A, 接受现状." });
-    assert.match(refused(runner, ["slice", "accept"]), /--accept-unverified/u);
+    fillSections(root, file, {
+      标准核对: verdictTable("用户已确认"),
+      用户结论: "A, 接受现状.",
+    });
+    assert.match(line(ok(runner, ["status"]), "下一动作"), /验收全部通过/u);
+    fillSections(root, file, { 标准核对: verdictTable("未验证") });
+    assert.match(
+      refused(runner, ["slice", "accept"]),
+      /用户已确认.*--accept-unverified/u,
+    );
     const accepted = ok(runner, ["slice", "accept", "--accept-unverified"]);
     assert.match(accepted, /commit-message/u);
     assert.match(

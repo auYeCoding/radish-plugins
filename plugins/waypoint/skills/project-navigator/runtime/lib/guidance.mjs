@@ -233,7 +233,7 @@ function reviewingAction(slice, facts, spec) {
     return `验收全部通过, 请用户决定: A 通过并提交; B 通过, 提交并推送. 用户选择后${record}, 运行 ${command("slice accept")}.`;
   }
   if (facts.verdictClass === VERDICT_CLASSES.unverified) {
-    return `有标准未验证, 请用户决定: A 接受现状并提交 (${record}, 运行 ${command("slice accept --accept-unverified")}); B 补做 (${redo}).`;
+    return `有标准未验证. 用户已经亲手确认过的 (证据以 "${spec.userEvidencePrefix}" 开头, 或用户按 "${sectionTitle(spec, SECTIONS.manual)}" 做完并说了结果), 把结论改成 "${spec.verdicts.confirmed}", 证据写用户的原话与日期, 再运行 ${command("status")}, 不让用户重新选择. 还没有确认的, 先把步骤给用户; 用户不验证时请用户决定: A 接受现状并提交 (${record}, 运行 ${command("slice accept --accept-unverified")}); B 补做 (${redo}).`;
   }
   return slice.skeleton
     ? `有标准不通过, 这是最小骨架, 只能补做: 向用户说明后${redo}.`

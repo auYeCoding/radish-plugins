@@ -151,11 +151,12 @@ project-navigator check --filters
 5. **Corrections and pending criteria.** When a detail in the plan does not match reality, the executor subagent gathers evidence, works to what is actually there, and records each case in the "修正" (corrections) table, without stopping to ask you. When an individual completion criterion cannot be met as a matter of fact, it finishes the rest and lists the criterion under "待定标准" (pending criteria). You see both in one go at review time.
 6. **Submit for review.** The script checks that the Plan part was not changed during implementation and that the Result part is filled in.
 7. **Review.** The reviewer subagent checks item by item in a fresh context. There are only three verdicts: pass, fail, and unverified, and each comes with evidence. It traces the wiring from the entry point itself and does not copy the path the executor wrote.
-8. **Your decision.**
+8. **What you verify by hand.** A criterion that can only be confirmed by looking at the running program is judged unverified by the reviewer, with the steps written out. The account, character, items, and devices those steps need are asked when the plan is written. Once you have checked and said what you saw, the criterion is recorded as "用户已确认" (confirmed by the user) and treated like a pass, and you are not asked to choose again; the same goes for results you already saw before the review.
+9. **Your decision.**
 
 | Situation                  | You can choose                                                 |
 | -------------------------- | -------------------------------------------------------------- |
-| All pass                   | Pass and commit; pass, commit, and push                        |
+| All pass or confirmed      | Pass and commit; pass, commit, and push                        |
 | Some unverified, none fail | Accept as is and commit; rework                                |
 | Some fail                  | Rework; abandon this slice (the skeleton can only be reworked) |
 
