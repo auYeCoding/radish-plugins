@@ -92,7 +92,7 @@ test("规则: 工程规范的两种模块组织写法都能生成, 不留标记"
   assert.doesNotMatch(rendered[1], /一个模块一个目录/u);
 });
 
-test("规则: 子代理定义的名称与守卫中的一致, 验收子代理禁用写入工具", () => {
+test("规则: 子代理定义的名称与守卫中的一致, 验收子代理禁用写入工具并固定用 Sonnet", () => {
   for (const type of Object.values(SUBAGENT_TYPES)) {
     const name = type.split(PLUGIN_SEPARATOR)[1];
     const text = readFileSync(
@@ -101,11 +101,13 @@ test("规则: 子代理定义的名称与守卫中的一致, 验收子代理禁�
     );
     assert.match(text, new RegExp(`^name: ${name}$`, "mu"));
   }
+  const reviewer = readFileSync(
+    path.join(SKILL_DIRECTORY, "..", "..", "agents", "navigator-reviewer.md"),
+    "utf8",
+  );
   assert.match(
-    readFileSync(
-      path.join(SKILL_DIRECTORY, "..", "..", "agents", "navigator-reviewer.md"),
-      "utf8",
-    ),
+    reviewer,
     /^disallowedTools: Write, Edit, MultiEdit, NotebookEdit$/mu,
   );
+  assert.match(reviewer, /^model: sonnet$/mu);
 });

@@ -46,7 +46,7 @@ Any session that invokes the skill continues from the recorded state; there is n
 
 ## Quick start
 
-Take "build a tool that collects the team's weekly reports" as an example, starting from a new repository that has only a README. In every reply from the orchestrator session, the first line is the conclusion and the second line is the progress; when you need to decide something, the reply ends with options that start with a letter, and you answer with the letter.
+Take "build a tool that collects the team's weekly reports" as an example, starting from a new repository that has only a README. Every reply from the orchestrator session opens with a one-sentence conclusion; when you need to decide something, a code block listing the options follows immediately, and you answer with the letter, or click a button under the reply in the desktop app; progress is written at the end of the reply when it changed.
 
 ### First invocation
 
@@ -257,7 +257,7 @@ Run `/waypoint:project-navigator uninstall`. The allow rules are removed, the pl
 - Every machine that uses the project needs Node.js 22 or later.
 - The plugin's hook fires in every project, and every write-tool call and every message starts Node.js once; in a project that has not been initialized the script ends immediately.
 - The guard only checks the target paths of write tools, not the command line: when the orchestrator session changes code or installs dependencies from the command line, only the skill's rules constrain it.
-- The reply format (conclusion first, one line of progress) relies only on the skill's rules and is not validated.
+- The reply format (conclusion first, options in a code block) relies only on the skill's rules and is not validated.
 - A slice file is written part by part by the orchestrator session and the executor. The script uses the digest of the Plan part to discover that it was changed during implementation; it can detect this but cannot prevent it.
 - No script checks whether the orchestrator session really read the code before writing the plan; errors in the plan are caught by the executor subagent's "修正" (corrections) and by the review.
 - Apart from the filters check, the items of "结构核对" (structure check) are judged by the reviewer subagent and are not deterministic.
