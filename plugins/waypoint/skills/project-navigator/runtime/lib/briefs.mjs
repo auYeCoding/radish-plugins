@@ -110,11 +110,11 @@ export function buildExecutorBrief(context) {
 /**
  * 生成验收子代理的委派提示词.
  *
- * @param {BriefContext & {filterLines: readonly string[]}} context 生成提示词需要的信息; filterLines 是筛选器检查的输出, 没有做时为空.
+ * @param {BriefContext & {filterLines: readonly string[], confirmed: readonly import("./slice-file.mjs").VerdictRow[]}} context 生成提示词需要的信息; filterLines 是筛选器检查的输出, 没有做时为空; confirmed 是上一轮用户已确认的标准, 没有时为空.
  * @returns {string} 提示词全文.
  */
 export function buildReviewBrief(context) {
-  const { slice, current, project, spec, filterLines } = context;
+  const { slice, current, project, spec, filterLines, confirmed } = context;
   const titles = sectionTitles(spec);
   const { pass, fail, unverified } = spec.verdicts;
   const plan = partSpec(spec, PARTS.plan).heading;
@@ -125,7 +125,7 @@ export function buildReviewBrief(context) {
     review.sections.find((section) => section.id === SECTIONS.verdicts)?.table
   );
   const requirements = [
-    `${titles[SECTIONS.verdicts]}: 逐条对照 "${plan}" 段的 "${titles[SECTIONS.criteria]}"${current.round > 1 ? ` 与 "${titles[SECTIONS.rework]}"` : ""}, 每条给出结论与证据 (文件路径与行号, 或命令的原样输出). 结论只能是 ${pass}, ${fail}, ${unverified} 之一; 无法确认的写 ${unverified}, 并写明缺少什么. "${result}" 段 "${titles[SECTIONS.pending]}" 列出的标准, 核对原因是否属实: 属实时结论写 ${unverified}, 证据以 "待定: " 开头; 不属实时按实际情况下结论.`,
+    `${titles[SECTIONS.verdicts]}: 逐条对照 "${plan}" 段的 "${titles[SECTIONS.criteria]}"${current.round > 1 ? ` 与 "${titles[SECTIONS.rework]}"` : ""}, 每条给出结论与证据 (文件路径与行号, 或命令的原样输出). 结论只能是 ${pass}, ${fail}, ${unverified} 之一; 无法确认的写 ${unverified}, 并写明缺少什么. "${result}" 段 "${titles[SECTIONS.pending]}" 列出的标准, 核对原因是否属实: 属实时结论写 ${unverified}, 证据以 "待定: " 开头; 不属实时按实际情况下结论.${carriedRequirement(spec, current.round, confirmed)}`,
     ...(isBuild
       ? [
           `${titles[SECTIONS.wiringCheck]}: 从程序入口追到本切片的新代码, 写出调用路径经过的 文件:行号, 并与 "${result}" 段的 "${titles[SECTIONS.wiring]}" 比对; 追不到即为没有接线, 相关标准为 ${fail}.${slice.skeleton ? " 本切片是最小骨架: 另外确认入口是真实入口, 并且经过了计划中的每一层." : ""}`,
@@ -134,6 +134,7 @@ export function buildReviewBrief(context) {
       : []),
     `${titles[SECTIONS.scope]}: 用 git diff ${current.baseCommit} --stat 与 git status 列出实际改动, 与 "${result}" 段的 "${titles[SECTIONS.changes]}" 比对; 列出做了 "${titles[SECTIONS.excluded]}" 的改动.${isBuild ? "" : " 本切片只产出结论, 业务代码与项目配置不应有改动."}`,
     `${titles[SECTIONS.correctionCheck]}: "${result}" 段 "${titles[SECTIONS.corrections]}" 表的每一行, 核对 "实际情况" 有没有证据支持, "处理办法" 有没有改变目标, 完成标准或做了明确不做的事. 两项都没有问题的修正成立, 相关标准按修正后的事实判断; 否则相关标准为 ${fail}. 没有修正时写 "${spec.none}".`,
+    `${titles[SECTIONS.leftovers]}: 列出本切片改动或新增的代码, 结论文件与执行结果中没有解决的事: 写成待验证, 未测, 推测的结论, 已知缺陷, 写明 "以后处理" 或 "由某个切片处理" 的事, 以及 "${titles[SECTIONS.pending]}". 每项写 文件:行号 与一句说明; 没有时写 "${spec.none}".`,
     verificationRequirement(context, titles),
     ...(isBuild
       ? []
@@ -206,6 +207,22 @@ function verificationRequirement({ project, spec }, titles) {
   return verification.mode === AUTO_VERIFICATION
     ? `验证运行: 运行 "验证方式" 中的命令与 "${titles[SECTIONS.tests]}" 中的命令, 原样记录结果; 检查是否删除, 放宽或跳过了已有测试. 需要真实账号, 会产生费用或外部副作用的命令不运行. ${manual}.`
     : `${titles[SECTIONS.manual]}: 本项目不靠自动测试验证, 不构建, 不运行程序. ${manual}.`;
+}
+
+/**
+ * 生成沿用上一轮 "用户已确认" 的要求.
+ *
+ * @param {import("./slice-file.mjs").SliceSpec} spec 切片文件规格.
+ * @param {number} round 本轮轮次.
+ * @param {readonly import("./slice-file.mjs").VerdictRow[]} confirmed 上一轮用户已确认的标准.
+ * @returns {string} 要求全文, 以空格开头; 没有可沿用的标准时为空字符串.
+ */
+function carriedRequirement(spec, round, confirmed) {
+  if (confirmed.length === 0) {
+    return "";
+  }
+  const listed = confirmed.map((row) => `"${row.criterion}"`).join(", ");
+  return ` 上一轮用户已经亲手确认的标准: ${listed}. 本轮补做没有改动到它们时, 结论写 ${spec.verdicts.confirmed}, 证据写 "沿用第 ${round - 1} 轮: " 加上一轮的证据; 补做改动到了的, 照常核对.`;
 }
 
 /**

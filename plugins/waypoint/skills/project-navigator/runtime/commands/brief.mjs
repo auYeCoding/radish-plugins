@@ -2,12 +2,19 @@
  * @file brief 命令: 输出实现子代理与验收子代理的委派提示词.
  *
  * 用法: brief exec | brief review. 提示词只对进行中的切片生成, 编排会话原样使用.
+ * 补做之后的验收提示词带上上一轮 "用户已确认" 的标准, 由验收子代理沿用.
  */
+
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import { buildExecutorBrief, buildReviewBrief } from "../lib/briefs.mjs";
 import { runFilterCheck } from "../lib/filters.mjs";
 import { activeSlice } from "../lib/roadmap.mjs";
-import { loadSliceSpec } from "../lib/slice-file.mjs";
+import {
+  loadSliceSpec,
+  readArchivedConfirmations,
+} from "../lib/slice-file.mjs";
 import { SLICE_STATUSES, SLICE_STATUS_LABELS } from "../lib/state.mjs";
 import { WorkflowError } from "../lib/workflow-error.mjs";
 import { openProject } from "./support.mjs";
@@ -61,9 +68,18 @@ export function runBrief({ positionals, cwd }) {
     spec: loadSliceSpec(),
   };
   if (kind === BRIEF_KINDS.review) {
+    const file = path.join(projectRoot, /** @type {string} */ (slice.file));
     return buildReviewBrief({
       ...context,
       filterLines: runFilterCheck(projectRoot, state),
+      confirmed:
+        state.current.round > 1 && existsSync(file)
+          ? readArchivedConfirmations(
+              readFileSync(file, "utf8"),
+              context.spec,
+              state.current.round - 1,
+            )
+          : [],
     }).split("\n");
   }
   if (slice.interactive) {

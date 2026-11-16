@@ -12,6 +12,7 @@ import path from "node:path";
 import { checkEnvironment } from "../lib/environment.mjs";
 import {
   command,
+  issuesLine,
   nextAction,
   progressLine,
   readFacts,
@@ -132,6 +133,7 @@ function describeProgress(projectRoot, state) {
   const hasPermissions = hasNavigatorPermissions(
     readSettingsFile(projectRoot, PROJECT_LOCAL_SETTINGS_FILE),
   );
+  const facts = readFacts(projectRoot, state);
   return [
     `- 初始标记: 已初始化, 版本 ${state.skillVersion}`,
     `- 放行规则: ${hasPermissions ? "已写入" : `未写入, 运行 ${command("init")} 补上`}`,
@@ -140,7 +142,8 @@ function describeProgress(projectRoot, state) {
     `- 项目设置: ${describeSettings(state.project)}`,
     `- 最后动作: ${state.lastAction} (${state.updatedAt})`,
     `- 工作区域: ${uncommitted.length === 0 ? "技能产物都已入库" : `${uncommitted.length} 个技能产物未入库`}`,
-    `- 下一动作: ${nextAction(state, readFacts(projectRoot, state))}`,
+    `- 遗留问题: ${issuesLine(facts)}`,
+    `- 下一动作: ${nextAction(state, facts)}`,
   ];
 }
 

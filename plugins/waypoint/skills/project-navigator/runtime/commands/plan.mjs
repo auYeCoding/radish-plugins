@@ -5,12 +5,20 @@
  * - roadmap --from <草稿>
  * - milestone done <编号>
  * - finish
+ *
+ * 里程完成时不能留下归属已结束切片的遗留问题; 收尾时遗留问题要全部解决.
  */
 
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { REQUIREMENTS_FILE } from "../lib/paths.mjs";
+import {
+  describeIssues,
+  openIssues,
+  readIssues,
+  requireNoStrandedIssues,
+} from "../lib/issues.mjs";
+import { ISSUES_FILE, REQUIREMENTS_FILE } from "../lib/paths.mjs";
 import {
   applyRoadmap,
   completeMilestone,
@@ -56,14 +64,18 @@ export function runPlan({ command, positionals, values, cwd, now }) {
     return updateRoadmap(projectRoot, state, values.from, now);
   }
   if (command === FINISH_COMMAND) {
-    const written = saveState(projectRoot, finishProject(state), now);
+    const finished = finishProject(state);
+    requireNoOpenIssues(projectRoot);
+    const written = saveState(projectRoot, finished, now);
     return withCommit(projectRoot, written, "项目收尾", true);
   }
   const [subcommand, id] = positionals;
   if (subcommand !== MILESTONE_DONE) {
     throw new WorkflowError("milestone 的用法: milestone done <编号>.");
   }
-  const written = saveState(projectRoot, completeMilestone(state, id), now);
+  const completed = completeMilestone(state, id);
+  requireNoStrandedIssues({ projectRoot, state, step: `完成里程 ${id}` });
+  const written = saveState(projectRoot, completed, now);
   return withCommit(projectRoot, written, `里程 ${id} 完成`, true);
 }
 
@@ -106,6 +118,26 @@ function updateRoadmap(projectRoot, state, draftPath, now) {
       isIntakeDone,
     ),
   ];
+}
+
+/**
+ * 收尾之前确认遗留问题全部解决.
+ *
+ * @param {string} projectRoot 项目根目录.
+ * @returns {void}
+ * @throws {WorkflowError} 表格不合规, 或还有没有解决的遗留问题时.
+ */
+function requireNoOpenIssues(projectRoot) {
+  const { issues, problems } = readIssues(projectRoot);
+  if (problems.length > 0) {
+    throw new WorkflowError(problems.join(" "));
+  }
+  const open = openIssues(issues);
+  if (open.length > 0) {
+    throw new WorkflowError(
+      `${ISSUES_FILE} 中还有没有解决的遗留问题, 不能收尾: ${describeIssues(open)}.`,
+    );
+  }
 }
 
 /**

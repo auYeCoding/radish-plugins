@@ -6,9 +6,12 @@
  * - slice start [--decided]
  * - slice replan
  * - slice review
- * - slice accept [--accept-unverified]
+ * - slice accept
  * - slice redo
  * - slice drop
+ *
+ * 切片结束 (通过或放弃) 之前核对遗留问题: 归属本切片, 或归属已经结束的切片而
+ * 没有解决的问题, 会拦下这一步.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -17,7 +20,18 @@ import path from "node:path";
 import { writeFileAtomically } from "../lib/atomic-file.mjs";
 import { COMMIT_SKILL, SUBAGENT_TYPES } from "../lib/guard.mjs";
 import { command } from "../lib/guidance.mjs";
-import { FINDINGS_DIRECTORY, sliceFilePath } from "../lib/paths.mjs";
+import {
+  describeIssues,
+  ensureIssuesFile,
+  issuesOwnedBy,
+  readIssues,
+  requireNoStrandedIssues,
+} from "../lib/issues.mjs";
+import {
+  FINDINGS_DIRECTORY,
+  ISSUES_FILE,
+  sliceFilePath,
+} from "../lib/paths.mjs";
 import { headCommit } from "../lib/repo.mjs";
 import { activeSlice, currentMilestone } from "../lib/roadmap.mjs";
 import {
@@ -141,10 +155,17 @@ function runSlicePlan({ projectRoot, state, spec, positionals, values, now }) {
     }),
   );
   saveState(projectRoot, next, now);
+  ensureIssuesFile(projectRoot);
+  const owned = issuesOwnedBy(readIssues(projectRoot).issues, slice.id);
   const plan = partSpec(spec, PARTS.plan).heading;
   return [
     `- 执行结果: 已建切片文件 ${file}`,
     `- 填写要求: 只填 "${plan}" 段, 把每处 "${spec.placeholder}...)" 换成内容; 小节内不加标题; "${sectionTitle(spec, SECTIONS.criteria)}" 写成编号列表; 其余两段保持原样`,
+    ...(owned.length === 0
+      ? []
+      : [
+          `- 归属本切片的遗留问题: ${describeIssues(owned)}. 每一条都要写进计划的 "${sectionTitle(spec, SECTIONS.criteria)}", 本切片通过之前要在 ${ISSUES_FILE} 中标为已解决`,
+        ]),
     `- 下一动作: 填好后运行 ${command("slice start")}`,
   ];
 }
@@ -253,9 +274,9 @@ function runSliceReview({ projectRoot, state, spec, now }) {
  *
  * @param {SliceCommandContext} context 上下文.
  * @returns {string[]} 输出各行.
- * @throws {WorkflowError} 验收段没有填好, 有标准不通过, 或有未验证而没有带接受参数时.
+ * @throws {WorkflowError} 验收段没有填好, 有标准不通过或未验证, 或会留下没有解决的遗留问题时.
  */
-function runSliceAccept({ projectRoot, state, spec, values, now }) {
+function runSliceAccept({ projectRoot, state, spec, now }) {
   const next = acceptSlice(state);
   const { slice, parsed } = readActive(projectRoot, state, spec);
   const review = partSpec(spec, PARTS.review).heading;
@@ -286,14 +307,17 @@ function runSliceAccept({ projectRoot, state, spec, values, now }) {
       `"${verdictTitle}" 中有 ${spec.verdicts.fail} 的标准, 不能通过: 补做 (slice redo) 或放弃 (slice drop).`,
     );
   }
-  if (
-    verdictClass === VERDICT_CLASSES.unverified &&
-    values["accept-unverified"] !== true
-  ) {
+  if (verdictClass === VERDICT_CLASSES.unverified) {
     throw new WorkflowError(
-      `"${verdictTitle}" 中有 ${spec.verdicts.unverified} 的标准: 用户已经亲手确认的, 把结论改成 "${spec.verdicts.confirmed}" 并在证据中写下用户的原话; 用户没有验证而明确接受现状时, 运行 slice accept --accept-unverified.`,
+      `"${verdictTitle}" 中有 ${spec.verdicts.unverified} 的标准, 不能通过: 请用户亲手验证, 用户确认后把结论改成 "${spec.verdicts.confirmed}" 并在证据中写下用户的原话; 验证不了的, 补做 (slice redo), 标准本身不成立时经用户同意在补做中改掉这条标准.`,
     );
   }
+  requireNoStrandedIssues({
+    projectRoot,
+    state,
+    step: `让切片 ${slice.id} 通过`,
+    settlingId: slice.id,
+  });
   saveState(projectRoot, next, now);
   return [
     `- 执行结果: ${next.lastAction}`,
@@ -340,9 +364,17 @@ function runSliceRedo({ projectRoot, state, spec, now }) {
  *
  * @param {SliceCommandContext} context 上下文.
  * @returns {string[]} 输出各行.
+ * @throws {WorkflowError} 会留下没有解决的遗留问题时.
  */
 function runSliceDrop({ projectRoot, state, now }) {
   const next = dropSlice(state);
+  const sliceId = /** @type {string} */ (state.current?.sliceId);
+  requireNoStrandedIssues({
+    projectRoot,
+    state,
+    step: `放弃切片 ${sliceId}`,
+    settlingId: sliceId,
+  });
   saveState(projectRoot, next, now);
   return [
     `- 执行结果: ${next.lastAction}`,

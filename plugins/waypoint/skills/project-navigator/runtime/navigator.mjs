@@ -9,7 +9,7 @@
  * - 参考: ref <名称>
  * - 立项: setup [--from <草稿>], roadmap --from <草稿>
  * - 切片: slice plan <编号> --slug <短名>, slice start [--decided], slice replan,
- *   slice review, slice accept [--accept-unverified], slice redo, slice drop
+ *   slice review, slice accept, slice redo, slice drop
  * - 委派提示词: brief exec, brief review
  * - 里程与收尾: milestone done <编号>, finish
  * - 记录: decision add --from <草稿>, check [--filters]
@@ -38,7 +38,6 @@ const OPTIONS = {
   archive: { type: "boolean", default: false },
   decided: { type: "boolean", default: false },
   filters: { type: "boolean", default: false },
-  "accept-unverified": { type: "boolean", default: false },
 };
 
 /**

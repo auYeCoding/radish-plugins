@@ -65,6 +65,12 @@ export const DECISIONS_FILE = `${NAVIGATOR_DIRECTORY}/decisions.md`;
 export const BACKLOG_FILE = `${NAVIGATOR_DIRECTORY}/backlog.md`;
 
 /**
+ * 遗留问题文件, 相对于项目根目录; 记录已做部分中还没有解决的事.
+ * @type {string}
+ */
+export const ISSUES_FILE = `${NAVIGATOR_DIRECTORY}/issues.md`;
+
+/**
  * 切片文件所在目录, 相对于项目根目录.
  * @type {string}
  */
@@ -127,6 +133,7 @@ export const REQUIRED_TRACKED_PATHS = Object.freeze([
   REQUIREMENTS_FILE,
   DECISIONS_FILE,
   BACKLOG_FILE,
+  ISSUES_FILE,
   `${SLICES_DIRECTORY}/0001-sample.md`,
   `${FINDINGS_DIRECTORY}/sample.md`,
   PROJECT_SETTINGS_FILE,
@@ -164,6 +171,12 @@ export const STANDARDS_FILE = path.join(
  * @type {string}
  */
 export const GUIDE_FILE = path.join(SKILL_ROOT, "guide", "executor.md");
+
+/**
+ * 技能规则文件的绝对路径.
+ * @type {string}
+ */
+export const SKILL_FILE = path.join(SKILL_ROOT, "SKILL.md");
 
 /**
  * 参考文件所在目录的绝对路径.
