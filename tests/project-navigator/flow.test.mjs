@@ -92,8 +92,31 @@ function reviewRest(isBuild) {
     ...(isBuild ? { 接线核对: "已接线.", 结构核对: "没有问题." } : {}),
     范围核对: "与改动清单一致.",
     修正核对: "无",
+    遗留核对: "无",
     人工验收: "无",
   };
+}
+
+/**
+ * 写入遗留问题表.
+ *
+ * @param {string} root 仓库根目录.
+ * @param {readonly (readonly string[])[]} rows 各行的单元格: 编号, 问题, 发现于, 归属切片, 状态, 处理结果.
+ * @returns {void}
+ */
+function writeIssues(root, rows) {
+  writeFileSync(
+    path.join(root, ".navigator/issues.md"),
+    [
+      "# 遗留问题",
+      "",
+      "| 编号 | 问题 | 发现于 | 归属切片 | 状态 | 处理结果 |",
+      "| --- | --- | --- | --- | --- | --- |",
+      ...rows.map((cells) => `| ${cells.join(" | ")} |`),
+      "",
+    ].join("\n"),
+    "utf8",
+  );
 }
 
 /**
@@ -179,7 +202,7 @@ function completeSlice({ root, runner, id, slug, isBuild = true }) {
   return file;
 }
 
-test("流程: 最小骨架从写计划到接受未验证的标准", () => {
+test("流程: 最小骨架从写计划到用户确认后通过, 未验证的标准不能通过", () => {
   const { root, cleanup } = createTemporaryRepository();
   try {
     const runner = startProject(root);
@@ -220,20 +243,18 @@ test("流程: 最小骨架从写计划到接受未验证的标准", () => {
     });
     assert.match(reviewBrief, /证据以 "用户实测: " 开头/u);
     const unverifiedAction = line(ok(runner, ["status"]), "下一动作");
-    assert.match(unverifiedAction, /接受现状/u);
+    assert.match(unverifiedAction, /未验证的标准不能通过/u);
     assert.match(unverifiedAction, /改成 "用户已确认"/u);
+    assert.doesNotMatch(unverifiedAction, /接受现状|accept-unverified/u);
     assert.match(refused(runner, ["slice", "accept"]), /用户结论/u);
-    fillSections(root, file, {
-      标准核对: verdictTable("用户已确认"),
-      用户结论: "A, 接受现状.",
-    });
-    assert.match(line(ok(runner, ["status"]), "下一动作"), /验收全部通过/u);
-    fillSections(root, file, { 标准核对: verdictTable("未验证") });
+    fillSections(root, file, { 用户结论: "A, 通过并提交." });
     assert.match(
       refused(runner, ["slice", "accept"]),
-      /用户已确认.*--accept-unverified/u,
+      /未验证 的标准, 不能通过/u,
     );
-    const accepted = ok(runner, ["slice", "accept", "--accept-unverified"]);
+    fillSections(root, file, { 标准核对: verdictTable("用户已确认") });
+    assert.match(line(ok(runner, ["status"]), "下一动作"), /验收全部通过/u);
+    const accepted = ok(runner, ["slice", "accept"]);
     assert.match(accepted, /commit-message/u);
     assert.match(
       line(ok(runner, ["status"]), "下一动作"),
@@ -264,7 +285,10 @@ test("流程: 不通过的切片补做一轮后通过, 旧的验收归档在文�
     fillSections(root, file, BUILD_RESULT);
     ok(runner, ["slice", "review"]);
     fillSections(root, file, {
-      标准核对: verdictTable("不通过"),
+      标准核对: [
+        verdictTable("不通过"),
+        "| 2 | 用户已确认 | 用户实测: 分隔符正确 |",
+      ].join("\n"),
       ...reviewRest(true),
       用户结论: "A, 补做.",
     });
@@ -283,7 +307,11 @@ test("流程: 不通过的切片补做一轮后通过, 旧的验收归档在文�
 
     fillSections(root, file, { 执行状态: "完成" });
     ok(runner, ["slice", "review"]);
-    assert.match(ok(runner, ["brief", "review"]), /与 "补做"/u);
+    const reworkBrief = ok(runner, ["brief", "review"]);
+    assert.match(reworkBrief, /与 "补做"/u);
+    assert.match(reworkBrief, /上一轮用户已经亲手确认的标准: "2"/u);
+    assert.match(reworkBrief, /"沿用第 1 轮: "/u);
+    assert.doesNotMatch(reworkBrief, /确认的标准: "1"/u);
     fillSections(root, file, {
       标准核对: verdictTable("通过"),
       ...reviewRest(true),
@@ -347,6 +375,101 @@ test("流程: 交互式切片在编排会话中做, 之后里程复查与收尾"
     assert.match(ok(runner, ["finish"]), /项目收尾/u);
     assert.match(line(ok(runner, ["status"]), "当前进展"), /已收尾/u);
     assert.match(ok(runner, ["check"]), /没有问题/u);
+  } finally {
+    cleanup();
+  }
+});
+
+test("流程: 遗留问题没有解决时, 切片不能通过或放弃, 项目不能收尾", () => {
+  const { root, cleanup } = createTemporaryRepository();
+  try {
+    const runner = startProject(root);
+    assert.match(
+      readFileSync(path.join(root, ".navigator/issues.md"), "utf8"),
+      /\| 编号 \| 问题 \| 发现于 \| 归属切片 \| 状态 \| 处理结果 \|/u,
+    );
+    const file = ".navigator/slices/0001-skeleton.md";
+    ok(runner, ["slice", "plan", "0001", "--slug", "skeleton"]);
+    fillSections(root, file, BUILD_PLAN);
+    ok(runner, ["slice", "start"]);
+    fillSections(root, file, BUILD_RESULT);
+    ok(runner, ["slice", "review"]);
+    assert.match(ok(runner, ["brief", "review"]), /遗留核对: 列出/u);
+    fillSections(root, file, {
+      标准核对: verdictTable("通过"),
+      ...reviewRest(true),
+      用户结论: "A, 通过并提交.",
+    });
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "未解决", ""],
+      ["2", "导出格式待定", "0001", "0002", "未解决", ""],
+    ]);
+    assert.match(line(ok(runner, ["status"]), "遗留问题"), /2 条未解决/u);
+    const issuesPath = path.join(root, ".navigator/issues.md");
+    const tidy = readFileSync(issuesPath, "utf8");
+    writeFileSync(
+      issuesPath,
+      `${tidy}\n| 3 | 空行之后的问题 | 0001 | 0001 | 未解决 |  |\n`,
+      "utf8",
+    );
+    assert.match(
+      line(ok(runner, ["status"]), "遗留问题"),
+      /表格有问题.*1 行在表格之外/u,
+    );
+    assert.match(refused(runner, ["slice", "accept"]), /1 行在表格之外/u);
+    writeFileSync(issuesPath, tidy, "utf8");
+    assert.match(
+      line(ok(runner, ["status"]), "下一动作"),
+      /遗留问题 1 归属本切片/u,
+    );
+    assert.match(
+      refused(runner, ["slice", "accept"]),
+      /不能让切片 0001 通过: 1 \(输出编码待验证\)/u,
+    );
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "已解决", ""],
+      ["2", "导出格式待定", "0001", "0002", "未解决", ""],
+    ]);
+    assert.match(refused(runner, ["slice", "accept"]), /要写明 "处理结果"/u);
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
+      ["2", "导出格式待定", "0001", "0002", "未解决", ""],
+    ]);
+    ok(runner, ["slice", "accept"]);
+
+    assert.match(
+      ok(runner, ["slice", "plan", "0002", "--slug", "csv"]),
+      /归属本切片的遗留问题: 2 \(导出格式待定\)/u,
+    );
+    assert.match(refused(runner, ["slice", "drop"]), /不能放弃切片 0002/u);
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
+      ["2", "导出格式待定", "0001", "0003", "未解决", ""],
+    ]);
+    ok(runner, ["slice", "drop"]);
+    ok(runner, ["slice", "plan", "0003", "--slug", "chart"]);
+    assert.match(refused(runner, ["slice", "drop"]), /不能放弃切片 0003/u);
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
+      ["2", "导出格式待定", "0001", "0003", "已解决", "用户决定只导出 CSV"],
+    ]);
+    ok(runner, ["slice", "drop"]);
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
+      ["2", "导出格式待定", "0001", "0003", "已解决", "用户决定只导出 CSV"],
+      ["3", "表头缺单位", "里程复查", "0002", "未解决", ""],
+    ]);
+    assert.match(
+      refused(runner, ["milestone", "done", "0001"]),
+      /不能完成里程 0001: 3/u,
+    );
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
+      ["2", "导出格式待定", "0001", "0003", "已解决", "用户决定只导出 CSV"],
+      ["3", "表头缺单位", "里程复查", "0002", "已解决", "已在 0001 中补上"],
+    ]);
+    ok(runner, ["milestone", "done", "0001"]);
+    assert.match(line(ok(runner, ["status"]), "遗留问题"), /没有未解决的/u);
   } finally {
     cleanup();
   }
@@ -484,7 +607,24 @@ test("流程: hook 只向编排会话注入位置与下一动作", () => {
     const prompted = context({ ...bare, transcript_path: orchestrator.path });
     assert.match(prompted, /位置: 里程 0001 能导出 \(0\/3\)/u);
     assert.match(prompted, /下一动作: 为切片 0001/u);
+    assert.match(prompted, /遗留问题: 没有未解决的/u);
+    assert.match(prompted, /只答所问/u);
     assert.doesNotMatch(prompted, /上下文已压缩/u);
+    const marker = /project-navigator 编排标记 [0-9a-f]{12}/u.exec(prompted);
+    assert.notEqual(marker, null);
+    const continued = writeTranscript(root, false);
+    try {
+      writeFileSync(
+        continued.path,
+        `${JSON.stringify({ content: marker?.[0] })}\n`,
+      );
+      assert.match(
+        context({ ...bare, transcript_path: continued.path }),
+        /位置: /u,
+      );
+    } finally {
+      continued.cleanup();
+    }
     assert.equal(context({ ...bare, transcript_path: other.path }), undefined);
     assert.equal(
       context({ ...bare, transcript_path: orchestrator.path, agent_id: "a" }),
@@ -496,7 +636,7 @@ test("流程: hook 只向编排会话注入位置与下一动作", () => {
         source: "compact",
         transcript_path: orchestrator.path,
       }),
-      /上下文已压缩/u,
+      /上下文已压缩.*ref skill/u,
     );
     ok(runner, ["uninstall"]);
     assert.equal(

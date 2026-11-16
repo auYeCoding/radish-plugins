@@ -8,10 +8,12 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { issuesOwnedBy, openIssues, readIssues } from "./issues.mjs";
 import {
   BACKLOG_FILE,
   COMMAND_NAME,
   FINDINGS_DIRECTORY,
+  ISSUES_FILE,
   REQUIREMENTS_FILE,
 } from "./paths.mjs";
 import {
@@ -53,6 +55,9 @@ import {
  * @property {number} verdictCount 标准核对表的行数; 还没有填写时为 0.
  * @property {string[]} verdictProblems 标准核对表中的问题.
  * @property {string} verdictClass 标准核对结果的归类, 见 VERDICT_CLASSES.
+ * @property {number} openIssueCount 没有解决的遗留问题数.
+ * @property {string[]} issueProblems 遗留问题表中不合规的地方.
+ * @property {string[]} ownedIssueIds 归属进行中切片, 还没有解决的遗留问题编号.
  */
 
 /**
@@ -70,13 +75,35 @@ export function readFacts(projectRoot, state, spec = loadSliceSpec()) {
       ? undefined
       : readSliceFile(projectRoot, slice.file, spec);
   const verdicts = readVerdicts(parsed, spec);
+  const { issues, problems } = readIssues(projectRoot);
   return {
     hasRequirements: existsSync(path.join(projectRoot, REQUIREMENTS_FILE)),
     resultStatus: readResultStatus(parsed, spec),
     verdictCount: verdicts.rows.length,
     verdictProblems: verdicts.problems,
     verdictClass: classifyVerdicts(verdicts.rows, spec),
+    openIssueCount: openIssues(issues).length,
+    issueProblems: problems,
+    ownedIssueIds:
+      slice === undefined
+        ? []
+        : issuesOwnedBy(issues, slice.id).map((issue) => issue.id),
   };
+}
+
+/**
+ * 描述遗留问题的数量.
+ *
+ * @param {ProgressFacts} facts 事实.
+ * @returns {string} 一行描述.
+ */
+export function issuesLine(facts) {
+  if (facts.issueProblems.length > 0) {
+    return `表格有问题, 计数不可信, 先修正: ${facts.issueProblems.join(" ")}`;
+  }
+  return facts.openIssueCount === 0
+    ? `没有未解决的 (${ISSUES_FILE})`
+    : `${facts.openIssueCount} 条未解决, 见 ${ISSUES_FILE}`;
 }
 
 /**
@@ -166,7 +193,7 @@ function betweenSlicesAction(state) {
     return `为切片 ${pending.id} "${pending.name}" 写计划: 先读相关代码, 再运行 ${command(`slice plan ${pending.id} --slug <短名>`)}, 做法见 ${command("ref slice-loop")}.`;
   }
   if (isMilestoneSettled(milestone)) {
-    return `里程复查 (${command("ref slice-loop")} 的 "里程复查"): 对照里程目标向用户说明达成情况, 整理 ${BACKLOG_FILE}, 用 roadmap 排出下一个里程的切片; 用户确认后运行 ${command(`milestone done ${milestone.id}`)}.`;
+    return `里程复查 (${command("ref slice-loop")} 的 "里程复查"): 对照里程目标向用户说明达成情况, 整理 ${BACKLOG_FILE}, 确认 ${ISSUES_FILE} 中没有归属已结束切片的问题, 用 roadmap 排出下一个里程的切片; 用户确认后运行 ${command(`milestone done ${milestone.id}`)}.`;
   }
   return `为里程 ${milestone.id} "${milestone.name}" 排出切片: 写路线草稿, 运行 ${command("roadmap --from <草稿>")}.`;
 }
@@ -229,11 +256,15 @@ function reviewingAction(slice, facts, spec) {
   }
   const record = `把用户的原话写入 "${conclusion}"`;
   const redo = `把要补的内容写入计划的 "${rework}" 后运行 ${command("slice redo")}`;
+  const register = `本轮发现的没有验证的结论与问题先登记进 ${ISSUES_FILE}`;
   if (facts.verdictClass === VERDICT_CLASSES.pass) {
-    return `验收全部通过, 请用户决定: A 通过并提交; B 通过, 提交并推送. 用户选择后${record}, 运行 ${command("slice accept")}.`;
+    if (facts.ownedIssueIds.length > 0) {
+      return `验收全部通过, 但遗留问题 ${facts.ownedIssueIds.join(", ")} 归属本切片, 还没有解决: 能直接解决的解决后标为已解决; 要改代码或实测的, ${redo}. 解决之前不请用户选择通过.`;
+    }
+    return `验收全部通过. ${register}; 归属本切片的都解决后, 请用户决定: A 通过并提交; B 通过, 提交并推送. 用户选择后${record}, 运行 ${command("slice accept")}.`;
   }
   if (facts.verdictClass === VERDICT_CLASSES.unverified) {
-    return `有标准未验证. 用户已经亲手确认过的 (证据以 "${spec.userEvidencePrefix}" 开头, 或用户按 "${sectionTitle(spec, SECTIONS.manual)}" 做完并说了结果), 把结论改成 "${spec.verdicts.confirmed}", 证据写用户的原话与日期, 再运行 ${command("status")}, 不让用户重新选择. 还没有确认的, 先把步骤给用户; 用户不验证时请用户决定: A 接受现状并提交 (${record}, 运行 ${command("slice accept --accept-unverified")}); B 补做 (${redo}).`;
+    return `有标准未验证. 用户已经亲手确认过的 (证据以 "${spec.userEvidencePrefix}" 开头, 或用户按 "${sectionTitle(spec, SECTIONS.manual)}" 做完并说了结果), 把结论改成 "${spec.verdicts.confirmed}", 证据写用户的原话与日期, 再运行 ${command("status")}, 不让用户重新选择. 还没有确认的, 把步骤给用户请他验证; 验证不了的, ${redo}. 未验证的标准不能通过.`;
   }
   return slice.skeleton
     ? `有标准不通过, 这是最小骨架, 只能补做: 向用户说明后${redo}.`

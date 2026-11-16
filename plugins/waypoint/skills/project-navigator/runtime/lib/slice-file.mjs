@@ -59,6 +59,7 @@ export const SECTIONS = Object.freeze({
   structure: "structure",
   scope: "scope",
   correctionCheck: "correctionCheck",
+  leftovers: "leftovers",
   manual: "manual",
   conclusion: "conclusion",
 });
@@ -453,7 +454,8 @@ export function prepareRework({ text, spec, kind, round }) {
   const lines = [...parsed.lines];
   const review = parsed.parts[PARTS.review];
   if (review !== undefined) {
-    lines[review.start] = `${lines[review.start].trimEnd()} (第 ${round} 轮)`;
+    lines[review.start] =
+      `${"#".repeat(PART_LEVEL)} ${archivedReviewHeading(spec, round)}`;
   }
   const statusTitle = sectionTitle(spec, SECTIONS.status);
   const result = parsed.parts[PARTS.result];
@@ -478,6 +480,52 @@ export function prepareRework({ text, spec, kind, round }) {
   ]
     .join("\n")
     .replace(/\n+$/u, "\n");
+}
+
+/**
+ * 补做时归档的验收段的标题.
+ *
+ * @param {SliceSpec} spec 规格.
+ * @param {number} round 被归档的那一轮.
+ * @returns {string} 不带井号的标题.
+ */
+export function archivedReviewHeading(spec, round) {
+  return `${partSpec(spec, PARTS.review).heading} (第 ${round} 轮)`;
+}
+
+/**
+ * 读取某一轮归档的验收段中结论为 "用户已确认" 的标准, 补做之后的验收沿用它们.
+ *
+ * @param {string} text 切片文件全文.
+ * @param {SliceSpec} spec 规格.
+ * @param {number} round 归档的轮次.
+ * @returns {VerdictRow[]} 用户已确认的行; 没有这一轮的归档时为空.
+ */
+export function readArchivedConfirmations(text, spec, round) {
+  const lines = text.replace(/\r\n?/gu, "\n").split("\n");
+  const headings = parseMarkdown(text).filter(
+    (item) => item.kind === "heading",
+  );
+  const partHeadings = headings.filter((item) => item.level === PART_LEVEL);
+  const archived = partHeadings.find(
+    (item) => item.text === archivedReviewHeading(spec, round),
+  );
+  if (archived === undefined) {
+    return [];
+  }
+  const following = partHeadings.find((item) => item.line > archived.line);
+  const end = following === undefined ? lines.length : following.line - 1;
+  const sections = readSections(lines, headings, archived.line, end);
+  const table = parseTable(
+    meaningfulLines(sections[sectionTitle(spec, SECTIONS.verdicts)]),
+  );
+  return (table?.rows ?? [])
+    .map((cells) => ({
+      criterion: cells[VERDICT_COLUMNS.criterion] ?? "",
+      verdict: cells[VERDICT_COLUMNS.verdict] ?? "",
+      evidence: cells[VERDICT_COLUMNS.evidence] ?? "",
+    }))
+    .filter((row) => row.verdict === spec.verdicts.confirmed);
 }
 
 /**

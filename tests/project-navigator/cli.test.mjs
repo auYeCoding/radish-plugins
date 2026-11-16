@@ -174,9 +174,14 @@ test("命令行: ref 输出参考文件, 实现手册附标点规则, 名称不�
     const guide = runCommand(["ref", "executor"], root).stdout;
     assert.match(guide, /^# 实现手册/u);
     assert.match(guide, /# 标点与排版规则/u);
+    const skill = runCommand(["ref", "skill"], root).stdout;
+    assert.match(skill, /^# 项目导航/u);
+    assert.match(skill, /## 回复/u);
+    assert.doesNotMatch(skill, /^name: |## 调用参数|## 当前状态|\$ARGUMENTS/mu);
     const missing = runCommand(["ref", "nothing"], root);
     assert.equal(missing.status, 1);
     assert.match(missing.stdout, /intake, slice-loop/u);
+    assert.match(missing.stdout, /skill/u);
   } finally {
     cleanup();
   }

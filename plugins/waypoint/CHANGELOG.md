@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `project-navigator`: open issues. Anything unresolved in the work already done (unverified findings, pending criteria, known defects, "handle later") is registered in `.navigator/issues.md` with an owning slice. `slice accept`, `slice drop`, and `milestone done` refuse while an issue owned by the slice, or by a slice that has ended, is unresolved, and `finish` requires every issue resolved. `slice plan` lists the issues owned by the new slice, `status` shows how many are open, and the review gains a "遗留核对" (leftover check) section that lists what remains unresolved. Questions about open issues are answered from this file only, without mixing in the backlog or later milestones.
+- `project-navigator`: `ref skill` prints the skill's rules, so the orchestrator can reread them after context compaction.
+
+### Changed
+
+- `project-navigator`: `slice accept --accept-unverified` is removed. Unverified criteria are verified by you or reworked; a criterion that turns out to be invalid is changed in the rework with your agreement. Slices created before this version need a `### 遗留核对` section added to their Review part before they can pass.
+- `project-navigator`: shorter replies. A fourth layout, "answer", is used when you ask a question: the first sentence is the answer, with no suggestions, next steps, or question box. Replies are one to three sentences by default, without headings, and tables appear only for multi-row, multi-column comparisons.
+- `project-navigator`: when you need to measure something in an interactive slice, the full steps come before recording starts, tools are dry-run first, and recording runs until you say stop.
+
+### Fixed
+
+- `project-navigator`: the orchestrator session was no longer recognized once the session was forked after a context compaction (for example by interrupting and resending), so the guard let it write business code and position reminders stopped. Every position reminder now carries the orchestrator marker, and after compaction it tells the orchestrator to reread the rules with `ref skill`.
+- `project-navigator`: after rework, criteria you already confirmed by hand are carried over instead of being reported as unverified again.
+
 ## [2.0.2] - 2026-11-13
 
 ### Fixed

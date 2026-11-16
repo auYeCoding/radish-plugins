@@ -6,10 +6,11 @@ English | [简体中文](project-navigator.md)
 
 Guides a large project starting from a single high-level requirement: it confirms the requirements, lays out a roadmap that advances by milestones and vertical slices, builds a walking skeleton that runs from the real entry point first, then fills it out one slice at a time, and records progress in the repository so that any session can pick up the work.
 
-The skill targets three common problems:
+The skill targets four common problems:
 
 - **Starting work without a roadmap.** The skill first confirms the requirements with you, then lays out the roadmap; only the current milestone is planned in detail, and later ones are planned when you reach them.
-- **Growing horizontally, and finding at the end that features and the interface were never connected.** Every slice is vertical and must be visible from the entry point or the interface when it is done; the review must give the call path from the entry point to the new code, and a slice that is not wired in cannot be followed by the next one. Ideas outside the current slice go into the backlog and are not done on the side.
+- **Growing horizontally, and finding at the end that features and the interface were never connected.** Every slice is vertical and must be visible from the entry point or the interface when it is done; the review must give the call path from the entry point to the new code, and a slice that is not wired in cannot be followed by the next one. New ideas go into the backlog and are not done on the side.
+- **Leaving technical debt along the way.** Anything unresolved in the work already done (unverified findings, pending criteria, known defects) is registered as an open issue owned by a slice; the owning slice cannot pass until the issue is resolved. See [Open issues](#open-issues).
 - **Forgetting the progress when the session changes.** Progress is recorded by scripts in `.navigator/`, and what to do next is computed by scripts, not left to the model's memory.
 
 The session that invokes this skill is called the orchestrator session. It only plans, records, and organizes reviews. Code is written by executor subagents it dispatches in the background, and reviews are done by a reviewer subagent in a fresh context.
@@ -46,7 +47,7 @@ Any session that invokes the skill continues from the recorded state; there is n
 
 ## Quick start
 
-Take "build a tool that collects the team's weekly reports" as an example, starting from a new repository that has only a README. Every reply from the orchestrator session opens with a one-sentence conclusion; when you need to decide something, a code block listing the options follows immediately, and you answer with the letter, or click a button under the reply in the desktop app; progress is written at the end of the reply when it changed.
+Take "build a tool that collects the team's weekly reports" as an example, starting from a new repository that has only a README. Replies from the orchestrator session are one to three sentences by default, and the first sentence is the conclusion; when you ask a question, it answers only that question, without extra suggestions. When you need to decide something, a code block listing the options follows immediately, and you answer with the letter, or click a button under the reply in the desktop app; progress is written at the end of the reply when it changed.
 
 ### First invocation
 
@@ -65,8 +66,8 @@ Take "build a tool that collects the team's weekly reports" as an example, start
 1. The skill reads the relevant code first, then writes the plan for this slice: goal, completion criteria, explicit exclusions, module layout. When the plan contains something you need to decide, it asks you first; when it does not, work starts right away, and you do not need to look the plan over first.
 2. The skill dispatches an executor subagent in the background. You can go do something else, or keep talking to the orchestrator session.
 3. When the executor subagent needs you to answer a question or do something by hand, the skill passes the question or the steps on to you unchanged; after you reply, the same subagent continues.
-4. When the work is done, the skill dispatches a reviewer subagent to check it, and reports to you the verdict on each criterion, the results of the wiring check and the structure check, and the steps you need to verify by hand.
-5. You decide: pass and commit, rework, or abandon this slice.
+4. When the work is done, the skill dispatches a reviewer subagent to check it, and reports to you the verdict on each criterion, the results of the wiring check and the structure check, the open issues, and the steps you need to verify by hand.
+5. When everything passes (including what you confirmed by hand) and the slice has no open issues, you decide to pass and commit; otherwise the slice is reworked or abandoned.
 
 Normally a slice needs only one decision from you, after the review.
 
@@ -97,6 +98,7 @@ In tasks such as reverse engineering and live measurement, every step may need y
 - It only produces findings, written under `.navigator/findings/`, and does not change business code.
 - Each finding is written to a file as soon as it is confirmed, together with the host version, the location, the verification method, and the verification time.
 - When debug output fills up the context, open a new session and invoke the skill to continue: the findings are in files and the progress is in the state.
+- When you need to measure something, the complete steps come before recording starts, and the tools are dry-run first; recording has no fixed duration: it starts when you say start and stops when you say stop.
 - When it is done, a reviewer subagent checks it independently as usual.
 
 Research that does not need your cooperation (purely reading code or documentation) can be marked as non-interactive in the roadmap and handed to the executor subagent in the background.
@@ -116,11 +118,11 @@ The skill gives a suggestion based on whether the repository has project files s
 
 **Verification mode.**
 
-| Value      | Meaning                                                                  | During review                                                                                                     |
-| ---------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
-| `auto`     | There are check commands that can be run directly in the repository root | The reviewer subagent runs these commands                                                                         |
-| `manual`   | You have to build or run it yourself to confirm                          | The subagent does not build or run; it lists the verification steps for you, and you accept after confirming them |
-| `measured` | It has to be measured in the real environment                            | Same as above                                                                                                     |
+| Value      | Meaning                                                                  | During review                                                                                     |
+| ---------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `auto`     | There are check commands that can be run directly in the repository root | The reviewer subagent runs these commands                                                         |
+| `manual`   | You have to build or run it yourself to confirm                          | The subagent does not build or run; it lists the verification steps for you, and you confirm them |
+| `measured` | It has to be measured in the real environment                            | Same as above                                                                                     |
 
 ### Modularity constraints
 
@@ -151,24 +153,35 @@ project-navigator check --filters
 5. **Corrections and pending criteria.** When a detail in the plan does not match reality, the executor subagent gathers evidence, works to what is actually there, and records each case in the "修正" (corrections) table, without stopping to ask you. When an individual completion criterion cannot be met as a matter of fact, it finishes the rest and lists the criterion under "待定标准" (pending criteria). You see both in one go at review time.
 6. **Submit for review.** The script checks that the Plan part was not changed during implementation and that the Result part is filled in.
 7. **Review.** The reviewer subagent checks item by item in a fresh context. There are only three verdicts: pass, fail, and unverified, and each comes with evidence. It traces the wiring from the entry point itself and does not copy the path the executor wrote.
-8. **What you verify by hand.** A criterion that can only be confirmed by looking at the running program is judged unverified by the reviewer, with the steps written out. The account, character, items, and devices those steps need are asked when the plan is written. Once you have checked and said what you saw, the criterion is recorded as "用户已确认" (confirmed by the user) and treated like a pass, and you are not asked to choose again; the same goes for results you already saw before the review.
-9. **Your decision.**
+8. **What you verify by hand.** A criterion that can only be confirmed by looking at the running program is judged unverified by the reviewer, with the steps written out. The account, character, items, and devices those steps need are asked when the plan is written. Once you have checked and said what you saw, the criterion is recorded as "用户已确认" (confirmed by the user) and treated like a pass, and you are not asked to choose again; the same goes for results you already saw before the review. When the slice is reviewed again after rework, earlier "用户已确认" verdicts carry over, so criteria the rework did not touch need no second check.
+9. **Leftover check.** The reviewer subagent lists what remains unresolved in this slice, and the orchestrator session registers it as open issues.
+10. **Your decision.**
 
-| Situation                  | You can choose                                                 |
-| -------------------------- | -------------------------------------------------------------- |
-| All pass or confirmed      | Pass and commit; pass, commit, and push                        |
-| Some unverified, none fail | Accept as is and commit; rework                                |
-| Some fail                  | Rework; abandon this slice (the skeleton can only be reworked) |
+| Situation                                     | What happens                                                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| All pass or confirmed, and no open issues     | You choose: pass and commit; pass, commit, and push                                                  |
+| Some unverified, none fail                    | You verify by hand; what you cannot verify is reworked. Unverified criteria cannot pass              |
+| Some fail, or open issues owned by this slice | Rework; when a slice fails and you no longer want it, abandon it (the skeleton can only be reworked) |
 
-For rework, the orchestrator session writes what needs to be redone into the plan, this round's review is archived in the same file, the executor subagent continues, and the slice is then reviewed again.
+For rework, the orchestrator session writes what needs to be redone into the plan, this round's review is archived in the same file, the executor subagent continues, and the slice is then reviewed again. When a criterion itself turns out to be invalid, it is changed in the rework with your agreement.
 
 After a pass, the orchestrator session invokes commit-message and puts this slice's code changes and records into one commit.
+
+## Open issues
+
+Open issues are things in the work already done that are not resolved yet: unverified findings, pending criteria, known defects, and anything the executor or reviewer marked "to handle later". They are not the backlog: the backlog holds new ideas that have not started.
+
+- They live in a table in `.navigator/issues.md`: number, problem, found in, owning slice, status (未解决 open or 已解决 resolved), resolution.
+- A new issue is owned by the current slice; only when it really has to wait for a later slice's capability is it owned by that slice, and it is listed when that slice's plan is written.
+- The scripts enforce it: an unresolved issue owned by this slice, or by a slice that has already ended, makes `slice accept`, `slice drop`, and `milestone done` refuse; wrap-up requires every issue to be resolved.
+- When you ask "what open issues are left", the orchestrator session answers only from this file, without mixing in the backlog or later milestones.
+- The "遗留问题" (open issues) line of `project-navigator status` gives the number of unresolved issues.
 
 ## Milestone review, requirement changes, and wrap-up
 
 - **Milestone review:** when all slices of a milestone have ended, the skill explains how far the milestone goal was met, goes through the backlog with you, and lays out the slices of the next milestone.
 - **Requirement changes:** you can raise them at any time. The skill explains the impact, and after you confirm it updates the requirements file and the roadmap and records a decision: what was decided, why, and what was given up. Slices that have already started are not changed; ideas mentioned only in passing go into the backlog.
-- **Wrap-up:** when all milestones are complete, the skill explains the results item by item against the requirements, and wraps up after you confirm. After wrap-up you can still add milestones and continue.
+- **Wrap-up:** when all milestones are complete and no open issue is left, the skill explains the results item by item against the requirements, and wraps up after you confirm. After wrap-up you can still add milestones and continue.
 
 ## Record files
 
@@ -178,7 +191,8 @@ After a pass, the orchestrator session invokes commit-message and puts this slic
 ├── roadmap.md          Roadmap view, generated from the state
 ├── requirements.md     Requirements: goal, must-haves, explicit exclusions, constraints, confirmed conclusions
 ├── decisions.md        Decision log, append-only
-├── backlog.md          Backlog: ideas outside the current slice
+├── backlog.md          Backlog: new ideas that have not started
+├── issues.md           Open issues: unresolved things in the work already done
 ├── slices/
 │   └── 0003-export-csv.md    One file per slice: Plan, Result, Review
 └── findings/           Findings and evidence scripts written by slices that only produce findings
@@ -199,7 +213,9 @@ After a pass, the orchestrator session invokes commit-message and puts this slic
 
 The hook guards only four write boundaries: nobody edits the state file or the roadmap view directly; the reviewer subagent writes no files; under `.navigator/`, the executor subagent writes only the slice file in progress and the findings directory; the orchestrator session writes no files outside `.navigator/`. Everything else relies on the skill's rules and is not intercepted. The hook is provided by the plugin and is not written into the project configuration; in a project that has not been initialized it does nothing.
 
-The orchestrator session does not write business code so that its context stays reserved for planning and progress: when you say "just fix this while you're at it", it puts the request into the current slice's plan or the backlog.
+The orchestrator session does not write business code so that its context stays reserved for planning and progress: when you say "just fix this while you're at it" or "just change it yourself", it explains why and puts the request into a slice.
+
+The hook recognizes the orchestrator session by the orchestrator marker in the session transcript. The marker is written into the transcript with the output of the skill invocation and is also appended to every position reminder, so the session is still recognized after the context is compacted or the session is forked. After compaction the skill's rules are no longer in context, and the position reminder tells the orchestrator session to run `project-navigator ref skill` to read them again.
 
 ### Permission prompts
 
@@ -239,7 +255,7 @@ A subagent belongs to the session that started it, and its work is interrupted w
 
 **My project cannot be compiled or run by Claude. Can I use the skill?**
 
-Yes. During intake, register the verification mode as `manual` or `measured`. The subagents do not build or run; they only read the code to check wiring and structure. Criteria that can only be confirmed by running are listed as steps and handed to you, and after confirming them you choose to accept as is.
+Yes. During intake, register the verification mode as `manual` or `measured`. The subagents do not build or run; they only read the code to check wiring and structure. Criteria that can only be confirmed by running are listed as steps and handed to you; once you have checked and said what you saw, the criterion is recorded as "用户已确认" (confirmed by the user).
 
 **I thought of a new idea, but it does not belong to the current slice?**
 
@@ -258,7 +274,8 @@ Run `/waypoint:project-navigator uninstall`. The allow rules are removed, the pl
 - Every machine that uses the project needs Node.js 22 or later.
 - The plugin's hook fires in every project, and every write-tool call and every message starts Node.js once; in a project that has not been initialized the script ends immediately.
 - The guard only checks the target paths of write tools, not the command line: when the orchestrator session changes code or installs dependencies from the command line, only the skill's rules constrain it.
-- The reply format (conclusion first, options in a code block) relies only on the skill's rules and is not validated.
+- The reply format (conclusion first, answer only what was asked, options in a code block) relies only on the skill's rules and is not validated.
+- Open issues have to be registered by the orchestrator session; the scripts only check registered entries and cannot find unregistered problems. The reviewer's "遗留核对" (leftover check) is the backstop.
 - A slice file is written part by part by the orchestrator session and the executor. The script uses the digest of the Plan part to discover that it was changed during implementation; it can detect this but cannot prevent it.
 - No script checks whether the orchestrator session really read the code before writing the plan; errors in the plan are caught by the executor subagent's "修正" (corrections) and by the review.
 - Apart from the filters check, the items of "结构核对" (structure check) are judged by the reviewer subagent and are not deterministic.

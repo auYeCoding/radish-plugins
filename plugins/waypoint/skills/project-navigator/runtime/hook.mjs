@@ -10,6 +10,8 @@
  *   下一动作.
  *
  * 编排会话不做登记, 按会话转录中的编排标记判断 (见 lib/orchestrator-marker.mjs).
+ * 位置提醒的末尾也带标记: 上下文压缩或分叉后, 新转录只保留压缩之后的内容, 调用
+ * 技能时注入的那一行不在其中; 提醒会写进转录, 让标记一直留在最新的内容里.
  * 脚本出错时一律放行, 不卡住会话. 本脚本从不以退出码 2 结束: "用户发消息时"
  * 事件以退出码 2 结束会清掉用户输入.
  */
@@ -19,12 +21,14 @@ import { readFileSync } from "node:fs";
 import { WRITE_TOOLS, decideWrite } from "./lib/guard.mjs";
 import {
   command,
+  issuesLine,
   nextAction,
   progressLine,
   readFacts,
 } from "./lib/guidance.mjs";
 import {
   isOrchestratorTranscript,
+  orchestratorMarker,
   readTranscript,
 } from "./lib/orchestrator-marker.mjs";
 import { COMMAND_NAME, findWorktreeRoot } from "./lib/paths.mjs";
@@ -54,7 +58,7 @@ const PRE_TOOL_EVENT = "PreToolUse";
  * @type {string}
  */
 const REMINDER_RULES =
-  "规则: 编排会话不写业务代码; 状态只用插件命令修改; 回复按技能的三种回复版式写, 第一段一句结论, 要用户决定时紧跟选项代码块, 有提问框工具时用它; 当前切片之外的想法记进待办, 不顺手做.";
+  "规则: 编排会话不写业务代码; 状态只用插件命令修改; 用户提问时只答所问, 第一句就是答案, 不附建议与下一步; 回复默认一到三句, 不写小标题, 表格只用于多行多列的对比; 发现的没有解决的问题登记进遗留问题文件, 不留到以后; 新想法记进待办, 不顺手做.";
 
 /**
  * 读取事件, 分发处理, 输出结果.
@@ -161,15 +165,18 @@ function handlePreToolUse(input, projectRoot, state, isOrchestrator) {
  * @returns {string} 提醒全文.
  */
 function reminder(projectRoot, state, isAfterCompact) {
+  const facts = readFacts(projectRoot, state);
   return [
     ...(isAfterCompact
       ? [
-          `[${COMMAND_NAME}] 上下文已压缩: 以下面的位置为准, 需要细节时运行 ${command("status")} 与对应的 ref.`,
+          `[${COMMAND_NAME}] 上下文已压缩, 技能规则已不在上下文中: 先运行 ${command("ref skill")} 重新读规则, 再以下面的位置为准继续.`,
         ]
       : []),
     `[${COMMAND_NAME}] 位置: ${progressLine(state)}.`,
-    `下一动作: ${nextAction(state, readFacts(projectRoot, state))}`,
+    `遗留问题: ${issuesLine(facts)}.`,
+    `下一动作: ${nextAction(state, facts)}`,
     REMINDER_RULES,
+    orchestratorMarker(projectRoot),
   ].join("\n");
 }
 

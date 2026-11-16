@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { checkEnvironment } from "../lib/environment.mjs";
+import { ensureIssuesFile } from "../lib/issues.mjs";
 import {
   ARCHIVE_DIRECTORY,
   COMMAND_NAME,
@@ -159,6 +160,7 @@ function installNavigator(projectRoot, now, archived) {
   for (const directory of EMPTY_DIRECTORIES) {
     mkdirSync(path.join(projectRoot, directory), { recursive: true });
   }
+  ensureIssuesFile(projectRoot);
   installSettings(projectRoot);
   const version = runtimeVersion();
   const existing = readRawState(projectRoot);
