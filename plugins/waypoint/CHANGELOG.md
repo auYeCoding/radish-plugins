@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-16
+
 ### Added
 
 - `project-navigator`: open issues. Anything unresolved in the work already done (unverified findings, pending criteria, known defects, "handle later") is registered in `.navigator/issues.md` with an owning slice. `slice accept`, `slice drop`, and `milestone done` refuse while an issue owned by the slice, or by a slice that has ended, is unresolved, and `finish` requires every issue resolved. `slice plan` lists the issues owned by the new slice, `status` shows how many are open, and the review gains a "遗留核对" (leftover check) section that lists what remains unresolved. Questions about open issues are answered from this file only, without mixing in the backlog or later milestones.
@@ -373,7 +375,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.0.2...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.1.0...HEAD
+[2.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.1.0
 [2.0.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.2
 [2.0.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.1
 [2.0.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.0
