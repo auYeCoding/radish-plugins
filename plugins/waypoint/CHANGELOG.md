@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-11-17
+
 ### Changed
 
 - `project-navigator`: open issues no longer pile up without end. Only things that change a completion criterion's verdict, are defects in what the slice delivered, or are needed by a must-have requirement are registered; unrelated unverified observations are not registered, re-tested, or parked on later slices, and no slice is created just to hold an issue. The review's leftover check lists only relevant items with the related criterion, and in rework rounds looks only at what that round wrote.
@@ -382,7 +384,8 @@ This release reworks `project-navigator` and is not compatible with projects ini
 - `repo-init` skill: initializes a Git repository with fully commented `.gitignore`, `.editorconfig`, and `.gitattributes` files based on the detected stack, and asks for confirmation of the tracked files.
 - Detailed guides for each skill in Simplified Chinese and English, under `docs/`.
 
-[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.1.0...HEAD
+[Unreleased]: https://github.com/auYeCoding/radish-plugins/compare/waypoint--v2.2.0...HEAD
+[2.2.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.2.0
 [2.1.0]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.1.0
 [2.0.2]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.2
 [2.0.1]: https://github.com/auYeCoding/radish-plugins/releases/tag/waypoint--v2.0.1
