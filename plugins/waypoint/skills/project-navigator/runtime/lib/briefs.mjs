@@ -134,12 +134,12 @@ export function buildReviewBrief(context) {
       : []),
     `${titles[SECTIONS.scope]}: 用 git diff ${current.baseCommit} --stat 与 git status 列出实际改动, 与 "${result}" 段的 "${titles[SECTIONS.changes]}" 比对; 列出做了 "${titles[SECTIONS.excluded]}" 的改动.${isBuild ? "" : " 本切片只产出结论, 业务代码与项目配置不应有改动."}`,
     `${titles[SECTIONS.correctionCheck]}: "${result}" 段 "${titles[SECTIONS.corrections]}" 表的每一行, 核对 "实际情况" 有没有证据支持, "处理办法" 有没有改变目标, 完成标准或做了明确不做的事. 两项都没有问题的修正成立, 相关标准按修正后的事实判断; 否则相关标准为 ${fail}. 没有修正时写 "${spec.none}".`,
-    `${titles[SECTIONS.leftovers]}: 列出本切片改动或新增的代码, 结论文件与执行结果中没有解决的事: 写成待验证, 未测, 推测的结论, 已知缺陷, 写明 "以后处理" 或 "由某个切片处理" 的事, 以及 "${titles[SECTIONS.pending]}". 每项写 文件:行号 与一句说明; 没有时写 "${spec.none}".`,
+    `${titles[SECTIONS.leftovers]}: 只列与本切片有关而没有解决的事: 会影响某条完成标准结论的待验证, 未测或推测的结论; 本切片交付的代码或结论中的已知缺陷; 写明 "以后处理" 或 "由某个切片处理" 的事; 以及 "${titles[SECTIONS.pending]}". 每项写 文件:行号, 关联的标准编号与一句说明. 与完成标准无关, 顺带写下的推测与观察不逐条列, 在末尾写一句 "另有 N 处与标准无关的未验证观察".${current.round > 1 ? ` 这是补做轮: 只看本轮补做新写或改动的内容, 上一轮 "${titles[SECTIONS.leftovers]}" 已经列过的不再列.` : ""} 没有时写 "${spec.none}".`,
     verificationRequirement(context, titles),
     ...(isBuild
       ? []
       : [
-          `结论核对: ${FINDINGS_DIRECTORY}/ 下本切片写的每条结论, 是否写明宿主或依赖的版本, 位置, 验证方法与验证时间; 能重新读取或重新运行的, 读一遍或运行一遍, 与结论不符的, 相关标准为 ${fail}. 结果写进 "${titles[SECTIONS.verdicts]}" 的证据.`,
+          `结论核对: ${FINDINGS_DIRECTORY}/ 下本切片写的, 完成标准用到的每条结论, 是否写明宿主或依赖的版本, 位置, 验证方法与验证时间; 能重新读取或重新运行的, 读一遍或运行一遍, 与结论不符的, 相关标准为 ${fail}. 与完成标准无关的内容 (包括 "未验证的观察" 一节) 不核对证据, 不影响任何标准的结论. 结果写进 "${titles[SECTIONS.verdicts]}" 的证据.`,
         ]),
   ];
   const handback = sectionsFor(review, slice.kind)
@@ -214,15 +214,17 @@ function verificationRequirement({ project, spec }, titles) {
  *
  * @param {import("./slice-file.mjs").SliceSpec} spec 切片文件规格.
  * @param {number} round 本轮轮次.
- * @param {readonly import("./slice-file.mjs").VerdictRow[]} confirmed 上一轮用户已确认的标准.
+ * @param {readonly import("./slice-file.mjs").VerdictRow[]} confirmed 上一轮用户已确认或已收窄的标准.
  * @returns {string} 要求全文, 以空格开头; 没有可沿用的标准时为空字符串.
  */
 function carriedRequirement(spec, round, confirmed) {
   if (confirmed.length === 0) {
     return "";
   }
-  const listed = confirmed.map((row) => `"${row.criterion}"`).join(", ");
-  return ` 上一轮用户已经亲手确认的标准: ${listed}. 本轮补做没有改动到它们时, 结论写 ${spec.verdicts.confirmed}, 证据写 "沿用第 ${round - 1} 轮: " 加上一轮的证据; 补做改动到了的, 照常核对.`;
+  const listed = confirmed
+    .map((row) => `"${row.criterion}" (${row.verdict})`)
+    .join(", ");
+  return ` 上一轮用户已经亲手确认或同意收窄的标准: ${listed}. 本轮补做没有改动到它们时, 结论照抄上一轮 (${spec.verdicts.confirmed} 或 ${spec.verdicts.narrowed}), 证据写 "沿用第 ${round - 1} 轮: " 加上一轮的证据; 补做改动到了的, 照常核对.`;
 }
 
 /**

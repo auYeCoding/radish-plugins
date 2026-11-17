@@ -309,13 +309,72 @@ test("流程: 不通过的切片补做一轮后通过, 旧的验收归档在文�
     ok(runner, ["slice", "review"]);
     const reworkBrief = ok(runner, ["brief", "review"]);
     assert.match(reworkBrief, /与 "补做"/u);
-    assert.match(reworkBrief, /上一轮用户已经亲手确认的标准: "2"/u);
+    assert.match(reworkBrief, /亲手确认或同意收窄的标准: "2" \(用户已确认\)/u);
     assert.match(reworkBrief, /"沿用第 1 轮: "/u);
-    assert.doesNotMatch(reworkBrief, /确认的标准: "1"/u);
+    assert.doesNotMatch(reworkBrief, /"1" \(/u);
+    assert.match(reworkBrief, /上一轮 "遗留核对" 已经列过的不再列/u);
     fillSections(root, file, {
       标准核对: verdictTable("通过"),
       ...reviewRest(true),
       用户结论: "A, 通过并提交.",
+    });
+    assert.match(line(ok(runner, ["status"]), "下一动作"), /验收全部通过/u);
+    ok(runner, ["slice", "accept"]);
+  } finally {
+    cleanup();
+  }
+});
+
+test("流程: 补做 2 轮之后不再默认补做, 用户同意收窄的标准可以通过", () => {
+  const { root, cleanup } = createTemporaryRepository();
+  try {
+    const runner = startProject(root);
+    completeSlice({ root, runner, id: "0001", slug: "skeleton" });
+    const file = ".navigator/slices/0002-csv.md";
+    ok(runner, ["slice", "plan", "0002", "--slug", "csv"]);
+    fillSections(root, file, BUILD_PLAN);
+    ok(runner, ["slice", "start"]);
+    for (const round of [1, 2]) {
+      fillSections(root, file, BUILD_RESULT);
+      ok(runner, ["slice", "review"]);
+      fillSections(root, file, {
+        标准核对: verdictTable("未验证"),
+        ...reviewRest(true),
+      });
+      const action = line(ok(runner, ["status"]), "下一动作");
+      assert.match(action, /A 补做/u);
+      assert.doesNotMatch(action, /不再默认补做/u);
+      fillSections(root, file, { 补做: `第 ${round + 1} 轮补测.` });
+      ok(runner, ["slice", "redo"]);
+    }
+    fillSections(root, file, BUILD_RESULT);
+    ok(runner, ["slice", "review"]);
+    fillSections(root, file, {
+      标准核对: verdictTable("未验证"),
+      ...reviewRest(true),
+      用户结论: "A, 收窄后通过.",
+    });
+    const capped = line(ok(runner, ["status"]), "下一动作");
+    assert.match(capped, /已经补做了 2 轮, 不再默认补做/u);
+    assert.match(capped, /A 收窄/u);
+    assert.match(capped, /"用户已收窄"/u);
+    assert.match(refused(runner, ["slice", "accept"]), /收窄这条标准/u);
+    fillSections(root, file, { 标准核对: verdictTable("不通过") });
+    assert.match(
+      line(ok(runner, ["status"]), "下一动作"),
+      /不再默认补做: 请用户决定 A .*收窄.*B 再补一轮.*C 放弃/u,
+    );
+    fillSections(root, file, { 标准核对: verdictTable("通过") });
+    writeIssues(root, [["1", "贴边发包的条件", "0002", "0002", "未解决", ""]]);
+    assert.match(
+      line(ok(runner, ["status"]), "下一动作"),
+      /不再默认补做: 请用户决定 A 标为不处理/u,
+    );
+    writeIssues(root, [
+      ["1", "贴边发包的条件", "0002", "0002", "不处理", "用户: 出手层用不到"],
+    ]);
+    fillSections(root, file, {
+      标准核对: verdictTable("用户已收窄"),
     });
     assert.match(line(ok(runner, ["status"]), "下一动作"), /验收全部通过/u);
     ok(runner, ["slice", "accept"]);
@@ -357,7 +416,10 @@ test("流程: 交互式切片在编排会话中做, 之后里程复查与收尾"
     );
     fillSections(root, file, FINDINGS_RESULT);
     ok(runner, ["slice", "review"]);
-    assert.match(ok(runner, ["brief", "review"]), /结论核对/u);
+    assert.match(
+      ok(runner, ["brief", "review"]),
+      /结论核对: .*完成标准用到的每条结论.*不影响任何标准的结论/u,
+    );
     fillSections(root, file, {
       标准核对: verdictTable("通过"),
       ...reviewRest(false),
@@ -394,7 +456,10 @@ test("流程: 遗留问题没有解决时, 切片不能通过或放弃, 项目�
     ok(runner, ["slice", "start"]);
     fillSections(root, file, BUILD_RESULT);
     ok(runner, ["slice", "review"]);
-    assert.match(ok(runner, ["brief", "review"]), /遗留核对: 列出/u);
+    const leftoverBrief = ok(runner, ["brief", "review"]);
+    assert.match(leftoverBrief, /遗留核对: 只列与本切片有关/u);
+    assert.match(leftoverBrief, /另有 N 处与标准无关的未验证观察/u);
+    assert.doesNotMatch(leftoverBrief, /已经列过的不再列/u);
     fillSections(root, file, {
       标准核对: verdictTable("通过"),
       ...reviewRest(true),
@@ -448,15 +513,23 @@ test("流程: 遗留问题没有解决时, 切片不能通过或放弃, 项目�
     ]);
     ok(runner, ["slice", "drop"]);
     ok(runner, ["slice", "plan", "0003", "--slug", "chart"]);
-    assert.match(refused(runner, ["slice", "drop"]), /不能放弃切片 0003/u);
+    assert.match(
+      refused(runner, ["slice", "drop"]),
+      /不能放弃切片 0003.*标为不处理/u,
+    );
     writeIssues(root, [
       ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
-      ["2", "导出格式待定", "0001", "0003", "已解决", "用户决定只导出 CSV"],
+      ["2", "导出格式待定", "0001", "0003", "不处理", ""],
+    ]);
+    assert.match(refused(runner, ["slice", "drop"]), /理由与用户的原话/u);
+    writeIssues(root, [
+      ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
+      ["2", "导出格式待定", "0001", "0003", "不处理", "用户: 只导出 CSV"],
     ]);
     ok(runner, ["slice", "drop"]);
     writeIssues(root, [
       ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
-      ["2", "导出格式待定", "0001", "0003", "已解决", "用户决定只导出 CSV"],
+      ["2", "导出格式待定", "0001", "0003", "不处理", "用户: 只导出 CSV"],
       ["3", "表头缺单位", "里程复查", "0002", "未解决", ""],
     ]);
     assert.match(
@@ -465,7 +538,7 @@ test("流程: 遗留问题没有解决时, 切片不能通过或放弃, 项目�
     );
     writeIssues(root, [
       ["1", "输出编码待验证", "0001", "0001", "已解决", "实测为 UTF-8"],
-      ["2", "导出格式待定", "0001", "0003", "已解决", "用户决定只导出 CSV"],
+      ["2", "导出格式待定", "0001", "0003", "不处理", "用户: 只导出 CSV"],
       ["3", "表头缺单位", "里程复查", "0002", "已解决", "已在 0001 中补上"],
     ]);
     ok(runner, ["milestone", "done", "0001"]);

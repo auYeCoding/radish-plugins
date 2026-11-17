@@ -1,10 +1,11 @@
 /**
  * @file 遗留问题: 已做部分中还没有解决的事, 记在遗留问题文件的一张表里.
  *
- * 遗留问题与待办不同: 待办是还没有开始的新想法, 遗留问题是做过的部分欠下的事
- * (没有验证的结论, 待定标准, 已知缺陷, 推到以后某个切片的事). 编排会话直接编辑
- * 这个文件; 脚本只读表, 在切片通过, 放弃, 里程完成与收尾时拦下没有解决, 又没有
- * 切片负责的问题. 表的列名与状态写法只在这里定义.
+ * 遗留问题与待办不同: 待办是还没有开始的新想法, 遗留问题是做过的部分欠下的,
+ * 又与完成标准, 需求或已交付的行为有关的事 (影响标准结论的未验证结论, 待定标准,
+ * 已知缺陷). 编排会话直接编辑这个文件; 脚本只读表, 在切片通过, 放弃, 里程完成
+ * 与收尾时拦下没有关闭, 又没有切片负责的问题. 关闭有两种: 已解决, 或用户决定
+ * 不处理. 表的列名与状态写法只在这里定义.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -30,13 +31,23 @@ export const ISSUE_COLUMNS = Object.freeze([
 ]);
 
 /**
- * 遗留问题的两种状态.
- * @type {Readonly<{open: string, resolved: string}>}
+ * 遗留问题的三种状态: 未解决; 已解决; 不处理, 由用户决定, 处理结果写明理由与用户的原话.
+ * @type {Readonly<{open: string, resolved: string, dropped: string}>}
  */
 export const ISSUE_STATUSES = Object.freeze({
   open: "未解决",
   resolved: "已解决",
+  dropped: "不处理",
 });
+
+/**
+ * 表示问题已经关闭的状态.
+ * @type {readonly string[]}
+ */
+const CLOSED_STATUSES = Object.freeze([
+  ISSUE_STATUSES.resolved,
+  ISSUE_STATUSES.dropped,
+]);
 
 /**
  * 遗留问题表中各列的下标.
@@ -94,7 +105,7 @@ export function renderIssuesFile() {
   return [
     ISSUES_HEADING,
     "",
-    `已做部分中还没有解决的事. 每个问题一行; "${ISSUE_COLUMNS[COLUMN.owner]}" 写负责解决它的切片编号; "${ISSUE_COLUMNS[COLUMN.status]}" 只写 ${ISSUE_STATUSES.open} 或 ${ISSUE_STATUSES.resolved}, ${ISSUE_STATUSES.resolved}时写明 "${ISSUE_COLUMNS[COLUMN.resolution]}". 新想法不写在这里, 写进待办.`,
+    `已做部分中还没有解决, 又与完成标准, 需求或已交付的行为有关的事. 每个问题一行; "${ISSUE_COLUMNS[COLUMN.owner]}" 写负责解决它的切片编号; "${ISSUE_COLUMNS[COLUMN.status]}" 只写 ${Object.values(ISSUE_STATUSES).join(", ")}; ${ISSUE_STATUSES.resolved}时 "${ISSUE_COLUMNS[COLUMN.resolution]}" 写怎么解决的, ${ISSUE_STATUSES.dropped}时写理由与用户的原话. 新想法与用不到的细节不写在这里.`,
     "",
     ...renderTable(ISSUE_COLUMNS, []),
     "",
@@ -163,13 +174,13 @@ export function readIssues(projectRoot) {
 }
 
 /**
- * 取没有解决的遗留问题.
+ * 取还没有关闭的遗留问题: 既没有解决, 用户也没有决定不处理.
  *
  * @param {readonly Issue[]} issues 遗留问题.
- * @returns {Issue[]} 状态为未解决的问题.
+ * @returns {Issue[]} 没有关闭的问题.
  */
 export function openIssues(issues) {
-  return issues.filter((issue) => issue.status !== ISSUE_STATUSES.resolved);
+  return issues.filter((issue) => !CLOSED_STATUSES.includes(issue.status));
 }
 
 /**
@@ -226,7 +237,7 @@ export function requireNoStrandedIssues({
   const stranded = strandedIssues(state, issues, settlingId);
   if (stranded.length > 0) {
     throw new WorkflowError(
-      `${ISSUES_FILE} 中有没有解决的遗留问题, 不能${step}: ${describeIssues(stranded)}. 解决后标为${ISSUE_STATUSES.resolved}并写明 "${ISSUE_COLUMNS[COLUMN.resolution]}"; 确实要等后面某个切片才能做的, 把 "${ISSUE_COLUMNS[COLUMN.owner]}" 改成那个还没有结束的切片.`,
+      `${ISSUES_FILE} 中有没有解决的遗留问题, 不能${step}: ${describeIssues(stranded)}. 解决后标为${ISSUE_STATUSES.resolved}并写明 "${ISSUE_COLUMNS[COLUMN.resolution]}"; 本切片目标用不到的, 请用户决定是否标为${ISSUE_STATUSES.dropped}, "${ISSUE_COLUMNS[COLUMN.resolution]}" 写理由与用户的原话; 只有后面某个还没有结束的切片的目标本来就要做这件事时, 才把 "${ISSUE_COLUMNS[COLUMN.owner]}" 改成那个切片.`,
     );
   }
 }
@@ -265,8 +276,10 @@ function issueProblems(issue, index) {
       : [
           `${where}: "${ISSUE_COLUMNS[COLUMN.status]}" 只能是 ${allowed.join(" 或 ")}.`,
         ]),
-    ...(issue.status === ISSUE_STATUSES.resolved && issue.resolution === ""
-      ? [`${where}: 已解决的问题要写明 "${ISSUE_COLUMNS[COLUMN.resolution]}".`]
+    ...(CLOSED_STATUSES.includes(issue.status) && issue.resolution === ""
+      ? [
+          `${where}: ${issue.status}的问题要写明 "${ISSUE_COLUMNS[COLUMN.resolution]}"${issue.status === ISSUE_STATUSES.dropped ? ": 理由与用户的原话" : ""}.`,
+        ]
       : []),
   ];
 }

@@ -116,7 +116,7 @@ export const VERDICT_CLASSES = Object.freeze({
  * @property {string} none 表示 "没有" 的写法.
  * @property {string} doneStatus 执行状态中表示做完的写法.
  * @property {string} reworkStatus 补做期间脚本写入执行状态的内容.
- * @property {{pass: string, fail: string, unverified: string, confirmed: string}} verdicts 标准核对的结论: 前三种由验收子代理给出, confirmed 由编排会话在用户亲手确认之后写入.
+ * @property {{pass: string, fail: string, unverified: string, confirmed: string, narrowed: string}} verdicts 标准核对的结论: 前三种由验收子代理给出; confirmed 由编排会话在用户亲手确认之后写入; narrowed 由编排会话在用户同意把切片目标用不到的部分移出这条标准之后写入.
  * @property {string} userEvidencePrefix 验收子代理在证据开头标明 "已有用户亲眼确认的记录" 的写法.
  * @property {PartSpec[]} parts 各段.
  */
@@ -424,7 +424,7 @@ export function readVerdicts(parsed, spec) {
 
 /**
  * 给标准核对的结果归类: 有不通过的归为不通过, 否则有未验证的归为未验证; 用户
- * 已确认的标准与通过的标准同样对待.
+ * 已确认与用户已收窄的标准与通过的标准同样对待.
  *
  * @param {readonly VerdictRow[]} rows 标准核对表各行.
  * @param {SliceSpec} spec 规格.
@@ -494,12 +494,13 @@ export function archivedReviewHeading(spec, round) {
 }
 
 /**
- * 读取某一轮归档的验收段中结论为 "用户已确认" 的标准, 补做之后的验收沿用它们.
+ * 读取某一轮归档的验收段中结论为 "用户已确认" 或 "用户已收窄" 的标准, 补做之后的
+ * 验收沿用它们.
  *
  * @param {string} text 切片文件全文.
  * @param {SliceSpec} spec 规格.
  * @param {number} round 归档的轮次.
- * @returns {VerdictRow[]} 用户已确认的行; 没有这一轮的归档时为空.
+ * @returns {VerdictRow[]} 用户已确认或已收窄的行; 没有这一轮的归档时为空.
  */
 export function readArchivedConfirmations(text, spec, round) {
   const lines = text.replace(/\r\n?/gu, "\n").split("\n");
@@ -525,7 +526,9 @@ export function readArchivedConfirmations(text, spec, round) {
       verdict: cells[VERDICT_COLUMNS.verdict] ?? "",
       evidence: cells[VERDICT_COLUMNS.evidence] ?? "",
     }))
-    .filter((row) => row.verdict === spec.verdicts.confirmed);
+    .filter((row) =>
+      [spec.verdicts.confirmed, spec.verdicts.narrowed].includes(row.verdict),
+    );
 }
 
 /**

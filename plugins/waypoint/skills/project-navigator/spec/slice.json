@@ -8,7 +8,8 @@
     "pass": "通过",
     "fail": "不通过",
     "unverified": "未验证",
-    "confirmed": "用户已确认"
+    "confirmed": "用户已确认",
+    "narrowed": "用户已收窄"
   },
   "userEvidencePrefix": "用户实测: ",
   "parts": [
