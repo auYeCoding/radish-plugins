@@ -8,7 +8,12 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { issuesOwnedBy, openIssues, readIssues } from "./issues.mjs";
+import {
+  ISSUE_STATUSES,
+  issuesOwnedBy,
+  openIssues,
+  readIssues,
+} from "./issues.mjs";
 import {
   BACKLOG_FILE,
   COMMAND_NAME,
@@ -41,6 +46,13 @@ import {
   STAGES,
   STAGE_LABELS,
 } from "./state.mjs";
+
+/**
+ * 自动补做的轮次上限: 本轮轮次大于它时, 不再默认补做, 由用户在收窄标准与再补一轮
+ * 之间决定.
+ * @type {number}
+ */
+export const REDO_ROUND_LIMIT = 2;
 
 /**
  * @typedef {import("./state.mjs").NavigatorState} NavigatorState
@@ -144,7 +156,7 @@ export function nextAction(state, facts, spec = loadSliceSpec()) {
   const active = activeSlice(state)?.slice;
   return active === undefined
     ? betweenSlicesAction(state)
-    : sliceAction(active, facts, spec);
+    : sliceAction(active, state.current?.round ?? 1, facts, spec);
 }
 
 /**
@@ -155,6 +167,16 @@ export function nextAction(state, facts, spec = loadSliceSpec()) {
  */
 export function command(args) {
   return `\`${COMMAND_NAME} ${args}\``;
+}
+
+/**
+ * 写出收窄一条标准的做法: 用户同意后把切片目标用不到的部分移出完成标准.
+ *
+ * @param {SliceSpec} spec 切片文件规格.
+ * @returns {string} 一步动作, 不带句号.
+ */
+export function narrowingStep(spec) {
+  return `经用户同意收窄这条标准: 用 Edit 改写计划中的这条完成标准, 只留切片目标要用到的部分, 结论改成 "${spec.verdicts.narrowed}", 证据写用户的原话, 移出了什么与它的去向 (待办, 或遗留问题标为${ISSUE_STATUSES.dropped})`;
 }
 
 /**
@@ -202,18 +224,19 @@ function betweenSlicesAction(state) {
  * 有进行中的切片时的下一动作.
  *
  * @param {SliceState} slice 进行中的切片.
+ * @param {number} round 本轮轮次.
  * @param {ProgressFacts} facts 事实.
  * @param {SliceSpec} spec 切片文件规格.
  * @returns {string} 下一动作.
  */
-function sliceAction(slice, facts, spec) {
+function sliceAction(slice, round, facts, spec) {
   if (slice.status === SLICE_STATUSES.planned) {
     return `填写切片文件 ${slice.file} 的 "${partSpec(spec, PARTS.plan).heading}" 段, 然后运行 ${command("slice start")}${slice.interactive ? "; 这是交互式切片, 开工后在本会话执行" : ", 按输出在后台派实现子代理"}.`;
   }
   if (slice.status === SLICE_STATUSES.running) {
     return runningAction(slice, facts, spec);
   }
-  return reviewingAction(slice, facts, spec);
+  return reviewingAction(slice, round, facts, spec);
 }
 
 /**
@@ -240,11 +263,12 @@ function runningAction(slice, facts, spec) {
  * 切片在验收中时的下一动作.
  *
  * @param {SliceState} slice 进行中的切片.
+ * @param {number} round 本轮轮次.
  * @param {ProgressFacts} facts 事实.
  * @param {SliceSpec} spec 切片文件规格.
  * @returns {string} 下一动作.
  */
-function reviewingAction(slice, facts, spec) {
+function reviewingAction(slice, round, facts, spec) {
   const reviewHeading = partSpec(spec, PARTS.review).heading;
   const conclusion = sectionTitle(spec, SECTIONS.conclusion);
   const rework = sectionTitle(spec, SECTIONS.rework);
@@ -256,17 +280,26 @@ function reviewingAction(slice, facts, spec) {
   }
   const record = `把用户的原话写入 "${conclusion}"`;
   const redo = `把要补的内容写入计划的 "${rework}" 后运行 ${command("slice redo")}`;
-  const register = `本轮发现的没有验证的结论与问题先登记进 ${ISSUES_FILE}`;
+  const register = `"${sectionTitle(spec, SECTIONS.leftovers)}" 中与完成标准有关的事先登记进 ${ISSUES_FILE}`;
+  const capped = round > REDO_ROUND_LIMIT;
+  const cappedNote = `已经补做了 ${round - 1} 轮, 不再默认补做`;
   if (facts.verdictClass === VERDICT_CLASSES.pass) {
     if (facts.ownedIssueIds.length > 0) {
-      return `验收全部通过, 但遗留问题 ${facts.ownedIssueIds.join(", ")} 归属本切片, 还没有解决: 能直接解决的解决后标为已解决; 要改代码或实测的, ${redo}. 解决之前不请用户选择通过.`;
+      return `验收全部通过, 但遗留问题 ${facts.ownedIssueIds.join(", ")} 归属本切片, 还没有关闭: 能直接解决的解决后标为${ISSUE_STATUSES.resolved}; 本切片目标用不到的, 请用户决定是否标为${ISSUE_STATUSES.dropped} (处理结果写理由与用户的原话); 要改代码或实测的, ${capped ? `${cappedNote}: 请用户决定 A 标为${ISSUE_STATUSES.dropped}, B 再补一轮 (${redo})` : redo}. 关闭之前不请用户选择通过.`;
     }
-    return `验收全部通过. ${register}; 归属本切片的都解决后, 请用户决定: A 通过并提交; B 通过, 提交并推送. 用户选择后${record}, 运行 ${command("slice accept")}.`;
+    return `验收全部通过. ${register}; 归属本切片的都关闭后, 请用户决定: A 通过并提交; B 通过, 提交并推送. 用户选择后${record}, 运行 ${command("slice accept")}.`;
   }
+  const narrow = narrowingStep(spec);
   if (facts.verdictClass === VERDICT_CLASSES.unverified) {
-    return `有标准未验证. 用户已经亲手确认过的 (证据以 "${spec.userEvidencePrefix}" 开头, 或用户按 "${sectionTitle(spec, SECTIONS.manual)}" 做完并说了结果), 把结论改成 "${spec.verdicts.confirmed}", 证据写用户的原话与日期, 再运行 ${command("status")}, 不让用户重新选择. 还没有确认的, 把步骤给用户请他验证; 验证不了的, ${redo}. 未验证的标准不能通过.`;
+    const fallback = capped
+      ? `${cappedNote}: 请用户决定 A 收窄 (${narrow}); B 再补一轮 (${redo})`
+      : `请用户决定 A 补做 (${redo}); B 没验证的部分是切片目标用不到的, 收窄 (${narrow})`;
+    return `有标准未验证. 用户已经亲手确认过的 (证据以 "${spec.userEvidencePrefix}" 开头, 或用户按 "${sectionTitle(spec, SECTIONS.manual)}" 做完并说了结果), 把结论改成 "${spec.verdicts.confirmed}", 证据写用户的原话与日期, 再运行 ${command("status")}, 不让用户重新选择. 还没有确认的, 把步骤给用户请他验证; 用户验证不了的, ${fallback}. 未验证的标准不能通过.`;
   }
-  return slice.skeleton
-    ? `有标准不通过, 这是最小骨架, 只能补做: 向用户说明后${redo}.`
-    : `有标准不通过, 请用户决定: A 补做 (${redo}); B 放弃这个切片 (运行 ${command("slice drop")}).`;
+  if (slice.skeleton) {
+    return `有标准不通过, 这是最小骨架, 只能补做: 向用户说明后${redo}.`;
+  }
+  return capped
+    ? `有标准不通过, ${cappedNote}: 请用户决定 A 没通过的部分是切片目标用不到的, 收窄 (${narrow}); B 再补一轮 (${redo}); C 放弃这个切片 (运行 ${command("slice drop")}).`
+    : `有标准不通过, 请用户决定: A 补做 (${redo}); B 放弃这个切片 (运行 ${command("slice drop")}); 没通过的部分是切片目标用不到的, 也可以收窄 (${narrow}).`;
 }

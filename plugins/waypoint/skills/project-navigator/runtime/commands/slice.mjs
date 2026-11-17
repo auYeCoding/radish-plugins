@@ -11,7 +11,7 @@
  * - slice drop
  *
  * 切片结束 (通过或放弃) 之前核对遗留问题: 归属本切片, 或归属已经结束的切片而
- * 没有解决的问题, 会拦下这一步.
+ * 没有关闭的问题, 会拦下这一步.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -19,8 +19,9 @@ import path from "node:path";
 
 import { writeFileAtomically } from "../lib/atomic-file.mjs";
 import { COMMIT_SKILL, SUBAGENT_TYPES } from "../lib/guard.mjs";
-import { command } from "../lib/guidance.mjs";
+import { command, narrowingStep } from "../lib/guidance.mjs";
 import {
+  ISSUE_STATUSES,
   describeIssues,
   ensureIssuesFile,
   issuesOwnedBy,
@@ -164,7 +165,7 @@ function runSlicePlan({ projectRoot, state, spec, positionals, values, now }) {
     ...(owned.length === 0
       ? []
       : [
-          `- 归属本切片的遗留问题: ${describeIssues(owned)}. 每一条都要写进计划的 "${sectionTitle(spec, SECTIONS.criteria)}", 本切片通过之前要在 ${ISSUES_FILE} 中标为已解决`,
+          `- 归属本切片的遗留问题: ${describeIssues(owned)}. 本切片目标要用到的写进计划的 "${sectionTitle(spec, SECTIONS.criteria)}", 通过之前在 ${ISSUES_FILE} 中关闭; 用不到的, 先请用户决定是否标为${ISSUE_STATUSES.dropped}, 不为它写完成标准`,
         ]),
     `- 下一动作: 填好后运行 ${command("slice start")}`,
   ];
@@ -304,12 +305,12 @@ function runSliceAccept({ projectRoot, state, spec, now }) {
   const verdictClass = classifyVerdicts(rows, spec);
   if (verdictClass === VERDICT_CLASSES.fail) {
     throw new WorkflowError(
-      `"${verdictTitle}" 中有 ${spec.verdicts.fail} 的标准, 不能通过: 补做 (slice redo) 或放弃 (slice drop).`,
+      `"${verdictTitle}" 中有 ${spec.verdicts.fail} 的标准, 不能通过: 补做 (slice redo) 或放弃 (slice drop); 没通过的部分是切片目标用不到的, ${narrowingStep(spec)}.`,
     );
   }
   if (verdictClass === VERDICT_CLASSES.unverified) {
     throw new WorkflowError(
-      `"${verdictTitle}" 中有 ${spec.verdicts.unverified} 的标准, 不能通过: 请用户亲手验证, 用户确认后把结论改成 "${spec.verdicts.confirmed}" 并在证据中写下用户的原话; 验证不了的, 补做 (slice redo), 标准本身不成立时经用户同意在补做中改掉这条标准.`,
+      `"${verdictTitle}" 中有 ${spec.verdicts.unverified} 的标准, 不能通过: 请用户亲手验证, 用户确认后把结论改成 "${spec.verdicts.confirmed}" 并在证据中写下用户的原话; 验证不了的, 补做 (slice redo); 没验证的部分是切片目标用不到的, ${narrowingStep(spec)}.`,
     );
   }
   requireNoStrandedIssues({

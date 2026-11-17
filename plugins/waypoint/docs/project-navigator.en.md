@@ -10,7 +10,7 @@ The skill targets four common problems:
 
 - **Starting work without a roadmap.** The skill first confirms the requirements with you, then lays out the roadmap; only the current milestone is planned in detail, and later ones are planned when you reach them.
 - **Growing horizontally, and finding at the end that features and the interface were never connected.** Every slice is vertical and must be visible from the entry point or the interface when it is done; the review must give the call path from the entry point to the new code, and a slice that is not wired in cannot be followed by the next one. New ideas go into the backlog and are not done on the side.
-- **Leaving technical debt along the way.** Anything unresolved in the work already done (unverified findings, pending criteria, known defects) is registered as an open issue owned by a slice; the owning slice cannot pass until the issue is resolved. See [Open issues](#open-issues).
+- **Leaving technical debt along the way.** Anything unresolved in the work already done that bears on a completion criterion, a requirement, or delivered behavior (unverified findings a verdict depends on, pending criteria, known defects) is registered as an open issue; the owning slice cannot pass until the issue is resolved or you decide not to handle it. Details the slice goal does not need are not open issues and do not trigger round after round of rework. See [Open issues](#open-issues).
 - **Forgetting the progress when the session changes.** Progress is recorded by scripts in `.navigator/`, and what to do next is computed by scripts, not left to the model's memory.
 
 The session that invokes this skill is called the orchestrator session. It only plans, records, and organizes reviews. Code is written by executor subagents it dispatches in the background, and reviews are done by a reviewer subagent in a fresh context.
@@ -67,7 +67,7 @@ Take "build a tool that collects the team's weekly reports" as an example, start
 2. The skill dispatches an executor subagent in the background. You can go do something else, or keep talking to the orchestrator session.
 3. When the executor subagent needs you to answer a question or do something by hand, the skill passes the question or the steps on to you unchanged; after you reply, the same subagent continues.
 4. When the work is done, the skill dispatches a reviewer subagent to check it, and reports to you the verdict on each criterion, the results of the wiring check and the structure check, the open issues, and the steps you need to verify by hand.
-5. When everything passes (including what you confirmed by hand) and the slice has no open issues, you decide to pass and commit; otherwise the slice is reworked or abandoned.
+5. When everything passes (including what you confirmed by hand) and the slice has no open issues, you decide to pass and commit; otherwise the slice is reworked, its criteria are narrowed, or it is abandoned.
 
 Normally a slice needs only one decision from you, after the review.
 
@@ -154,26 +154,30 @@ project-navigator check --filters
 6. **Submit for review.** The script checks that the Plan part was not changed during implementation and that the Result part is filled in.
 7. **Review.** The reviewer subagent checks item by item in a fresh context. There are only three verdicts: pass, fail, and unverified, and each comes with evidence. It traces the wiring from the entry point itself and does not copy the path the executor wrote.
 8. **What you verify by hand.** A criterion that can only be confirmed by looking at the running program is judged unverified by the reviewer, with the steps written out. The account, character, items, and devices those steps need are asked when the plan is written. Once you have checked and said what you saw, the criterion is recorded as "用户已确认" (confirmed by the user) and treated like a pass, and you are not asked to choose again; the same goes for results you already saw before the review. When the slice is reviewed again after rework, earlier "用户已确认" verdicts carry over, so criteria the rework did not touch need no second check.
-9. **Leftover check.** The reviewer subagent lists what remains unresolved in this slice, and the orchestrator session registers it as open issues.
+9. **Leftover check.** The reviewer subagent lists only what bears on a completion criterion and remains unresolved in this slice, naming the related criterion for each item; in a rework round it looks only at what that round wrote. Observations unrelated to the criteria are given as a count and are not registered. Content in the findings files that no criterion uses is not checked for evidence and cannot make a criterion fail.
 10. **Your decision.**
 
-| Situation                                     | What happens                                                                                         |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| All pass or confirmed, and no open issues     | You choose: pass and commit; pass, commit, and push                                                  |
-| Some unverified, none fail                    | You verify by hand; what you cannot verify is reworked. Unverified criteria cannot pass              |
-| Some fail, or open issues owned by this slice | Rework; when a slice fails and you no longer want it, abandon it (the skeleton can only be reworked) |
+| Situation                                     | What happens                                                                                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| All pass or confirmed, and no open issues     | You choose: pass and commit; pass, commit, and push                                                                                                             |
+| Some unverified, none fail                    | You verify by hand; for what you cannot verify, you choose between rework and narrowing. Unverified criteria cannot pass                                        |
+| Some fail, or open issues owned by this slice | You choose between rework, narrowing the criterion, and not handling the issue; a slice you no longer want can be abandoned (the skeleton can only be reworked) |
+| Two rework rounds already done                | No more rework by default: narrowing or not handling is recommended, and another round happens only when you ask for it                                         |
 
-For rework, the orchestrator session writes what needs to be redone into the plan, this round's review is archived in the same file, the executor subagent continues, and the slice is then reviewed again. When a criterion itself turns out to be invalid, it is changed in the rework with your agreement.
+For rework, the orchestrator session writes what needs to be redone into the plan, this round's review is archived in the same file, the executor subagent continues, and the slice is then reviewed again.
+
+Narrowing: when the unverified or failing part is something the slice goal does not need, the orchestrator session, with your agreement, rewrites that completion criterion to keep only what the goal needs and records the verdict as "用户已收窄" (narrowed by the user), with your words, what was removed, and where it went (the backlog, or an open issue marked not handled) as evidence. A narrowed criterion counts as a pass and needs no further round. A part the goal does need cannot be narrowed away.
 
 After a pass, the orchestrator session invokes commit-message and puts this slice's code changes and records into one commit.
 
 ## Open issues
 
-Open issues are things in the work already done that are not resolved yet: unverified findings, pending criteria, known defects, and anything the executor or reviewer marked "to handle later". They are not the backlog: the backlog holds new ideas that have not started.
+Open issues are things in the work already done that are not resolved yet and bear on a completion criterion, a requirement, or delivered behavior: unverified findings a criterion's verdict depends on, pending criteria, and known defects in what the slice delivered. They are not the backlog: the backlog holds new ideas that have not started. Unverified observations unrelated to the criteria, and passing "why" questions, are not open issues: they are not registered or re-tested, and no slice is created or reassigned to hold them.
 
-- They live in a table in `.navigator/issues.md`: number, problem, found in, owning slice, status (未解决 open or 已解决 resolved), resolution.
-- A new issue is owned by the current slice; only when it really has to wait for a later slice's capability is it owned by that slice, and it is listed when that slice's plan is written.
-- The scripts enforce it: an unresolved issue owned by this slice, or by a slice that has already ended, makes `slice accept`, `slice drop`, and `milestone done` refuse; wrap-up requires every issue to be resolved.
+- They live in a table in `.navigator/issues.md`: number, problem, found in, owning slice, status (未解决 open, 已解决 resolved, or 不处理 not handled), resolution.
+- A new issue is owned by the current slice; only when a later slice's goal already includes the work is it owned by that slice, and it is listed when that slice's plan is written.
+- For an issue the slice goal does not need, the orchestrator session recommends "not handled" and you decide; the resolution records the reason and your words.
+- The scripts enforce it: an issue owned by this slice, or by a slice that has already ended, that is not closed (resolved or not handled) makes `slice accept`, `slice drop`, and `milestone done` refuse; wrap-up requires every issue to be closed.
 - When you ask "what open issues are left", the orchestrator session answers only from this file, without mixing in the backlog or later milestones.
 - The "遗留问题" (open issues) line of `project-navigator status` gives the number of unresolved issues.
 
@@ -181,7 +185,7 @@ Open issues are things in the work already done that are not resolved yet: unver
 
 - **Milestone review:** when all slices of a milestone have ended, the skill explains how far the milestone goal was met, goes through the backlog with you, and lays out the slices of the next milestone.
 - **Requirement changes:** you can raise them at any time. The skill explains the impact, and after you confirm it updates the requirements file and the roadmap and records a decision: what was decided, why, and what was given up. Slices that have already started are not changed; ideas mentioned only in passing go into the backlog.
-- **Wrap-up:** when all milestones are complete and no open issue is left, the skill explains the results item by item against the requirements, and wraps up after you confirm. After wrap-up you can still add milestones and continue.
+- **Wrap-up:** when all milestones are complete and every open issue is closed, the skill explains the results item by item against the requirements, and wraps up after you confirm. After wrap-up you can still add milestones and continue.
 
 ## Record files
 

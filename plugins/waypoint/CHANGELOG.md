@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `project-navigator`: open issues no longer pile up without end. Only things that change a completion criterion's verdict, are defects in what the slice delivered, or are needed by a must-have requirement are registered; unrelated unverified observations are not registered, re-tested, or parked on later slices, and no slice is created just to hold an issue. The review's leftover check lists only relevant items with the related criterion, and in rework rounds looks only at what that round wrote.
+- `project-navigator`: an open issue can be closed as "不处理" (not handled) when you decide the slice goal does not need it; the resolution records the reason and your words. `slice accept`, `slice drop`, `milestone done`, and `finish` treat it as closed.
+- `project-navigator`: a criterion whose unverified or failing part the slice goal does not need can be narrowed with your agreement: the criterion is rewritten to keep only what the goal needs, and the verdict is recorded as "用户已收窄" (narrowed by the user), which counts as a pass. After two rework rounds the next action stops defaulting to another round and recommends narrowing instead.
+- `project-navigator`: findings files hold only conclusions the completion criteria use; passing observations get one raw line under "未验证的观察" (unverified observations). The review's findings check covers only conclusions the criteria use, so extra content no longer makes a criterion fail.
+
 ## [2.1.0] - 2026-11-16
 
 ### Added

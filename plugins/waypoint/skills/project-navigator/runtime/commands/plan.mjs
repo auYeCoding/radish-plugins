@@ -6,13 +6,14 @@
  * - milestone done <编号>
  * - finish
  *
- * 里程完成时不能留下归属已结束切片的遗留问题; 收尾时遗留问题要全部解决.
+ * 里程完成时不能留下归属已结束切片的遗留问题; 收尾时遗留问题要全部关闭.
  */
 
 import { existsSync } from "node:fs";
 import path from "node:path";
 
 import {
+  ISSUE_STATUSES,
   describeIssues,
   openIssues,
   readIssues,
@@ -121,11 +122,11 @@ function updateRoadmap(projectRoot, state, draftPath, now) {
 }
 
 /**
- * 收尾之前确认遗留问题全部解决.
+ * 收尾之前确认遗留问题全部关闭: 已解决或用户决定不处理.
  *
  * @param {string} projectRoot 项目根目录.
  * @returns {void}
- * @throws {WorkflowError} 表格不合规, 或还有没有解决的遗留问题时.
+ * @throws {WorkflowError} 表格不合规, 或还有没有关闭的遗留问题时.
  */
 function requireNoOpenIssues(projectRoot) {
   const { issues, problems } = readIssues(projectRoot);
@@ -135,7 +136,7 @@ function requireNoOpenIssues(projectRoot) {
   const open = openIssues(issues);
   if (open.length > 0) {
     throw new WorkflowError(
-      `${ISSUES_FILE} 中还有没有解决的遗留问题, 不能收尾: ${describeIssues(open)}.`,
+      `${ISSUES_FILE} 中还有没有关闭的遗留问题, 不能收尾: ${describeIssues(open)}. 解决后标为${ISSUE_STATUSES.resolved}; 用不到的, 请用户决定是否标为${ISSUE_STATUSES.dropped}, "处理结果" 写理由与用户的原话.`,
     );
   }
 }
